@@ -1,0 +1,73 @@
+# Reglas de producto — FurniConfig (Fase 0)
+
+> ⚠️ Todo lo marcado como **PROVISIONAL** es una hipótesis de trabajo: **debe
+> validarse con carpinterías antes de usarlo en cotizaciones o fabricación.**
+> No se inventaron reglas de fabricación; las que no vienen del brief se
+> documentan aquí como pendientes.
+
+## 1. Reglas confirmadas (del brief de producto)
+
+| Regla | Valor | Estado |
+|---|---|---|
+| Tipo de mueble | Clóset **recto** (sin esquinas ni inclinaciones) | Confirmado |
+| Módulos verticales | Entre **1 y 4** | Confirmado |
+| Dimensiones | Ancho, alto y profundidad configurables | Confirmado |
+| Espesores de tablero | **15 mm y 18 mm** (únicos soportados) | Confirmado |
+| Paneles estructurales | Laterales, superior e inferior | Confirmado |
+| Divisiones interiores | Sí, entre módulos | Confirmado |
+| Tipos de módulo | Entrepaños (`shelves`), colgado (`hanging`), cajones (`drawers`) | Confirmado |
+| Materiales y acabados | Configurables (nombre, espesor, acabado) | Confirmado |
+
+## 2. Límites operativos — PROVISIONAL (validar con carpintería)
+
+Centralizados en `packages/geometry-core/src/contract/limits.ts`.
+
+| Límite | Valor provisional | Nota |
+|---|---|---|
+| Ancho total | 400 – 4000 mm | ¿Ancho máx. de tablero disponible? ¿transporte? |
+| Alto total | 1000 – 2800 mm | ¿Altura de transporte / montaje en obra? |
+| Profundidad | 400 – 700 mm | Típico de clóset; ¿colgado necesita ≥ 550 mm? |
+| Ancho mínimo por módulo | 300 mm | ¿Cajones necesitan más? ¿colgado doble? |
+| Entrepaños por módulo | 1 – 8 | ¿Límite constructivo real? |
+| Unidad | milímetros **enteros** | ¿Se aceptan medios milímetros? |
+
+## 3. Supuestos geométricos — PROVISIONAL (validar con carpintería)
+
+1. **Divisiones interiores de espesor completo** (15 o 18 mm) entre módulos
+   adyacentes. Algunas carpinterías usan media división o sistema de rieles.
+2. **Entrepaños distribuidos uniformemente** en la altura interior del módulo
+   (huecos iguales arriba y abajo; redondeo `Math.round` a mm).
+3. **Sin panel trasero** en Fase 0 (el brief no lo incluye). Muchos clósets
+   llevan trasera de 3–6 mm o anclaje a pared: **pendiente**.
+4. **Sin herrajes**: barras de colgado, guías de cajón, bisagras, conectores.
+   **Pendiente**; añadirán espesores/restas que hoy no existen.
+5. **Módulos de colgado y cajones** no generan paneles interiores en Fase 0:
+   la caja del cajón y la barra de colgado requieren reglas de fabricación
+   (altura mínima de cajón, material de caja) **no definidas todavía**.
+6. **Laterales a toda altura** (el superior e inferior quedan *entre* laterales,
+   no al revés). Confirmar sistema constructivo con carpintería.
+
+## 4. Módulos
+
+- `shelves` (entrepaños): requiere `shelves` (cantidad de tabiques horizontales).
+- `hanging` (colgado): espacio libre; sin paneles interiores en Fase 0.
+- `drawers` (cajones): espacio libre; sin cajas de cajón en Fase 0.
+
+## 5. Validaciones implementadas
+
+- Contrato: `schemaVersion` debe ser `1`.
+- Dimensiones: enteros positivos dentro de límites provisionales.
+- Módulos: 1–4, tipo válido, `shelves` coherente con el tipo.
+- Materiales: nombre y acabado no vacíos; espesor ∈ {15, 18} mm.
+- Motor: ancho total suficiente para laterales + divisiones + ancho mínimo de
+  módulo (`ERR_WIDTH_INSUFFICIENT`, `ERR_MODULE_WIDTH_TOO_SMALL`).
+
+## 6. Pendientes de validación con carpinterías (bloquean fases posteriores)
+
+- [ ] Rangos reales de ancho/alto/profundidad y ancho mínimo de módulo.
+- [ ] Sistema de divisiones (espesor completo vs. rieles).
+- [ ] Panel trasero: sí/no, espesor, cómo se fija.
+- [ ] Herrajes: barra de colgado (altura mínima del módulo colgado), guías de
+      cajón, caja del cajón (altura mínima, material).
+- [ ] Tolerancias de fabricación y si se restan del ancho útil.
+- [ ] Distribución de entrepaños: uniforme o a gusto del usuario.

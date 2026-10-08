@@ -1,0 +1,24 @@
+{
+  "name": "furniconfig",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FurniConfig — plataforma SaaS B2B para diseño paramétrico de muebles a medida. Fase 0: motor geométrico paramétrico.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
