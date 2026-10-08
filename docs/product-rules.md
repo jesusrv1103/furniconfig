@@ -18,6 +18,12 @@
 | Tipos de módulo | Entrepaños (`shelves`), colgado (`hanging`), cajones (`drawers`) | Confirmado |
 | Materiales y acabados | Configurables (nombre, espesor, acabado) | Confirmado |
 
+| Barras de colgado | 1 por módulo "hanging" (Fase 2A) | Confirmado (producto) |
+| Diámetro de barra | 18–60 mm, default 30 mm | **PROVISIONAL** |
+| Montaje de barra | 100 mm bajo el superior, centrada en Z | **PROVISIONAL** |
+| Longitud de barra | Ancho interior útil del módulo | **PROVISIONAL** (sin holguras) |
+| Material de barra | Metálico, default "Acero / brillo" | **PROVISIONAL** (cosmético) |
+
 ## 2. Límites operativos — PROVISIONAL (validar con carpintería)
 
 Centralizados en `packages/geometry-core/src/contract/limits.ts`.
@@ -39,12 +45,27 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
    (huecos iguales arriba y abajo; redondeo `Math.round` a mm).
 3. **Sin panel trasero** en Fase 0 (el brief no lo incluye). Muchos clósets
    llevan trasera de 3–6 mm o anclaje a pared: **pendiente**.
-4. **Sin herrajes**: barras de colgado, guías de cajón, bisagras, conectores.
+4. **Barras de colgado (Fase 2A)**: una barra cilíndrica por módulo
+   "hanging". Reglas PROVISIONALES pendientes de validar:
+   - Orientación horizontal (eje X, a lo ancho del módulo).
+   - **Longitud = ancho interior útil del módulo** (sin holguras de
+     montaje: las holguras están por confirmar).
+   - **Centro a 100 mm** por debajo de la cara inferior del tablero
+     superior (típico 100–150 mm; confirmar altura de montaje).
+   - **Centrada en la profundidad** (Z).
+   - **Diámetro configurable: 18–60 mm, default 30 mm** (típico
+     25–32 mm; confirmar con proveedor de herrajes).
+   - **Material metálico** por defecto ("Acero", acabado "brillo"):
+     nombre y acabado son cosméticos, no afectan geometría.
+   - **Compatibilidad**: la barra (radio incluido) debe caber entre
+     los tableros superior e inferior; si no, el motor rechaza la
+     configuración (`ERR_HANGING_ROD_HEIGHT`).
+5. **Sin herrajes**: guías de cajón, conectores, anclajes.
    **Pendiente**; añadirán espesores/restas que hoy no existen.
-5. **Módulos de colgado y cajones** no generan paneles interiores en Fase 0:
-   la caja del cajón y la barra de colgado requieren reglas de fabricación
-   (altura mínima de cajón, material de caja) **no definidas todavía**.
-6. **Laterales a toda altura** (el superior e inferior quedan *entre* laterales,
+6. **Módulos de cajones** no generan cajas de cajón en Fase 2A:
+   las cajas requieren reglas de fabricación (altura mínima de
+   cajón, material de caja) **no definidas todavía**.
+7. **Laterales a toda altura** (el superior e inferior quedan *entre* laterales,
    no al revés). Confirmar sistema constructivo con carpintería.
 
 ## 4. Módulos

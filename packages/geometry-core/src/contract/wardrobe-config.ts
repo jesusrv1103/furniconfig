@@ -8,8 +8,25 @@
 
 import type { MaterialSpec } from '../types/material.js';
 import type { ModuleConfig } from '../types/module.js';
+import type { RodMaterial } from '../types/rod.js';
 
 export const WARDROBE_CONFIG_SCHEMA_VERSION = 1;
+
+/**
+ * Configuración opcional de barras de colgado.
+ *
+ * Todos los campos son opcionales (extensión backward compatible
+ * del contrato v1): la ausencia del objeto o de un campo usa los
+ * valores por defecto provisionales del motor.
+ */
+export interface HangingRodSpec {
+  /** Diámetro en mm. Provisional: 18–60; default 30. */
+  diameterMm?: number;
+  /** Nombre del material metálico. Default: 'Acero'. */
+  name?: string;
+  /** Acabado. Default: 'brillo'. */
+  finish?: string;
+}
 
 export interface WardrobeConfig {
   schemaVersion: typeof WARDROBE_CONFIG_SCHEMA_VERSION;
@@ -25,4 +42,6 @@ export interface WardrobeConfig {
     structure: MaterialSpec;
     interior: MaterialSpec;
   };
+  /** Barras de colgado para módulos "hanging" (opcional). */
+  hangingRod?: HangingRodSpec;
 }

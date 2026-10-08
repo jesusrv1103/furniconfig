@@ -6,7 +6,12 @@
  * el panel de entrada.
  */
 
-import type { Panel, PanelRole } from '@furniconfig/geometry-core';
+import type {
+  HangingRod,
+  Panel,
+  PanelRole,
+  RodAxis,
+} from '@furniconfig/geometry-core';
 import { mmToM } from './units.js';
 
 export interface RenderablePanel {
@@ -56,4 +61,74 @@ export function toRenderablePanels(
   panels: readonly Panel[],
 ): RenderablePanel[] {
   return panels.map(toRenderablePanel);
+}
+
+/** Envolvente (bbox) de una barra en mm, según su eje. */
+export function rodBoundingBox(
+  axis: RodAxis,
+  lengthMm: number,
+  diameterMm: number,
+): [number, number, number] {
+  switch (axis) {
+    case 'x':
+      return [lengthMm, diameterMm, diameterMm];
+    case 'y':
+      return [diameterMm, lengthMm, diameterMm];
+    case 'z':
+      return [diameterMm, diameterMm, lengthMm];
+  }
+}
+
+export interface RenderableRod {
+  id: string;
+  moduleId: string;
+  axis: RodAxis;
+  /** Longitud en metros, sobre el eje de la barra. */
+  lengthM: number;
+  /** Diámetro en metros. */
+  diameterM: number;
+  /** Centro del cilindro en metros. */
+  centerM: [number, number, number];
+  materialId: string;
+}
+
+/** Convierte una barra del motor (mm) a datos de renderizado (m). */
+export function toRenderableRod(rod: HangingRod): RenderableRod {
+  const boundingBoxMm = rodBoundingBox(
+    rod.axis,
+    rod.lengthMm,
+    rod.diameterMm,
+  );
+  const positionM: [number, number, number] = [
+    mmToM(rod.positionMm.x),
+    mmToM(rod.positionMm.y),
+    mmToM(rod.positionMm.z),
+  ];
+  const sizeM: [number, number, number] = [
+    mmToM(boundingBoxMm[0]),
+    mmToM(boundingBoxMm[1]),
+    mmToM(boundingBoxMm[2]),
+  ];
+  const centerM: [number, number, number] = [
+    positionM[0] + sizeM[0] / 2,
+    positionM[1] + sizeM[1] / 2,
+    positionM[2] + sizeM[2] / 2,
+  ];
+
+  return {
+    id: rod.id,
+    moduleId: rod.moduleId,
+    axis: rod.axis,
+    lengthM: mmToM(rod.lengthMm),
+    diameterM: mmToM(rod.diameterMm),
+    centerM,
+    materialId: rod.materialId,
+  };
+}
+
+/** Convierte todas las barras de un GeometryResult. */
+export function toRenderableRods(
+  rods: readonly HangingRod[],
+): RenderableRod[] {
+  return rods.map(toRenderableRod);
 }

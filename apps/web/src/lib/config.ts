@@ -9,12 +9,23 @@
  */
 
 import {
+  DEFAULT_ROD_DIAMETER_MM,
+  DEFAULT_ROD_FINISH,
+  DEFAULT_ROD_NAME,
   WARDROBE_CONFIG_SCHEMA_VERSION,
   WARDROBE_LIMITS,
   type BoardThicknessMm,
   type ModuleKind,
   type WardrobeConfig,
 } from '@furniconfig/geometry-core';
+
+// Valores por defecto provisionales para barras de colgado
+// (el motor los aplica cuando no hay spec explícito).
+export {
+  DEFAULT_ROD_DIAMETER_MM,
+  DEFAULT_ROD_FINISH,
+  DEFAULT_ROD_NAME,
+};
 
 /** Cantidad de entrepaños al crear un módulo de tipo "shelves". */
 export const DEFAULT_SHELVES = 3;
@@ -142,4 +153,39 @@ export function setMaterialFinish(
 /** Devuelve una copia independiente de la configuración por defecto. */
 export function resetConfig(): WardrobeConfig {
   return structuredClone(DEFAULT_CONFIG);
+}
+
+/**
+ * Establece el diámetro de la barra de colgado.
+ * Crea el spec si no existe (los demás campos usan defaults).
+ */
+export function setHangingRodDiameter(
+  config: WardrobeConfig,
+  diameterMm: number,
+): WardrobeConfig {
+  return {
+    ...config,
+    hangingRod: { ...config.hangingRod, diameterMm },
+  };
+}
+
+/** Establece nombre y acabado del material metálico de la barra. */
+export function setHangingRodMaterial(
+  config: WardrobeConfig,
+  name: string,
+  finish: string,
+): WardrobeConfig {
+  return {
+    ...config,
+    hangingRod: { ...config.hangingRod, name, finish },
+  };
+}
+
+/**
+ * Elimina la configuración de barra: el motor vuelve a
+ * aplicar sus valores por defecto provisionales.
+ */
+export function clearHangingRod(config: WardrobeConfig): WardrobeConfig {
+  const { hangingRod, ...rest } = config;
+  return rest;
 }

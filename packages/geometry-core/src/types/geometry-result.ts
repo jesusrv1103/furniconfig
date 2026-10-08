@@ -6,15 +6,21 @@
  */
 
 import type { Panel } from './panel.js';
+import type { HangingRod } from './rod.js';
 import type { Wardrobe } from './wardrobe.js';
 
 export interface GeometryTotals {
   panelCount: number;
   panelVolumeMm3: number;
+  /** Cantidad de barras de colgado. */
+  rodCount: number;
+  /** Longitud total de barras de colgado (mm); base futura de costeo. */
+  rodLengthMm: number;
 }
 
 export interface GeometryResult {
   wardrobe: Wardrobe;
   panels: Panel[];
+  rods: HangingRod[];
   totals: GeometryTotals;
 }

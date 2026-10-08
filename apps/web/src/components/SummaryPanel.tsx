@@ -4,7 +4,6 @@ import type {
 } from '@furniconfig/geometry-core';
 import { MODULE_KIND_LABELS } from '../lib/config.js';
 import { formatCubicMeters, formatMm } from '../lib/units.js';
-
 const ROLE_LABELS: Readonly<Record<PanelRole, string>> = {
   side: 'Laterales',
   top: 'Superior',
@@ -92,6 +91,34 @@ export function SummaryPanel({ geometry }: { geometry: GeometryResult }) {
           </li>
         ))}
       </ul>
+
+      {geometry.rods.length > 0 && (
+        <>
+          <h3>Barras de colgado ({geometry.totals.rodCount})</h3>
+          <ul className="panel-list">
+            {geometry.rods.map((rod) => (
+              <li key={rod.id}>
+                {rod.id} · {formatMm(rod.lengthMm)} ×{' '}
+                {formatMm(rod.diameterMm)} de diámetro
+              </li>
+            ))}
+          </ul>
+          <dl className="summary-list">
+            <div>
+              <dt>Longitud total de barras</dt>
+              <dd>{formatMm(geometry.totals.rodLengthMm)}</dd>
+            </div>
+          </dl>
+          {wardrobe.materials.rod && (
+            <ul className="material-list">
+              <li>
+                Barra: {wardrobe.materials.rod.name} ·{' '}
+                {wardrobe.materials.rod.finish}
+              </li>
+            </ul>
+          )}
+        </>
+      )}
 
       <h3>Materiales</h3>
       <ul className="material-list">

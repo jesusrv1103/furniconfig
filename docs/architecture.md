@@ -183,6 +183,40 @@ y muestra mensajes del motor sin traducirlos ni duplicarlos.
 **Consecuencias:** actualizaciones funcionales de React seguras,
 tests de la UI sin DOM, y un solo lugar para los límites.
 
+### ADR-016 — Barras de colgado como componente cilíndrico (Fase 2A)
+**Contexto:** los módulos "hanging" necesitaban barras de
+colgado; un tablero (`Panel`) no modela un cilindro.
+**Decisión:** nuevo componente geométrico `HangingRod` en el
+motor (eje, longitud, diámetro, posición como esquina mínima
+del bbox, `materialId`), generado por `buildRods(wardrobe)`
+— **una barra por módulo "hanging"**, nunca desde React.
+El contrato v1 se extiende con `hangingRod?: HangingRodSpec`
+(todos los campos opcionales: backward compatible; ausencia =
+defaults provisionales del motor). `GeometryResult` gana
+`rods: HangingRod[]` y `totals.rodCount`/`rodLengthMm`
+(aditivo; no rompe consumidores existentes).
+**Reglas PROVISIONALES** (docs/product-rules.md §3): eje X,
+longitud = ancho útil del módulo, centro a 100 mm bajo el
+superior, diámetro 18–60 mm (default 30), material metálico
+("Acero/brillo" por defecto). Validación de compatibilidad:
+la barra debe caber entre superior e inferior
+(`ERR_HANGING_ROD_HEIGHT`); diámetro fuera de rango
+(`ERR_HANGING_ROD_DIAMETER`).
+**Consecuencias:** la escena renderiza `CylinderGeometry`
+por barra (reutilizado por eje+longitud+diámetro, con
+`dispose`); mm → m solo en `lib/panels-to-mesh.ts`
+(`toRenderableRod`).
+
+### ADR-017 — Derivación de estado centralizada (Fase 2A)
+**Decisión:** `apps/web/src/lib/derive.ts` expone
+`deriveGeometryState(config)` — validación de forma + cálculo
+geométrico + captura de `GeometryError` en una función pura,
+usada por `App` y por los tests.
+**Consecuencias:** la lógica de "válido / inviable / inválido"
+se prueba sin DOM ni React; cambios rápidos de configuración
+son verificables como secuencias puras; `App` solo maneja
+estado de React.
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa

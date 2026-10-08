@@ -13,4 +13,12 @@ export const WARDROBE_LIMITS = {
   moduleCount: { min: 1, max: 4 },
   moduleWidthMm: { min: 300 },
   shelfCount: { min: 1, max: 8 },
+  hangingRod: {
+    diameterMm: { min: 18, max: 60 },
+    /**
+     * Distancia PROVISIONAL (mm) entre la cara inferior del
+     * tablero superior y el centro de la barra de colgado.
+     */
+    mountDistanceMm: 100,
+  },
 } as const;

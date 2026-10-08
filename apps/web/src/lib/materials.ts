@@ -7,7 +7,7 @@
  * color, siempre).
  */
 
-import type { Material } from '@furniconfig/geometry-core';
+import type { Material, RodMaterial } from '@furniconfig/geometry-core';
 
 export interface RenderMaterial {
   /** Color CSS (hex o hsl). */
@@ -58,5 +58,40 @@ export function toRenderMaterial(material: Material): RenderMaterial {
       PRESET_ROUGHNESS[material.finish.trim().toLowerCase()] ??
       DEFAULT_ROUGHNESS,
     metalness: DEFAULT_METALNESS,
+  };
+}
+
+const PRESET_METAL_COLORS: Readonly<Record<string, string>> = {
+  acero: '#b8bec4',
+  aluminio: '#d0d4d8',
+  cromo: '#e8ecef',
+  latón: '#c9a227',
+  negro: '#2b2b2b',
+};
+
+const DEFAULT_ROD_ROUGHNESS = 0.35;
+/** Las barras de colgado son metálicas por naturaleza. */
+const ROD_METALNESS = 0.9;
+
+export interface RenderRodMaterial {
+  color: string;
+  roughness: number;
+  metalness: number;
+}
+
+/**
+ * Convierte un RodMaterial del motor en apariencia de
+ * renderizado metálico.
+ */
+export function toRenderRodMaterial(
+  material: RodMaterial,
+): RenderRodMaterial {
+  const preset = PRESET_METAL_COLORS[material.name.trim().toLowerCase()];
+  return {
+    color: preset ?? colorFromName(material.name),
+    roughness:
+      PRESET_ROUGHNESS[material.finish.trim().toLowerCase()] ??
+      DEFAULT_ROD_ROUGHNESS,
+    metalness: ROD_METALNESS,
   };
 }

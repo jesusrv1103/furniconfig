@@ -1,17 +1,14 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import {
   WARDROBE_CONFIG_SCHEMA_VERSION,
-  GeometryError,
-  calculateGeometry,
-  validateWardrobeConfig,
   type ConfigIssue,
-  type GeometryResult,
   type WardrobeConfig,
 } from '@furniconfig/geometry-core';
 import { ConfigPanel } from './components/ConfigPanel.js';
 import { SummaryPanel } from './components/SummaryPanel.js';
 import { ValidationErrorList } from './components/ValidationErrorList.js';
 import { DEFAULT_CONFIG, resetConfig } from './lib/config.js';
+import { deriveGeometryState } from './lib/derive.js';
 
 // Carga diferida: Three.js es pesado y no bloquea la UI inicial.
 // El módulo usa exports nombrados, así que se adapta al
@@ -26,46 +23,13 @@ interface AppProps {
   initialConfig?: WardrobeConfig;
 }
 
-/**
- * Estado derivado de la configuración.
- *
- * El motor es la fuente única de verdad. Dos causas de estado
- * inválido:
- * 1. La configuración no pasa la validación del contrato.
- * 2. Pasa la validación pero es geométricamente inviable
- *    (p. ej. ancho insuficiente para los módulos): el motor
- *    lanza GeometryError, que capturamos aquí.
- */
-interface DerivedState {
-  geometry: GeometryResult | null;
-  geometryError: GeometryError | null;
-}
-
 export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
   const [config, setConfig] = useState<WardrobeConfig>(initialConfig);
 
-  // Validación y geometría derivadas: la UI nunca calcula
-  // geometría por su cuenta.
-  const validation = useMemo(() => validateWardrobeConfig(config), [config]);
-
-  const derived = useMemo<DerivedState>(() => {
-    if (!validation.ok) {
-      return { geometry: null, geometryError: null };
-    }
-    try {
-      return {
-        geometry: calculateGeometry(validation.config),
-        geometryError: null,
-      };
-    } catch (error) {
-      if (error instanceof GeometryError) {
-        return { geometry: null, geometryError: error };
-      }
-      // Cualquier otro error es un defecto de programación y
-      // debe propagarse, no ocultarse.
-      throw error;
-    }
-  }, [validation]);
+  // Estado derivado de forma pura: el motor es la fuente
+  // única de verdad (validación de forma y cálculo
+  // geométrico, con captura explícita de GeometryError).
+  const derived = useMemo(() => deriveGeometryState(config), [config]);
 
   const geometryIssues: readonly ConfigIssue[] =
     derived.geometryError === null
@@ -94,7 +58,7 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
       <header className="app-header">
         <div>
           <h1>FurniConfig</h1>
-          <p>Visualizador de clósets modulares · Fase 1</p>
+          <p>Visualizador de clósets modulares · Fase 2A</p>
         </div>
         <span className="chip">Contrato v{WARDROBE_CONFIG_SCHEMA_VERSION}</span>
       </header>
@@ -126,9 +90,11 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
         </section>
 
         <aside className="summary" aria-label="Resumen geométrico">
-          {derived.geometry ? <SummaryPanel geometry={derived.geometry} /> : null}
-          {!validation.ok ? (
-            <ValidationErrorList issues={validation.errors} />
+          {derived.geometry ? (
+            <SummaryPanel geometry={derived.geometry} />
+          ) : null}
+          {!derived.validation.ok ? (
+            <ValidationErrorList issues={derived.validation.errors} />
           ) : null}
           {geometryIssues.length > 0 ? (
             <ValidationErrorList issues={geometryIssues} />

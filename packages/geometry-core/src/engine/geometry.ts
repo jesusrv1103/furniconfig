@@ -10,9 +10,16 @@ import type { WardrobeConfig } from '../contract/wardrobe-config.js';
 import { validateWardrobeConfig } from '../contract/validate.js';
 import { GeometryError } from '../errors.js';
 import { buildPanels } from './panels.js';
+import { buildRods } from './rods.js';
 import { distributeModules } from './distribute.js';
 import type { Material } from '../types/material.js';
 import type { Module } from '../types/module.js';
+import type { RodMaterial } from '../types/rod.js';
+import {
+  DEFAULT_ROD_DIAMETER_MM,
+  DEFAULT_ROD_FINISH,
+  DEFAULT_ROD_NAME,
+} from '../types/rod.js';
 import type { GeometryResult } from '../types/geometry-result.js';
 import type { Wardrobe } from '../types/wardrobe.js';
 
@@ -80,12 +87,32 @@ export function resolveWardrobe(config: WardrobeConfig): Wardrobe {
     } satisfies Module;
   });
 
+  // Barras de colgado: un material metálico resuelto y un
+  // diámetro resuelto solo cuando hay módulos "hanging".
+  const hasHangingModules = modules.some(
+    (module) => module.kind === 'hanging',
+  );
+  const rodSpec = config.hangingRod;
+  const rodMaterial: RodMaterial | undefined = hasHangingModules
+    ? {
+        id: 'material-rod',
+        name: rodSpec?.name ?? DEFAULT_ROD_NAME,
+        finish: rodSpec?.finish ?? DEFAULT_ROD_FINISH,
+      }
+    : undefined;
+  const hangingRodDiameterMm = hasHangingModules
+    ? (rodSpec?.diameterMm ?? DEFAULT_ROD_DIAMETER_MM)
+    : undefined;
+
   return {
     widthMm: config.dimensions.widthMm,
     heightMm: config.dimensions.heightMm,
     depthMm: config.dimensions.depthMm,
     modules,
-    materials: { structure, interior },
+    materials: { structure, interior, ...(rodMaterial ? { rod: rodMaterial } : {}) },
+    ...(hangingRodDiameterMm !== undefined
+      ? { hangingRodDiameterMm }
+      : {}),
   };
 }
 
@@ -98,18 +125,26 @@ export function calculateGeometry(config: WardrobeConfig): GeometryResult {
 
   const wardrobe = resolveWardrobe(validation.config);
   const panels = buildPanels(wardrobe);
+  const rods = buildRods(wardrobe);
   const panelVolumeMm3 = panels.reduce(
     (sum, panel) =>
       sum + panel.sizeMm.x * panel.sizeMm.y * panel.sizeMm.z,
+    0,
+  );
+  const rodLengthMm = rods.reduce(
+    (sum, rod) => sum + rod.lengthMm,
     0,
   );
 
   return {
     wardrobe,
     panels,
+    rods,
     totals: {
       panelCount: panels.length,
       panelVolumeMm3,
+      rodCount: rods.length,
+      rodLengthMm,
     },
   };
 }

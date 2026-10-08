@@ -1,22 +1,59 @@
 import { useEffect, useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
-import { BoxGeometry, MeshStandardMaterial } from 'three';
-import type { GeometryResult } from '@furniconfig/geometry-core';
-import { toRenderMaterial } from '../lib/materials.js';
-import { toRenderablePanels } from '../lib/panels-to-mesh.js';
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  MeshStandardMaterial,
+} from 'three';
+import type { GeometryResult, RodAxis } from '@furniconfig/geometry-core';
+import { toRenderMaterial, toRenderRodMaterial } from '../lib/materials.js';
+import {
+  toRenderablePanels,
+  toRenderableRods,
+} from '../lib/panels-to-mesh.js';
 import { mmToM } from '../lib/units.js';
 
 /**
  * Escena 3D del clóset.
  *
- * - Cada Panel del motor se renderiza como un Box (geometría y
- *   material de Three.js reutilizados por tamaño y por materialId).
- * - Las posiciones y el sistema de coordenadas son los del motor
- *   (origen en esquina inferior-frontal-izquierda), convertidos a
- *   metros en esta capa.
- * - No se inventa geometría: solo existen los paneles que genera el
- *   motor (sin cajas de cajón ni barras de colgado en Fase 1).
+ * - Cada Panel del motor se renderiza como un Box; cada
+ *   barra de colgado (HangingRod) como un Cylinder.
+ * - Las posiciones y el sistema de coordenadas son los
+ *   del motor (origen en esquina inferior-frontal-
+ *   izquierda), convertidos a metros en esta capa.
+ * - Geometrías y materiales de Three.js se reutilizan
+ *   (BoxGeometry por tamaño único, CylinderGeometry
+ *   por eje+longitud+diámetro, MeshStandardMaterial
+ *   por materialId) y se liberan (dispose) al cambiar
+ *   o desmontar.
+ * - No se inventa geometría: solo existen los paneles
+ *   y barras que genera el motor.
  */
+
+/**
+ * CylinderGeometry se alinea al eje Y por defecto;
+ * esta función devuelve la rotación que orienta la
+ * barra según su eje.
+ */
+function rotationForAxis(axis: RodAxis): [number, number, number] {
+  switch (axis) {
+    case 'x':
+      return [0, 0, -Math.PI / 2];
+    case 'y':
+      return [0, 0, 0];
+    case 'z':
+      return [Math.PI / 2, 0, 0];
+  }
+}
+
+function cylinderKey(
+  axis: RodAxis,
+  lengthM: number,
+  diameterM: number,
+): string {
+  return `${axis}|${lengthM}|${diameterM}`;
+}
+
 export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -24,6 +61,7 @@ export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
   const depthM = mmToM(depthMm);
 
   const panels = useMemo(() => toRenderablePanels(geometry.panels), [geometry]);
+  const rods = useMemo(() => toRenderableRods(geometry.rods), [geometry]);
 
   // Geometrías compartidas: un BoxGeometry por tamaño único de panel.
   const boxGeometries = useMemo(() => {
@@ -40,7 +78,29 @@ export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
     return cache;
   }, [panels]);
 
-  // Materiales compartidos: un MeshStandardMaterial por materialId.
+  // Geometrías compartidas: un CylinderGeometry por
+  // combinación única de eje, longitud y diámetro.
+  const cylinderGeometries = useMemo(() => {
+    const cache = new Map<string, CylinderGeometry>();
+    for (const rod of rods) {
+      const key = cylinderKey(rod.axis, rod.lengthM, rod.diameterM);
+      if (!cache.has(key)) {
+        cache.set(
+          key,
+          new CylinderGeometry(
+            rod.diameterM / 2,
+            rod.diameterM / 2,
+            rod.lengthM,
+            24,
+          ),
+        );
+      }
+    }
+    return cache;
+  }, [rods]);
+
+  // Materiales compartidos: un MeshStandardMaterial por
+  // materialId (tableros y, si existe, barra metálica).
   const threeMaterials = useMemo(() => {
     const cache = new Map<string, MeshStandardMaterial>();
     for (const material of [materials.structure, materials.interior]) {
@@ -54,6 +114,17 @@ export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
         }),
       );
     }
+    if (materials.rod) {
+      const renderRodMaterial = toRenderRodMaterial(materials.rod);
+      cache.set(
+        materials.rod.id,
+        new MeshStandardMaterial({
+          color: renderRodMaterial.color,
+          roughness: renderRodMaterial.roughness,
+          metalness: renderRodMaterial.metalness,
+        }),
+      );
+    }
     return cache;
   }, [materials]);
 
@@ -63,11 +134,14 @@ export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
       for (const boxGeometry of boxGeometries.values()) {
         boxGeometry.dispose();
       }
+      for (const cylinderGeometry of cylinderGeometries.values()) {
+        cylinderGeometry.dispose();
+      }
       for (const material of threeMaterials.values()) {
         material.dispose();
       }
     };
-  }, [boxGeometries, threeMaterials]);
+  }, [boxGeometries, cylinderGeometries, threeMaterials]);
 
   const gridSize = Math.max(widthM, depthM) * 1.6;
 
@@ -92,6 +166,26 @@ export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
               geometry={boxGeometry}
               material={material}
               position={panel.centerM}
+              castShadow
+              receiveShadow
+            />
+          );
+        })}
+        {rods.map((rod) => {
+          const cylinderGeometry = cylinderGeometries.get(
+            cylinderKey(rod.axis, rod.lengthM, rod.diameterM),
+          );
+          const material = threeMaterials.get(rod.materialId);
+          if (!cylinderGeometry || !material) {
+            return null;
+          }
+          return (
+            <mesh
+              key={rod.id}
+              geometry={cylinderGeometry}
+              material={material}
+              position={rod.centerM}
+              rotation={rotationForAxis(rod.axis)}
               castShadow
               receiveShadow
             />

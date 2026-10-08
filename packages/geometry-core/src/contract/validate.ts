@@ -22,6 +22,7 @@ import type { WardrobeDimensions } from '../types/wardrobe.js';
 import { WARDROBE_LIMITS } from './limits.js';
 import {
   WARDROBE_CONFIG_SCHEMA_VERSION,
+  type HangingRodSpec,
   type WardrobeConfig,
 } from './wardrobe-config.js';
 
@@ -222,6 +223,72 @@ function validateMaterialSpec(
 const BOARD_THICKNESSES_JOIN = '15 y 18 mm';
 
 /**
+ * Valida la configuración opcional de barras de colgado.
+ *
+ * `undefined` (campo ausente) es válido: el motor usa valores
+ * por defecto provisionales. Devuelve `undefined` para ausente,
+ * `null` si hubo errores.
+ */
+function validateHangingRod(
+  raw: unknown,
+  errors: ConfigIssue[],
+): HangingRodSpec | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!isRecord(raw)) {
+    errors.push({
+      code: 'ERR_HANGING_ROD_DIAMETER',
+      field: 'hangingRod',
+      message: 'La configuración de barra debe ser un objeto.',
+    });
+    return null;
+  }
+
+  const spec: HangingRodSpec = {};
+  let valid = true;
+
+  if (raw.diameterMm !== undefined) {
+    const { min, max } = WARDROBE_LIMITS.hangingRod.diameterMm;
+    const value = raw.diameterMm;
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < min ||
+      value > max
+    ) {
+      errors.push({
+        code: 'ERR_HANGING_ROD_DIAMETER',
+        field: 'hangingRod.diameterMm',
+        message: `Debe ser un entero entre ${min} y ${max} mm (provisional).`,
+      });
+      valid = false;
+    } else {
+      spec.diameterMm = value;
+    }
+  }
+
+  for (const key of ['name', 'finish'] as const) {
+    const value = raw[key];
+    if (value === undefined) {
+      continue;
+    }
+    if (!isNonEmptyString(value)) {
+      errors.push({
+        code: 'ERR_INVALID_MATERIAL',
+        field: `hangingRod.${key}`,
+        message: 'No puede estar vacío.',
+      });
+      valid = false;
+    } else {
+      spec[key] = value;
+    }
+  }
+
+  return valid ? spec : null;
+}
+
+/**
  * Valida una configuración de clóset proveniente de una fuente no confiable.
  * Devuelve todos los errores encontrados (no solo el primero).
  */
@@ -267,6 +334,9 @@ export function validateWardrobeConfig(input: unknown): ValidationResult {
     : null;
 
   const modules = validateModules(input.modules, errors);
+  // `null` solo ocurre cuando hubo errores (ya retornamos);
+  // `undefined` indica ausencia del campo.
+  const hangingRod = validateHangingRod(input.hangingRod, errors) ?? undefined;
 
   if (errors.length > 0) {
     return { ok: false, errors };
@@ -281,6 +351,7 @@ export function validateWardrobeConfig(input: unknown): ValidationResult {
       structure: structure as MaterialSpec,
       interior: interior as MaterialSpec,
     },
+    ...(hangingRod !== undefined ? { hangingRod } : {}),
   };
   return { ok: true, config };
 }

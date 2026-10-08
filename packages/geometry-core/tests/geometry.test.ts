@@ -108,7 +108,7 @@ describe('calculateGeometry', () => {
     }
   });
 
-  it('módulos de colgado y cajones no generan paneles interiores en Fase 0', () => {
+  it('módulos de colgado y cajones no generan paneles interiores (la barra es un componente cilíndrico, no un panel)', () => {
     const module2Panels = result.panels.filter(
       (panel) => panel.moduleId === 'module-2',
     );
@@ -117,6 +117,9 @@ describe('calculateGeometry', () => {
     );
     expect(module2Panels).toHaveLength(0);
     expect(module3Panels).toHaveLength(0);
+    // Fase 2A: el módulo de colgado genera barra en rods.
+    const rod = result.rods.find((r) => r.moduleId === 'module-2');
+    expect(rod).toBeDefined();
   });
 
   it('todo panel referencia un material existente', () => {

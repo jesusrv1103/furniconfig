@@ -1,6 +1,9 @@
 import type { ChangeEvent } from 'react';
 import {
   BOARD_THICKNESSES_MM,
+  DEFAULT_ROD_DIAMETER_MM,
+  DEFAULT_ROD_FINISH,
+  DEFAULT_ROD_NAME,
   WARDROBE_CONFIG_SCHEMA_VERSION,
   WARDROBE_LIMITS,
   type ModuleKind,
@@ -9,7 +12,10 @@ import {
 import {
   FINISH_OPTIONS,
   MODULE_KIND_LABELS,
+  clearHangingRod,
   setDimension,
+  setHangingRodDiameter,
+  setHangingRodMaterial,
   setMaterialFinish,
   setMaterialName,
   setMaterialThickness,
@@ -41,6 +47,16 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
   const { widthMm, heightMm, depthMm } = dimensions;
   const dimensionLimits = WARDROBE_LIMITS;
+  const hasHangingModules = modules.some(
+    (module) => module.kind === 'hanging',
+  );
+  const hangingRodDiameterMm =
+    config.hangingRod?.diameterMm ?? DEFAULT_ROD_DIAMETER_MM;
+  const hangingRodName =
+    config.hangingRod?.name ?? DEFAULT_ROD_NAME;
+  const hangingRodFinish =
+    config.hangingRod?.finish ?? DEFAULT_ROD_FINISH;
+  const rodDiameterLimits = WARDROBE_LIMITS.hangingRod.diameterMm;
 
   const handleDimension = (key: DimensionKey) => {
     return (event: ChangeEvent<HTMLInputElement>) => {
@@ -168,6 +184,85 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
           </fieldset>
         ))}
       </fieldset>
+
+      {hasHangingModules && (
+        <fieldset>
+          <legend>Barra de colgado</legend>
+          <p className="provisional-note">
+            Reglas provisionales: diámetro {rodDiameterLimits.min}–
+            {rodDiameterLimits.max} mm, montaje a{' '}
+            {WARDROBE_LIMITS.hangingRod.mountDistanceMm} mm del
+            superior. Validar con carpintería.
+          </p>
+          <label className="field">
+            <span>Diámetro</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              step={1}
+              min={rodDiameterLimits.min}
+              max={rodDiameterLimits.max}
+              value={hangingRodDiameterMm}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setHangingRodDiameter(
+                    current,
+                    Number(event.target.value),
+                  ),
+                )
+              }
+            />
+            <small>
+              Provisional: {rodDiameterLimits.min}–
+              {rodDiameterLimits.max} mm
+            </small>
+          </label>
+          <label className="field">
+            <span>Material</span>
+            <input
+              type="text"
+              value={hangingRodName}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setHangingRodMaterial(
+                    current,
+                    event.target.value,
+                    hangingRodFinish,
+                  ),
+                )
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Acabado</span>
+            <select
+              value={hangingRodFinish}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setHangingRodMaterial(
+                    current,
+                    hangingRodName,
+                    event.target.value,
+                  ),
+                )
+              }
+            >
+              {FINISH_OPTIONS.map((finish) => (
+                <option key={finish} value={finish}>
+                  {finish}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => onUpdate(clearHangingRod)}
+          >
+            Usar valores por defecto del motor
+          </button>
+        </fieldset>
+      )}
 
       <fieldset>
         <legend>Materiales y acabados</legend>

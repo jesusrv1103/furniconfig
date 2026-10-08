@@ -5,6 +5,7 @@
 
 import type { Material } from './material.js';
 import type { Module } from './module.js';
+import type { RodMaterial } from './rod.js';
 
 export interface WardrobeDimensions {
   widthMm: number;
@@ -17,9 +18,13 @@ export interface WardrobeMaterials {
   structure: Material;
   /** Entrepaños. */
   interior: Material;
+  /** Barras de colgado; presente solo con módulos "hanging". */
+  rod?: RodMaterial;
 }
 
 export interface Wardrobe extends WardrobeDimensions {
   modules: Module[];
   materials: WardrobeMaterials;
+  /** Diámetro resuelto de las barras; presente con módulos "hanging". */
+  hangingRodDiameterMm?: number;
 }
