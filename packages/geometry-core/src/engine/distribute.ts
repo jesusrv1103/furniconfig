@@ -125,3 +125,48 @@ export function distributeModules(
     moduleWidthsMm,
   };
 }
+
+/**
+ * Distribución determinista de bandas de altura para
+ * cajones (Fase 2B).
+ *
+ * Reparte el alto interior útil en `drawerCount`
+ * bandas enteras; el residuo de la división se
+ * asigna de abajo hacia arriba, 1 mm por banda
+ * (la banda inferior lleva el primero). Misma
+ * entrada → misma salida, siempre.
+ *
+ * Función pura: no muta entradas, no tiene efectos.
+ */
+export function distributeDrawerBands(
+  innerHeightMm: number,
+  drawerCount: number,
+): readonly number[] {
+  if (!Number.isInteger(innerHeightMm) || innerHeightMm <= 0) {
+    throw new GeometryError(
+      'ERR_INVALID_DIMENSION',
+      'El alto interior debe ser un entero positivo (mm).',
+      { innerHeightMm },
+    );
+  }
+
+  const { min, max } = WARDROBE_LIMITS.drawerCount;
+  if (
+    !Number.isInteger(drawerCount) ||
+    drawerCount < min ||
+    drawerCount > max
+  ) {
+    throw new GeometryError(
+      'ERR_INVALID_DRAWER_COUNT',
+      `El número de cajones debe estar entre ${min} y ${max}.`,
+      { drawerCount },
+    );
+  }
+
+  const baseBandMm = Math.floor(innerHeightMm / drawerCount);
+  const remainderMm = innerHeightMm - baseBandMm * drawerCount;
+  return Array.from(
+    { length: drawerCount },
+    (_, index) => (index < remainderMm ? baseBandMm + 1 : baseBandMm),
+  );
+}

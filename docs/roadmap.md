@@ -73,14 +73,50 @@
       de la barra, estado de error controlado).
 - [x] Commit de referencia de Fases 0+1 (`86d9692`).
 
-## Fase 2B — Segundas familias de mueble
+## Fase 2B — Cajoneras paramétricas ✅
+
+- [x] Cajoneras en el motor: `DrawerAssembly` (frente,
+      2 laterales, trasera, fondo) como paneles con
+      roles `drawer-*` + ensamblaje identificable
+      (`partIds`).
+- [x] Reglas PROVISIONALES: 1–8 cajones (default 3),
+      bandas de altura con residuo de abajo hacia
+      arriba, holguras de 3 mm (vertical y lateral),
+      cajón a toda la profundidad interior, material
+      "Blanco / 15 mm / mate".
+- [x] Contrato v1 backward compatible: `drawers`
+      opcional (ausencia = default 3; las configuraciones
+      Fase 0–2A siguen validando) y `materials.drawer`
+      opcional.
+- [x] `GeometryResult` extendido de forma aditiva
+      (`drawers`, `totals.drawerCount`,
+      `totals.drawerPartCount`).
+- [x] Validaciones: `ERR_INVALID_DRAWER_COUNT` y
+      `ERR_DRAWER_DIMENSIONS` (compatibilidad física
+      de la caja).
+- [x] Visualizador: cajones cerrados (Boxes del
+      pipeline de paneles), control de cantidad por
+      módulo, tarjeta de material de cajón, resumen
+      de ensamblajes y piezas.
+- [x] Pruebas unitarias: distribución de alturas,
+      anchos útiles, profundidades, espesores,
+      holguras, dimensiones imposibles, determinismo,
+      no mutación, IDs únicos, compatibilidad,
+      intersecciones, integridad de materiales,
+      unidades, renderizado, cambios rápidos.
+- [x] Pruebas visuales Playwright + Chromium: cajones
+      por defecto, cambio 3→5 con recalculo de la
+      escena, escena estable (cajones cerrados, con
+      umbral de antialiasing), 30/30 verificaciones.
+
+## Fase 2C — Segundas familias de mueble
 
 - Muebles para TV, armarios y cocinas.
 - Refactor: motor genérico + "perfiles" por familia (reglas propias de
   paneles, restricciones y validadores).
 - Guardar el contrato por familia con su propio `schemaVersion`.
-- Cajoneras (pendiente desde Fase 2A: cajas de cajón,
-  guías, altura mínima — requiere validar con carpintería).
+- Cajoneras: **completado en Fase 2B** (quedan las
+  guías comerciales y la validación con carpintería).
 
 ## Fase 3 — Backend y persistencia
 

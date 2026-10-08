@@ -9,12 +9,15 @@
  */
 
 import {
+  DEFAULT_DRAWER_COUNT,
+  DEFAULT_DRAWER_MATERIAL_SPEC,
   DEFAULT_ROD_DIAMETER_MM,
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
   WARDROBE_CONFIG_SCHEMA_VERSION,
   WARDROBE_LIMITS,
   type BoardThicknessMm,
+  type MaterialSpec,
   type ModuleKind,
   type WardrobeConfig,
 } from '@furniconfig/geometry-core';
@@ -26,6 +29,10 @@ export {
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
 };
+
+// Valor por defecto provisional para cajones
+// (el motor lo aplica cuando no hay cantidad explícita).
+export { DEFAULT_DRAWER_COUNT };
 
 /** Cantidad de entrepaños al crear un módulo de tipo "shelves". */
 export const DEFAULT_SHELVES = 3;
@@ -53,7 +60,25 @@ export const MODULE_KIND_LABELS: Readonly<Record<ModuleKind, string>> = {
 export const FINISH_OPTIONS = ['mate', 'brillo', 'texturado'] as const;
 
 export type DimensionKey = 'widthMm' | 'heightMm' | 'depthMm';
-export type MaterialRole = 'structure' | 'interior';
+export type MaterialRole = 'structure' | 'interior' | 'drawer';
+
+/**
+ * Especificación de material base para un rol.
+ * El rol "drawer" es opcional en el contrato: parte
+ * del default provisional del motor.
+ */
+function materialSpec(
+  config: WardrobeConfig,
+  role: MaterialRole,
+): MaterialSpec {
+  if (role === 'drawer') {
+    return {
+      ...DEFAULT_DRAWER_MATERIAL_SPEC,
+      ...config.materials.drawer,
+    };
+  }
+  return config.materials[role];
+}
 
 /** Establece una dimensión externa (mm). */
 export function setDimension(
@@ -117,6 +142,25 @@ export function setModuleShelves(
   return { ...config, modules };
 }
 
+/**
+ * Establece la cantidad de cajones de un módulo
+ * "drawers" (rango provisional 1–8 del motor).
+ */
+export function setModuleDrawers(
+  config: WardrobeConfig,
+  index: number,
+  drawers: number,
+): WardrobeConfig {
+  const { min, max } = WARDROBE_LIMITS.drawerCount;
+  const clamped = Math.min(Math.max(Math.round(drawers), min), max);
+  const modules = config.modules.map((module, current) =>
+    current === index && module.kind === 'drawers'
+      ? { ...module, drawers: clamped }
+      : module,
+  );
+  return { ...config, modules };
+}
+
 /** Establece el espesor (15 | 18 mm) de un rol de material. */
 export function setMaterialThickness(
   config: WardrobeConfig,
@@ -124,7 +168,10 @@ export function setMaterialThickness(
   thicknessMm: BoardThicknessMm,
 ): WardrobeConfig {
   const materials = { ...config.materials };
-  materials[role] = { ...materials[role], thicknessMm };
+  materials[role] = {
+    ...materialSpec(config, role),
+    thicknessMm,
+  };
   return { ...config, materials };
 }
 
@@ -135,7 +182,7 @@ export function setMaterialName(
   name: string,
 ): WardrobeConfig {
   const materials = { ...config.materials };
-  materials[role] = { ...materials[role], name };
+  materials[role] = { ...materialSpec(config, role), name };
   return { ...config, materials };
 }
 
@@ -146,7 +193,7 @@ export function setMaterialFinish(
   finish: string,
 ): WardrobeConfig {
   const materials = { ...config.materials };
-  materials[role] = { ...materials[role], finish };
+  materials[role] = { ...materialSpec(config, role), finish };
   return { ...config, materials };
 }
 

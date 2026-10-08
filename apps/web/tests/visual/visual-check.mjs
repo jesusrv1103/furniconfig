@@ -1,21 +1,27 @@
 /**
- * Verificación visual real de Fase 2A con Playwright + Chromium.
+ * Verificación visual real de Fases 2A y 2B con
+ * Playwright + Chromium.
  *
- * Lanza el dev server de Vite, abre la aplicación en un
- * Chromium real y verifica —con capturas de pantalla y
+ * Lanza el dev server de Vite, abre la aplicación en
+ * un Chromium real y verifica —con capturas de pantalla y
  * lectura del DOM— que:
  *
  * 1. El visualizador 3D monta (canvas de R3F presente).
  * 2. El resumen refleja la configuración por defecto,
- *    incluida la barra de colgado.
+ *    incluidas la barra de colgado y la cajonera.
  * 3. Cambiar el ancho actualiza el resumen Y la escena 3D
  *    (los screenshots difieren).
  * 4. Cambiar el número de módulos actualiza la escena
  *    (más divisiones).
+ * 4b. Cambiar la cantidad de cajones actualiza el resumen
+ *     y la escena 3D.
  * 5. La rotación de órbita (drag) y el zoom (rueda)
  *    cambian la vista.
  * 6. La barra aparece/desaparece según el tipo de módulo.
- * 7. Una dimensión inválida muestra el estado de error
+ * 7. Los cajones permanecen cerrados: escena estable
+ *    (verificado en el estado por defecto, con umbral
+ *    de antialiasing).
+ * 8. Una dimensión inválida muestra el estado de error
  *    controlado (no un crash).
  *
  * Uso: node tests/visual/visual-check.mjs
@@ -29,7 +35,7 @@ import { join, dirname } from 'node:path';
 import { chromium } from 'playwright';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const outDir = '/tmp/opencode/fase2a';
+const outDir = '/tmp/opencode/fase2b';
 const port = 4180;
 const baseUrl = `http://localhost:${port}`;
 
@@ -58,6 +64,61 @@ function saveShot(name, buffer) {
 
 function changed(a, b) {
   return a && b && !a.equals(b);
+}
+
+/**
+ * Fracción de píxeles que difieren entre dos
+ * capturas, con umbral de tolerancia por canal
+ * (ruido de antialiasing). Compara vía canvas
+ * del navegador.
+ */
+async function pixelDiffRatio(page, pngA, pngB, tolerance = 8) {
+  return page.evaluate(
+    async ({ a, b, tolerance }) => {
+      const load = (dataUrl) =>
+        new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = dataUrl;
+        });
+      const [imageA, imageB] = await Promise.all([
+        load(`data:image/png;base64,${a}`),
+        load(`data:image/png;base64,${b}`),
+      ]);
+      const width = Math.min(imageA.width, imageB.width);
+      const height = Math.min(imageA.height, imageB.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', {
+        willReadFrequently: true,
+      });
+      context.drawImage(imageA, 0, 0);
+      const dataA = context.getImageData(0, 0, width, height)
+        .data;
+      context.drawImage(imageB, 0, 0);
+      const dataB = context.getImageData(0, 0, width, height)
+        .data;
+      let differing = 0;
+      for (let i = 0; i < dataA.length; i += 4) {
+        const channelDiff = Math.max(
+          Math.abs(dataA[i] - dataB[i]),
+          Math.abs(dataA[i + 1] - dataB[i + 1]),
+          Math.abs(dataA[i + 2] - dataB[i + 2]),
+        );
+        if (channelDiff > tolerance) {
+          differing++;
+        }
+      }
+      return differing / (dataA.length / 4);
+    },
+    {
+      a: pngA.toString('base64'),
+      b: pngB.toString('base64'),
+      tolerance,
+    },
+  );
 }
 
 async function launchBrowser() {
@@ -135,6 +196,39 @@ try {
     'resumen muestra longitud total de barra',
     text.includes('Longitud total de barras'),
   );
+  check(
+    'resumen muestra la cajonera por defecto (3 cajones)',
+    text.includes('Cajones (3)') &&
+      text.includes('Piezas de cajón') &&
+      text.includes('Frentes de cajón: 3'),
+  );
+  check(
+    'resumen muestra el material de cajón (Blanco 15 mate)',
+    text.includes('Cajones: Blanco') && text.includes('mate'),
+  );
+  check(
+    'la interfaz expone la tarjeta de material de cajón',
+    (await page.locator('.material-card').count()) === 3,
+  );
+
+  // 1b. Los cajones permanecen cerrados en esta fase:
+  // la escena es estable (sin animaciones de apertura).
+  // Se comparan píxeles con umbral de antialiasing.
+  await page.waitForTimeout(1500);
+  const stableA = await page.screenshot();
+  await page.waitForTimeout(600);
+  const stableB = await page.screenshot();
+  const differingRatio = await pixelDiffRatio(
+    page,
+    stableA,
+    stableB,
+  );
+  check(
+    'la escena es estable (cajones cerrados, sin animación)',
+    differingRatio < 0.001,
+    `${(differingRatio * 100).toFixed(4)}% de píxeles distintos`,
+  );
+
   saveShot('01-inicial', await page.screenshot());
 
   // 2. Cambiar ancho 2400 → 2800
@@ -164,6 +258,33 @@ try {
     'la escena 3D cambió con los módulos',
     changed(shots['02-ancho-2800'], shots['03-cuatro-modulos']),
   );
+
+  // 3b. Cambiar la cantidad de cajones del módulo 3:
+  // 3 → 5 (con 4 módulos, el módulo 3 es el único
+  // "drawers" de la configuración por defecto)
+  const drawerModuleCard = page.locator('.module-card').nth(2);
+  check(
+    'el módulo de cajones expone el control de cantidad',
+    (await drawerModuleCard.locator('input').count()) === 1,
+  );
+  const drawerCountInput = drawerModuleCard.locator('input');
+  await drawerCountInput.fill('5');
+  await page.waitForTimeout(200);
+  text = await summary.innerText();
+  check('el resumen muestra 5 cajones', text.includes('Cajones (5)'));
+  check(
+    '5 cajones generan 10 laterales de cajón',
+    text.includes('Laterales de cajón: 10'),
+  );
+  saveShot('03b-cinco-cajones', await page.screenshot());
+  check(
+    'la escena 3D cambió con los cajones (píxeles distintos)',
+    changed(shots['03-cuatro-modulos'], shots['03b-cinco-cajones']),
+  );
+  await drawerCountInput.fill('3');
+  await page.waitForTimeout(200);
+  text = await summary.innerText();
+  check('vuelven a 3 cajones', text.includes('Cajones (3)'));
 
   // 4. Rotación de órbita (drag sobre el canvas)
   const canvas = page.locator('canvas');

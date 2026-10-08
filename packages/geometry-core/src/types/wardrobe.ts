@@ -20,6 +20,9 @@ export interface WardrobeMaterials {
   interior: Material;
   /** Barras de colgado; presente solo con módulos "hanging". */
   rod?: RodMaterial;
+  /** Piezas de cajón (frentes, laterales, traseras, fondos);
+   * presente solo con módulos "drawers". */
+  drawer?: Material;
 }
 
 export interface Wardrobe extends WardrobeDimensions {

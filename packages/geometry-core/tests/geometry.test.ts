@@ -108,7 +108,7 @@ describe('calculateGeometry', () => {
     }
   });
 
-  it('módulos de colgado y cajones no generan paneles interiores (la barra es un componente cilíndrico, no un panel)', () => {
+  it('el módulo colgado no genera paneles (la barra es un componente cilíndrico); el módulo cajones genera solo paneles de cajón', () => {
     const module2Panels = result.panels.filter(
       (panel) => panel.moduleId === 'module-2',
     );
@@ -116,17 +116,32 @@ describe('calculateGeometry', () => {
       (panel) => panel.moduleId === 'module-3',
     );
     expect(module2Panels).toHaveLength(0);
-    expect(module3Panels).toHaveLength(0);
+    // Fase 2B: el módulo de cajones genera 3 cajones ×
+    // 5 piezas (frente, 2 laterales, trasera, fondo).
+    expect(module3Panels).toHaveLength(15);
+    for (const panel of module3Panels) {
+      expect(panel.role.startsWith('drawer-')).toBe(true);
+    }
     // Fase 2A: el módulo de colgado genera barra en rods.
     const rod = result.rods.find((r) => r.moduleId === 'module-2');
     expect(rod).toBeDefined();
+    // Fase 2B: el módulo de cajones genera ensamblajes.
+    expect(
+      result.drawers.filter((drawer) => drawer.moduleId === 'module-3'),
+    ).toHaveLength(3);
   });
 
   it('todo panel referencia un material existente', () => {
-    const materialIds = new Set([
-      result.wardrobe.materials.structure.id,
-      result.wardrobe.materials.interior.id,
-    ]);
+    const materialIds = new Set(
+      [
+        result.wardrobe.materials.structure,
+        result.wardrobe.materials.interior,
+        result.wardrobe.materials.rod,
+        result.wardrobe.materials.drawer,
+      ]
+        .filter((material) => material !== undefined)
+        .map((material) => material.id),
+    );
     for (const panel of result.panels) {
       expect(materialIds.has(panel.materialId)).toBe(true);
     }
@@ -148,15 +163,28 @@ describe('calculateGeometry', () => {
   });
 
   it('reporta totales coherentes (conteo y volumen de paneles)', () => {
-    // 2 laterales + superior + inferior + 2 divisiones + 3 entrepaños = 9
-    expect(result.totals.panelCount).toBe(9);
+    // 2 laterales + superior + inferior + 2 divisiones
+    // + 3 entrepaños = 9 paneles estructurales,
+    // + 15 piezas de cajón (3 cajones × 5 piezas) = 24.
+    expect(result.totals.panelCount).toBe(24);
+    expect(result.totals.drawerCount).toBe(3);
+    expect(result.totals.drawerPartCount).toBe(15);
     const expectedVolume =
       2 * (18 * 2200 * 600) + // laterales
       2 * (2964 * 18 * 600) + // superior e inferior
       2 * (18 * 2164 * 600) + // divisiones
-      3 * (976 * 15 * 600); // entrepaños
+      3 * (976 * 15 * 600) + // entrepaños
+      // Cajones del módulo 3 (ancho interior 976,
+      // espesor 15, holguras 3, profundidad interior 564):
+      // frentes y traseras (970 × altura × 15)
+      2 * (970 * 719 * 15 + 2 * 970 * 718 * 15) +
+      // fondos (940 × 15 × 534)
+      3 * (940 * 15 * 534) +
+      // laterales (15 × altura de caja × 534)
+      2 * (15 * 704 * 534) +
+      4 * (15 * 703 * 534);
     expect(result.totals.panelVolumeMm3).toBe(expectedVolume);
-    expect(result.totals.panelVolumeMm3).toBe(184_636_800);
+    expect(result.totals.panelVolumeMm3).toBe(303_737_700);
   });
 
   it('es determinista: dos ejecuciones producen resultados idénticos', () => {
@@ -230,7 +258,12 @@ describe('calculateGeometry — límites y entradas inválidas', () => {
     expect(singleResult.wardrobe.modules).toHaveLength(1);
     expect(singleResult.wardrobe.modules[0]?.widthMm).toBe(2000 - 30);
     expect(singleResult.wardrobe.modules[0]?.heightMm).toBe(2400 - 30);
-    expect(singleResult.totals.panelCount).toBe(4); // laterales, superior, inferior
+    // 4 paneles estructurales + 15 piezas de cajón
+    // (3 cajones × 5 piezas: frente, 2 laterales,
+    // trasera, fondo).
+    expect(singleResult.totals.panelCount).toBe(19);
+    expect(singleResult.totals.drawerCount).toBe(3);
+    expect(singleResult.totals.drawerPartCount).toBe(15);
     expect(
       singleResult.panels.filter((p) => p.role === 'divider'),
     ).toHaveLength(0);

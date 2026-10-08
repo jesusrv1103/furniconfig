@@ -10,6 +10,10 @@ const ROLE_LABELS: Readonly<Record<PanelRole, string>> = {
   bottom: 'Inferior',
   divider: 'Divisiones',
   shelf: 'Entrepaños',
+  'drawer-front': 'Frentes de cajón',
+  'drawer-side': 'Laterales de cajón',
+  'drawer-back': 'Traseras de cajón',
+  'drawer-bottom': 'Fondos de cajón',
 };
 
 const ROLE_ORDER: readonly PanelRole[] = [
@@ -18,6 +22,10 @@ const ROLE_ORDER: readonly PanelRole[] = [
   'bottom',
   'divider',
   'shelf',
+  'drawer-front',
+  'drawer-side',
+  'drawer-back',
+  'drawer-bottom',
 ];
 
 export function SummaryPanel({ geometry }: { geometry: GeometryResult }) {
@@ -76,6 +84,9 @@ export function SummaryPanel({ geometry }: { geometry: GeometryResult }) {
             {module.kind === 'shelves' && module.shelves !== undefined
               ? ` · ${module.shelves} entrepaños`
               : ''}
+            {module.kind === 'drawers' && module.drawers !== undefined
+              ? ` · ${module.drawers} cajones`
+              : ''}
             <br />
             {formatMm(module.widthMm)} × {formatMm(module.heightMm)} ×{' '}
             {formatMm(module.depthMm)}
@@ -114,6 +125,34 @@ export function SummaryPanel({ geometry }: { geometry: GeometryResult }) {
               <li>
                 Barra: {wardrobe.materials.rod.name} ·{' '}
                 {wardrobe.materials.rod.finish}
+              </li>
+            </ul>
+          )}
+        </>
+      )}
+
+      {geometry.drawers.length > 0 && (
+        <>
+          <h3>Cajones ({geometry.totals.drawerCount})</h3>
+          <ul className="panel-list">
+            {geometry.drawers.map((drawer) => (
+              <li key={drawer.id}>
+                {drawer.id} · {drawer.partIds.length} piezas
+              </li>
+            ))}
+          </ul>
+          <dl className="summary-list">
+            <div>
+              <dt>Piezas de cajón</dt>
+              <dd>{geometry.totals.drawerPartCount}</dd>
+            </div>
+          </dl>
+          {wardrobe.materials.drawer && (
+            <ul className="material-list">
+              <li>
+                Cajones: {wardrobe.materials.drawer.name} ·{' '}
+                {wardrobe.materials.drawer.thicknessMm} mm ·{' '}
+                {wardrobe.materials.drawer.finish}
               </li>
             </ul>
           )}

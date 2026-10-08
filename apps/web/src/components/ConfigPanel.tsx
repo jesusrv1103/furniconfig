@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react';
 import {
   BOARD_THICKNESSES_MM,
+  DEFAULT_DRAWER_MATERIAL_SPEC,
   DEFAULT_ROD_DIAMETER_MM,
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
@@ -12,6 +13,7 @@ import {
 import {
   FINISH_OPTIONS,
   MODULE_KIND_LABELS,
+  DEFAULT_DRAWER_COUNT,
   clearHangingRod,
   setDimension,
   setHangingRodDiameter,
@@ -20,6 +22,7 @@ import {
   setMaterialName,
   setMaterialThickness,
   setModuleCount,
+  setModuleDrawers,
   setModuleKind,
   setModuleShelves,
   type DimensionKey,
@@ -29,6 +32,7 @@ import {
 const MATERIAL_ROLE_LABELS: Readonly<Record<MaterialRole, string>> = {
   structure: 'Estructura (laterales, superior, inferior, divisiones)',
   interior: 'Interior (entrepaños)',
+  drawer: 'Cajones (frentes, laterales, traseras, fondos)',
 };
 
 const DIMENSION_LABELS: Readonly<Record<DimensionKey, string>> = {
@@ -76,6 +80,14 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
     return (event: ChangeEvent<HTMLInputElement>) => {
       onUpdate((current) =>
         setModuleShelves(current, index, Number(event.target.value)),
+      );
+    };
+  };
+
+  const handleModuleDrawers = (index: number) => {
+    return (event: ChangeEvent<HTMLInputElement>) => {
+      onUpdate((current) =>
+        setModuleDrawers(current, index, Number(event.target.value)),
       );
     };
   };
@@ -181,6 +193,24 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
                 />
               </label>
             )}
+            {module.kind === 'drawers' && (
+              <label className="field">
+                <span>Cajones</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  step={1}
+                  min={WARDROBE_LIMITS.drawerCount.min}
+                  max={WARDROBE_LIMITS.drawerCount.max}
+                  value={module.drawers ?? DEFAULT_DRAWER_COUNT}
+                  onChange={handleModuleDrawers(index)}
+                />
+                <small>
+                  Provisional: {WARDROBE_LIMITS.drawerCount.min}–
+                  {WARDROBE_LIMITS.drawerCount.max} cajones
+                </small>
+              </label>
+            )}
           </fieldset>
         ))}
       </fieldset>
@@ -267,46 +297,64 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
       <fieldset>
         <legend>Materiales y acabados</legend>
         {(
-          ['structure', 'interior'] as MaterialRole[]
-        ).map((role) => (
-          <fieldset key={role} className="material-card">
-            <legend>{MATERIAL_ROLE_LABELS[role]}</legend>
-            <label className="field">
-              <span>Nombre</span>
-              <input
-                type="text"
-                value={materials[role].name}
-                onChange={handleMaterial(role)('name')}
-              />
-            </label>
-            <label className="field">
-              <span>Espesor</span>
-              <select
-                value={materials[role].thicknessMm}
-                onChange={handleMaterial(role)('thicknessMm')}
-              >
-                {BOARD_THICKNESSES_MM.map((thickness) => (
-                  <option key={thickness} value={thickness}>
-                    {thickness} mm
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Acabado</span>
-              <select
-                value={materials[role].finish}
-                onChange={handleMaterial(role)('finish')}
-              >
-                {FINISH_OPTIONS.map((finish) => (
-                  <option key={finish} value={finish}>
-                    {finish}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </fieldset>
-        ))}
+          ['structure', 'interior', 'drawer'] as MaterialRole[]
+        ).map((role) => {
+          // El material de cajón es opcional en el
+          // contrato: la interfaz edita sobre el
+          // default provisional del motor.
+          const spec =
+            role === 'drawer'
+              ? {
+                  ...DEFAULT_DRAWER_MATERIAL_SPEC,
+                  ...materials.drawer,
+                }
+              : materials[role];
+          return (
+            <fieldset key={role} className="material-card">
+              <legend>{MATERIAL_ROLE_LABELS[role]}</legend>
+              <label className="field">
+                <span>Nombre</span>
+                <input
+                  type="text"
+                  value={spec.name}
+                  onChange={handleMaterial(role)('name')}
+                />
+              </label>
+              <label className="field">
+                <span>Espesor</span>
+                <select
+                  value={spec.thicknessMm}
+                  onChange={handleMaterial(role)('thicknessMm')}
+                >
+                  {BOARD_THICKNESSES_MM.map((thickness) => (
+                    <option key={thickness} value={thickness}>
+                      {thickness} mm
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Acabado</span>
+                <select
+                  value={spec.finish}
+                  onChange={handleMaterial(role)('finish')}
+                >
+                  {FINISH_OPTIONS.map((finish) => (
+                    <option key={finish} value={finish}>
+                      {finish}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {role === 'drawer' && (
+                <small className="provisional-note">
+                  Provisional: el motor aplica este
+                  material a los módulos de cajones.
+                </small>
+              )}
+            </fieldset>
+          );
+        })}
       </fieldset>
 
       <button type="button" className="reset-button" onClick={onReset}>

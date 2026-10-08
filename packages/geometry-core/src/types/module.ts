@@ -20,6 +20,12 @@ export interface ModuleConfig {
   kind: ModuleKind;
   /** Cantidad de entrepaños; obligatorio solo para kind = 'shelves'. */
   shelves?: number;
+  /**
+   * Cantidad de cajones; opcional para kind = 'drawers'
+   * (extensión backward compatible del contrato v1:
+   * la ausencia usa el default provisional del motor).
+   */
+  drawers?: number;
 }
 
 /** Módulo resuelto, con dimensiones internas útiles en milímetros. */
@@ -33,4 +39,10 @@ export interface Module {
   depthMm: number;
   /** Presente solo en módulos de tipo 'shelves'. */
   shelves?: number;
+  /**
+   * Presente solo en módulos de tipo 'drawers'
+   * (siempre resuelto: usa el default si la configuración
+   * no lo declaró).
+   */
+  drawers?: number;
 }

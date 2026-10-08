@@ -8,16 +8,21 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 0 — Fundación y motor paramétrico** (en curso).
-Solo existe el motor geométrico puro (`packages/geometry-core`).
-No hay frontend, backend, autenticación, pagos ni cotizaciones todavía.
+**Fase 2B — Cajoneras paramétricas** (completada).
+Motor paramétrico puro (`packages/geometry-core`) con
+paneles estructurales, entrepaños, barras de colgado
+(Fase 2A) y cajoneras (Fase 2B: frentes, laterales,
+traseras y fondos como ensamblajes identificables);
+visualizador 3D (`apps/web`, React + Three.js).
+No hay backend, autenticación, pagos ni cotizaciones
+todavía (Fases 3–4).
 
 ## Stack
 
-- Frontend (futuro): React + TypeScript + Three.js / React Three Fiber
+- Frontend: React 19 + TypeScript + Vite + Three.js / React Three Fiber
 - Motor geométrico: TypeScript puro, independiente del frontend
 - Backend (futuro): Laravel · Base de datos (futura): MariaDB
-- Pruebas: Vitest (motor) · PHPUnit y Playwright (futuro)
+- Pruebas: Vitest (motor y web) · Playwright + Chromium (visuales)
 
 ## Comandos
 
@@ -34,6 +39,7 @@ npm run clean        # elimina build y node_modules
 npm run dev --workspace @furniconfig/web     # servidor de desarrollo (http://localhost:5173)
 npm run build --workspace @furniconfig/web   # build de producción
 npm run preview --workspace @furniconfig/web # previsualizar el build
+npm run test:visual --workspace @furniconfig/web # pruebas visuales reales (Playwright + Chromium)
 ```
 
 ## Convención de unidades y coordenadas
@@ -55,16 +61,16 @@ furniconfig/
 │   └── geometry-core/        # motor paramétrico puro (mm, sin Three.js)
 │       ├── src/
 │       │   ├── contract/     # contrato de configuración versionado + validación
-│       │   ├── engine/       # funciones puras: distribución, paneles, geometría
-│       │   └── types/        # Wardrobe, Module, Panel, Material, GeometryResult
+│       │   ├── engine/       # funciones puras: distribución, paneles, barras, cajones
+│       │   └── types/        # Wardrobe, Module, Panel, HangingRod, DrawerAssembly, GeometryResult
 │       └── tests/            # pruebas unitarias (Vitest)
 └── apps/
     └── web/                  # visualizador 3D (React + Vite + React Three Fiber)
         ├── src/
-        │   ├── components/   # ConfigPanel, SummaryPanel, WardrobeViewer…
-        │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config
+        │   ├── components/   # ConfigPanel, SummaryPanel, WardrobeScene…
+        │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config, derive
         │   └── App.tsx       # estado + validación derivada
-        ├── tests/            # unidades, transformación, config, render
+        ├── tests/            # unidades, transformación, config, render + visual/ (Playwright)
         └── index.html
 ```
 

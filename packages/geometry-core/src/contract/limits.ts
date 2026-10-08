@@ -13,6 +13,20 @@ export const WARDROBE_LIMITS = {
   moduleCount: { min: 1, max: 4 },
   moduleWidthMm: { min: 300 },
   shelfCount: { min: 1, max: 8 },
+  drawerCount: { min: 1, max: 8 },
+  drawerClearanceMm: {
+    /**
+     * Holgura PROVISIONAL (mm) que queda arriba de
+     * cada cajón (frente y caja) respecto al cajón
+     * o tablero superior siguiente.
+     */
+    vertical: 3,
+    /**
+     * Holgura PROVISIONAL (mm) a cada lado del frente
+     * del cajón, respecto de los laterales del módulo.
+     */
+    lateral: 3,
+  },
   hangingRod: {
     diameterMm: { min: 18, max: 60 },
     /**

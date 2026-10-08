@@ -46,8 +46,9 @@ en este proyecto).
    hasta que la fase correspondiente esté abierta (ver `docs/roadmap.md`).
 10. **Capa de presentación (`apps/web`)**: la conversión mm → m ocurre
     **exclusivamente** en `src/lib/units.ts` y la adaptación de paneles en
-    `src/lib/panels-to-mesh.ts`. La escena renderiza **solo** los paneles que
-    genera el motor (no inventar geometría de cajones ni barras de colgado).
+    `src/lib/panels-to-mesh.ts`. La escena renderiza **solo** los paneles
+    y componentes que genera el motor (tableros, barras de colgado,
+    cajoneras; no inventar geometría).
 11. **La web no muta la configuración**: todas las actualizaciones son funciones
     puras de `src/lib/config.ts` que devuelven una nueva `WardrobeConfig`.
 

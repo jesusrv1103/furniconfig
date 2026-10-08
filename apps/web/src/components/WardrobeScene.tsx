@@ -5,7 +5,11 @@ import {
   CylinderGeometry,
   MeshStandardMaterial,
 } from 'three';
-import type { GeometryResult, RodAxis } from '@furniconfig/geometry-core';
+import type {
+  GeometryResult,
+  Material,
+  RodAxis,
+} from '@furniconfig/geometry-core';
 import { toRenderMaterial, toRenderRodMaterial } from '../lib/materials.js';
 import {
   toRenderablePanels,
@@ -100,10 +104,18 @@ export function WardrobeScene({ geometry }: { geometry: GeometryResult }) {
   }, [rods]);
 
   // Materiales compartidos: un MeshStandardMaterial por
-  // materialId (tableros y, si existe, barra metálica).
+  // materialId (tableros estructurales, entrepaños y,
+  // si existe, barra metálica y piezas de cajón).
   const threeMaterials = useMemo(() => {
     const cache = new Map<string, MeshStandardMaterial>();
-    for (const material of [materials.structure, materials.interior]) {
+    const boardMaterials: Material[] = [
+      materials.structure,
+      materials.interior,
+    ];
+    if (materials.drawer) {
+      boardMaterials.push(materials.drawer);
+    }
+    for (const material of boardMaterials) {
       const renderMaterial = toRenderMaterial(material);
       cache.set(
         material.id,

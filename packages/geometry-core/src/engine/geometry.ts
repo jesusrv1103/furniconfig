@@ -11,6 +11,7 @@ import { validateWardrobeConfig } from '../contract/validate.js';
 import { GeometryError } from '../errors.js';
 import { buildPanels } from './panels.js';
 import { buildRods } from './rods.js';
+import { buildDrawers } from './drawers.js';
 import { distributeModules } from './distribute.js';
 import type { Material } from '../types/material.js';
 import type { Module } from '../types/module.js';
@@ -20,6 +21,10 @@ import {
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
 } from '../types/rod.js';
+import {
+  DEFAULT_DRAWER_COUNT,
+  DEFAULT_DRAWER_MATERIAL_SPEC,
+} from '../types/drawer.js';
 import type { GeometryResult } from '../types/geometry-result.js';
 import type { Wardrobe } from '../types/wardrobe.js';
 
@@ -84,6 +89,12 @@ export function resolveWardrobe(config: WardrobeConfig): Wardrobe {
       ...(moduleConfig.kind === 'shelves'
         ? { shelves: moduleConfig.shelves }
         : {}),
+      ...(moduleConfig.kind === 'drawers'
+        ? {
+            drawers:
+              moduleConfig.drawers ?? DEFAULT_DRAWER_COUNT,
+          }
+        : {}),
     } satisfies Module;
   });
 
@@ -104,12 +115,30 @@ export function resolveWardrobe(config: WardrobeConfig): Wardrobe {
     ? (rodSpec?.diameterMm ?? DEFAULT_ROD_DIAMETER_MM)
     : undefined;
 
+  // Cajones: material de piezas resuelto solo
+  // cuando hay módulos "drawers".
+  const hasDrawerModules = modules.some(
+    (module) => module.kind === 'drawers',
+  );
+  const drawerSpec = config.materials.drawer;
+  const drawerMaterial: Material | undefined = hasDrawerModules
+    ? {
+        id: 'material-drawer',
+        ...(drawerSpec ?? DEFAULT_DRAWER_MATERIAL_SPEC),
+      }
+    : undefined;
+
   return {
     widthMm: config.dimensions.widthMm,
     heightMm: config.dimensions.heightMm,
     depthMm: config.dimensions.depthMm,
     modules,
-    materials: { structure, interior, ...(rodMaterial ? { rod: rodMaterial } : {}) },
+    materials: {
+      structure,
+      interior,
+      ...(rodMaterial ? { rod: rodMaterial } : {}),
+      ...(drawerMaterial ? { drawer: drawerMaterial } : {}),
+    },
     ...(hangingRodDiameterMm !== undefined
       ? { hangingRodDiameterMm }
       : {}),
@@ -124,8 +153,13 @@ export function calculateGeometry(config: WardrobeConfig): GeometryResult {
   }
 
   const wardrobe = resolveWardrobe(validation.config);
-  const panels = buildPanels(wardrobe);
+  const structuralPanels = buildPanels(wardrobe);
   const rods = buildRods(wardrobe);
+  const { panels: drawerPanels, assemblies: drawers } =
+    buildDrawers(wardrobe);
+  // Los paneles de cajón son tableros reales:
+  // se incluyen en el conjunto de paneles.
+  const panels = [...structuralPanels, ...drawerPanels];
   const panelVolumeMm3 = panels.reduce(
     (sum, panel) =>
       sum + panel.sizeMm.x * panel.sizeMm.y * panel.sizeMm.z,
@@ -140,11 +174,14 @@ export function calculateGeometry(config: WardrobeConfig): GeometryResult {
     wardrobe,
     panels,
     rods,
+    drawers,
     totals: {
       panelCount: panels.length,
       panelVolumeMm3,
       rodCount: rods.length,
       rodLengthMm,
+      drawerCount: drawers.length,
+      drawerPartCount: drawerPanels.length,
     },
   };
 }

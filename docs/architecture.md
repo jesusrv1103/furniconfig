@@ -217,6 +217,45 @@ se prueba sin DOM ni React; cambios rápidos de configuración
 son verificables como secuencias puras; `App` solo maneja
 estado de React.
 
+### ADR-018 — Cajoneras como ensamblajes de paneles (Fase 2B)
+**Contexto:** los módulos "drawers" necesitaban cajas de
+cajón; en Fase 0–2A generaban solo espacio libre.
+**Decisión:** las piezas del cajón (frente, dos laterales,
+trasera, fondo) son `Panel` con roles nuevos
+(`drawer-front`, `drawer-side`, `drawer-back`,
+`drawer-bottom`) generados por `buildDrawers(wardrobe)` y
+**incluidos en `GeometryResult.panels`** — la presentación
+los renderiza como cualquier tablero (un `Box` por panel,
+sin inventar geometría). Un `DrawerAssembly`
+(`drawers: DrawerAssembly[]` en `GeometryResult`, aditivo)
+relaciona las cinco piezas de cada cajón por `partIds`
+(ensamblaje identificable). El contrato v1 se extiende de
+forma backward compatible: `modules[].drawers` es
+**opcional** (ausencia = default 3, así las configuraciones
+Fase 0–2A con `{ kind: 'drawers' }` siguen validando) y
+`materials.drawer?: MaterialSpec` es opcional (default
+provisional "Blanco / 15 mm / mate"). `GeometryTotals` gana
+`drawerCount` y `drawerPartCount`.
+**Reglas PROVISIONALES** (docs/product-rules.md §3): la
+altura interior se reparte en bandas con residuo de abajo
+hacia arriba (`distributeDrawerBands`); holgura vertical
+de 3 mm arriba de cada cajón y lateral de 3 mm por lado
+del frente; el cajón ocupa toda la profundidad interior
+(las guías comerciales restarán espacio cuando se
+implementen); el frente cubre toda la altura de la caja.
+Compatibilidad física verificada: la caja (ancho entre
+laterales, profundidad entre frente y trasera, altura de
+laterales sobre el fondo) debe caber; si no, el motor
+rechaza con `ERR_DRAWER_DIMENSIONS` (defensivo con los
+límites actuales). Cantidad fuera de rango 1–8:
+`ERR_INVALID_DRAWER_COUNT`.
+**Consecuencias:** los cajones permanecen cerrados (sin
+animaciones de apertura en esta fase); el volumen de
+tableros y el conteo de paneles incluyen las piezas de
+cajón; las pruebas de "drawers no genera paneles" de
+fases anteriores evolucionan a "genera solo paneles de
+cajón" (comportamiento nuevo planeado, no una regresión).
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa
@@ -232,14 +271,29 @@ estado de React.
    - Por módulo: entrepaños (solo `kind: 'shelves'`) distribuidos uniformemente
      en la altura interior; divisiones entre módulos consecutivos (espesor
      completo, posición x al final del módulo anterior).
+   `buildRods(wardrobe)`: una barra cilíndrica por módulo
+   "hanging" (componente no panelar, en `rods`).
+   `buildDrawers(wardrobe)`: por módulo "drawers", N cajones
+   (`distributeDrawerBands`: bandas de altura con residuo
+   de abajo hacia arriba); cada cajón = 5 paneles con
+   roles `drawer-*` (frente, 2 laterales, trasera, fondo)
+   incluidos en `panels`, relacionados por un
+   `DrawerAssembly` en `drawers`.
 4. `calculateGeometry` ensambla `GeometryResult` con totales (conteo y volumen
-   de paneles en mm³, útil para estimaciones futuras de material).
+   de paneles en mm³ —incluidas las piezas de cajón—,
+   útil para estimaciones futuras de material; barras y
+   cajones con sus propios conteos).
 
 ## 5. Invariantes geométricos (verificados con tests)
 
 - Suma de anchos horizontales (laterales + divisiones + módulos) = ancho total.
-- Los paneles nunca se solapan entre sí por construcción.
-- Todo panel referencia un material existente en `wardrobe.materials`.
+- Los paneles nunca se solapan entre sí por construcción
+  (las piezas de un cajón se tocan como máximo; los cajones
+  entre sí quedan separados por la holgura de 3 mm).
+- Todo panel referencia un material existente en `wardrobe.materials`
+  (incluidos `material-rod` y `material-drawer` cuando aplican).
+- Todo `partId` de un `DrawerAssembly` existe en `panels`, y
+  todo panel `drawer-*` pertenece a exactamente un ensamblaje.
 - Misma entrada → `GeometryResult` idéntico (determinismo, verificado por test).
 
 ## 6. Capa de presentación (`apps/web`, Fase 1)
@@ -270,7 +324,8 @@ de verdad de dimensiones y paneles.
 - Sin backend, base de datos, autenticación, pagos, cotizaciones
   (Fases 3–4).
 - Sin editor CAD ni características de carpintería pendientes de
-  validación (panel trasero, herrajes, cajas de cajón, barras de
-  colgado).
+  validación (panel trasero, herrajes, guías comerciales de
+  cajón).
+- Sin animaciones de apertura de cajones (permanecen cerrados).
 - Sin cotizaciones: el volumen de tableros se muestra como dato
   geométrico, no como precio.

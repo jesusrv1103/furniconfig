@@ -6,7 +6,16 @@
  * inferior-izquierda-frontal del mueble.
  */
 
-export type PanelRole = 'side' | 'top' | 'bottom' | 'divider' | 'shelf';
+export type PanelRole =
+  | 'side'
+  | 'top'
+  | 'bottom'
+  | 'divider'
+  | 'shelf'
+  | 'drawer-front'
+  | 'drawer-side'
+  | 'drawer-back'
+  | 'drawer-bottom';
 
 export interface Panel {
   id: string;

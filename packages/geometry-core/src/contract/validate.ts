@@ -139,8 +139,18 @@ function validateModules(
     }
     const kind = item.kind;
     if (kind === 'shelves') {
+      if (item.drawers !== undefined) {
+        errors.push({
+          code: 'ERR_INVALID_DRAWER_COUNT',
+          field: `${field}.drawers`,
+          message:
+            'El campo "drawers" solo aplica a módulos de tipo "drawers".',
+        });
+        return;
+      }
       const shelves = item.shelves;
-      const { min: shelfMin, max: shelfMax } = WARDROBE_LIMITS.shelfCount;
+      const { min: shelfMin, max: shelfMax } =
+        WARDROBE_LIMITS.shelfCount;
       if (
         typeof shelves !== 'number' ||
         !Number.isInteger(shelves) ||
@@ -155,12 +165,56 @@ function validateModules(
         return;
       }
       modules.push({ kind, shelves });
+    } else if (kind === 'drawers') {
+      if (item.shelves !== undefined) {
+        errors.push({
+          code: 'ERR_INVALID_SHELF_COUNT',
+          field: `${field}.shelves`,
+          message:
+            'El campo "shelves" solo aplica a módulos de tipo "shelves".',
+        });
+        return;
+      }
+      // Cantidad opcional (compatibilidad con el contrato
+      // v1): la ausencia usa el default provisional
+      // del motor al resolver.
+      if (item.drawers !== undefined) {
+        const drawers = item.drawers;
+        const { min: drawerMin, max: drawerMax } =
+          WARDROBE_LIMITS.drawerCount;
+        if (
+          typeof drawers !== 'number' ||
+          !Number.isInteger(drawers) ||
+          drawers < drawerMin ||
+          drawers > drawerMax
+        ) {
+          errors.push({
+            code: 'ERR_INVALID_DRAWER_COUNT',
+            field: `${field}.drawers`,
+            message: `Un módulo de cajones admite "drawers" entero entre ${drawerMin} y ${drawerMax}.`,
+          });
+          return;
+        }
+        modules.push({ kind, drawers });
+      } else {
+        modules.push({ kind });
+      }
     } else {
       if (item.shelves !== undefined) {
         errors.push({
           code: 'ERR_INVALID_SHELF_COUNT',
           field: `${field}.shelves`,
-          message: 'El campo "shelves" solo aplica a módulos de tipo "shelves".',
+          message:
+            'El campo "shelves" solo aplica a módulos de tipo "shelves".',
+        });
+        return;
+      }
+      if (item.drawers !== undefined) {
+        errors.push({
+          code: 'ERR_INVALID_DRAWER_COUNT',
+          field: `${field}.drawers`,
+          message:
+            'El campo "drawers" solo aplica a módulos de tipo "drawers".',
         });
         return;
       }
@@ -169,6 +223,23 @@ function validateModules(
   });
 
   return modules;
+}
+
+/**
+ * Valida una especificación de material opcional.
+ * `undefined` (campo ausente) es válido: el motor
+ * aplica su default provisional. Devuelve `undefined`
+ * para ausente y `null` cuando hubo errores.
+ */
+function validateOptionalMaterialSpec(
+  raw: unknown,
+  role: string,
+  errors: ConfigIssue[],
+): MaterialSpec | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  return validateMaterialSpec(raw, role, errors);
 }
 
 function validateMaterialSpec(
@@ -332,6 +403,16 @@ export function validateWardrobeConfig(input: unknown): ValidationResult {
   const interior = materialsRecord
     ? validateMaterialSpec(materialsRecord.interior, 'interior', errors)
     : null;
+  // Material de cajón opcional (compatibilidad con
+  // el contrato v1): la ausencia usa el default
+  // provisional del motor.
+  const drawerMaterial = materialsRecord
+    ? validateOptionalMaterialSpec(
+        materialsRecord.drawer,
+        'drawer',
+        errors,
+      )
+    : undefined;
 
   const modules = validateModules(input.modules, errors);
   // `null` solo ocurre cuando hubo errores (ya retornamos);
@@ -350,6 +431,9 @@ export function validateWardrobeConfig(input: unknown): ValidationResult {
     materials: {
       structure: structure as MaterialSpec,
       interior: interior as MaterialSpec,
+      ...(drawerMaterial !== undefined && drawerMaterial !== null
+        ? { drawer: drawerMaterial }
+        : {}),
     },
     ...(hangingRod !== undefined ? { hangingRod } : {}),
   };

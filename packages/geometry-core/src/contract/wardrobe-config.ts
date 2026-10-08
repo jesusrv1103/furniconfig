@@ -41,6 +41,12 @@ export interface WardrobeConfig {
   materials: {
     structure: MaterialSpec;
     interior: MaterialSpec;
+    /**
+     * Material de piezas de cajón (opcional; extensión
+     * backward compatible del contrato v1). El motor
+     * aplica un default provisional si no se declara.
+     */
+    drawer?: MaterialSpec;
   };
   /** Barras de colgado para módulos "hanging" (opcional). */
   hangingRod?: HangingRodSpec;
