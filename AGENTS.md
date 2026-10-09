@@ -3,11 +3,12 @@
 ## Proyecto
 
 **FurniConfig**: SaaS B2B para diseño paramétrico de muebles a medida.
-Primer producto: clósets rectos modulares. Fase actual: **Fase 3C**
-(FurniConfig Studio: editor 3D con selección directa, panel contextual,
-deshacer/rehacer y persistencia 3B intacta; completada en la rama
-`feat/3c-furniconfig-studio`, pendiente de commit/PR). La siguiente
-fase está pendiente de apertura.
+Primer producto: clósets rectos modulares. Fase actual: **Fase 3D**
+(Diseño paramétrico flexible: distribución de anchos individuales por
+módulo con conservación exacta del ancho interior, herramientas de
+distribución y plantillas locales en el Studio, CI de PRs en GitHub
+Actions; en la rama `feat/3d-flexible-layout`, pendiente de commit/PR).
+La siguiente fase está pendiente de apertura.
 
 Antes de implementar cualquier cosa, lee `README.md`, `docs/architecture.md` y
 `docs/product-rules.md`.

@@ -102,6 +102,39 @@ function validateDimensions(
   };
 }
 
+/**
+ * Valida el ancho interior libre declarado de un módulo
+ * (Fase 3D, opcional).
+ *
+ * `undefined` (campo ausente) es válido: el motor reparte
+ * el espacio automáticamente. Devuelve `undefined` para
+ * ausente y `null` cuando hubo errores.
+ */
+function validateModuleWidth(
+  raw: unknown,
+  field: string,
+  errors: ConfigIssue[],
+): number | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const { min, max } = WARDROBE_LIMITS.moduleWidthMm;
+  if (
+    typeof raw !== 'number' ||
+    !Number.isInteger(raw) ||
+    raw < min ||
+    raw > max
+  ) {
+    errors.push({
+      code: 'ERR_MODULE_WIDTH_INVALID',
+      field,
+      message: `Debe ser un entero entre ${min} y ${max} mm (máximo provisional: validar con carpintería).`,
+    });
+    return null;
+  }
+  return raw;
+}
+
 function validateModules(
   raw: unknown,
   errors: ConfigIssue[],
@@ -144,6 +177,16 @@ function validateModules(
       return;
     }
     const kind = item.kind;
+    // Ancho interior libre declarado (opcional; Fase 3D).
+    const widthMm = validateModuleWidth(
+      item.widthMm,
+      `${field}.widthMm`,
+      errors,
+    );
+    if (widthMm === null) {
+      return;
+    }
+    const widthField = widthMm !== undefined ? { widthMm } : {};
     if (kind === 'shelves') {
       if (item.drawers !== undefined) {
         errors.push({
@@ -170,7 +213,7 @@ function validateModules(
         });
         return;
       }
-      modules.push({ kind, shelves });
+      modules.push({ kind, shelves, ...widthField });
     } else if (kind === 'drawers') {
       if (item.shelves !== undefined) {
         errors.push({
@@ -201,9 +244,9 @@ function validateModules(
           });
           return;
         }
-        modules.push({ kind, drawers });
+        modules.push({ kind, drawers, ...widthField });
       } else {
-        modules.push({ kind });
+        modules.push({ kind, ...widthField });
       }
     } else {
       if (item.shelves !== undefined) {
@@ -224,7 +267,7 @@ function validateModules(
         });
         return;
       }
-      modules.push({ kind });
+      modules.push({ kind, ...widthField });
     }
   });
 

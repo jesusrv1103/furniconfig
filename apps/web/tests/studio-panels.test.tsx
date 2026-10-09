@@ -4,7 +4,11 @@ import { calculateGeometry } from '@furniconfig/geometry-core';
 import { ModulePropertiesPanel } from '../src/components/studio/ModulePropertiesPanel.js';
 import { TopBar } from '../src/components/studio/TopBar.js';
 import { BottomBar } from '../src/components/studio/BottomBar.js';
-import { DEFAULT_CONFIG, setModuleKind } from '../src/lib/config.js';
+import {
+  DEFAULT_CONFIG,
+  setModuleKind,
+  setModuleWidth,
+} from '../src/lib/config.js';
 import { moduleContext } from '../src/lib/studio/selection.js';
 
 const noop = () => {};
@@ -30,6 +34,7 @@ describe('ModulePropertiesPanel (panel contextual)', () => {
         context={contextFor(0)}
         config={DEFAULT_CONFIG}
         mode="simple"
+        resolvedModules={calculateGeometry(DEFAULT_CONFIG).wardrobe.modules}
         onUpdate={noop}
         onDeselect={noop}
       />,
@@ -53,6 +58,7 @@ describe('ModulePropertiesPanel (panel contextual)', () => {
         context={context ?? contextFor(0)}
         config={config}
         mode="simple"
+        resolvedModules={geometry.wardrobe.modules}
         onUpdate={noop}
         onDeselect={noop}
       />,
@@ -67,6 +73,7 @@ describe('ModulePropertiesPanel (panel contextual)', () => {
         context={contextFor(1)}
         config={DEFAULT_CONFIG}
         mode="simple"
+        resolvedModules={calculateGeometry(DEFAULT_CONFIG).wardrobe.modules}
         onUpdate={noop}
         onDeselect={noop}
       />,
@@ -82,11 +89,59 @@ describe('ModulePropertiesPanel (panel contextual)', () => {
         context={contextFor(0)}
         config={DEFAULT_CONFIG}
         mode="advanced"
+        resolvedModules={calculateGeometry(DEFAULT_CONFIG).wardrobe.modules}
         onUpdate={noop}
         onDeselect={noop}
       />,
     );
     expect(html).toContain('data-technical="module"');
+  });
+});
+
+describe('ModulePropertiesPanel — ancho individual (Fase 3D)', () => {
+  it('expone el ancho automático con su ancho resuelto y el máximo', () => {
+    const geometry = calculateGeometry(DEFAULT_CONFIG);
+    const html = renderToString(
+      <ModulePropertiesPanel
+        context={contextFor(0)}
+        config={DEFAULT_CONFIG}
+        mode="simple"
+        resolvedModules={geometry.wardrobe.modules}
+        onUpdate={noop}
+        onDeselect={noop}
+      />,
+    );
+    expect(html).toContain('data-width-state="auto"');
+    expect(html).toContain('data-module-width-input');
+    // 2.400 − 2·18 − 2·18 = 2.328 entre 3 módulos: 776 mm.
+    expect(html).toContain('value="776"');
+    // Máximo para el módulo 1: 2.328 − 2·300 = 1.728 mm.
+    expect(html).toContain('max="1728"');
+    expect(text(html)).toContain('Máximo disponible: 1.728 mm');
+    expect(html).not.toContain('data-action="release-width"');
+  });
+
+  it('marca el ancho como fijado y ofrece liberarlo', () => {
+    const config = setModuleWidth(DEFAULT_CONFIG, 0, 900);
+    const geometry = calculateGeometry(config);
+    const context = moduleContext(geometry, 'module-1');
+    const html = renderToString(
+      <ModulePropertiesPanel
+        context={context ?? contextFor(0)}
+        config={config}
+        mode="simple"
+        resolvedModules={geometry.wardrobe.modules}
+        onUpdate={noop}
+        onDeselect={noop}
+      />,
+    );
+    expect(html).toContain('data-width-state="fixed"');
+    expect(html).toContain('value="900"');
+    expect(html).toContain('data-action="release-width"');
+    // Los módulos automáticos (2 y 3) absorben: 714 mm cada uno.
+    expect(html).toContain('data-module-width-preview="module-2"');
+    expect(text(html)).toContain('Módulo 2: 714 mm');
+    expect(text(html)).toContain('Módulo 3: 714 mm');
   });
 });
 

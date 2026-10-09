@@ -1,0 +1,46 @@
+# CI en GitHub Actions (Fase 3D).
+#
+# Se ejecuta en cada Pull Request hacia `main`:
+# instalación reproducible (npm ci), typecheck, pruebas
+# unitarias y build. Sin secretos y sin despliegues.
+#
+# Las pruebas visuales (Playwright + capturas con
+# umbrales de píxel) siguen siendo LOCALES por ahora:
+# requieren tolerancia a ruido de rasterizado y añaden
+# varios minutos de ejecución; se valorará llevarlas a
+# CI con un runner dedicado en una fase futura.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# Principio de mínimo privilegio: solo lectura del repo.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias (reproducible)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Pruebas unitarias
+        run: npm test
+
+      - name: Build
+        run: npm run build

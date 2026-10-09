@@ -551,12 +551,112 @@ persistencia de la Fase 3B.
 configuración, su función de derivación y su mapeo de
 selección por familia; el historial, las barras del Studio
 y la capa de presentación son agnósticos a la familia. Sin
-arrastrre libre, sin anchos individuales por módulo, sin
-edición de materiales por módulo y sin historial persistido
-(en memoria de la sesión). Cubierto por 36 pruebas
-unitarias nuevas (historial, selección, paneles) y un
-escenario Playwright con ~30 verificaciones y 10 capturas
-de evidencia.
+arrastrre libre, sin edición de materiales por módulo y sin
+historial persistido (en memoria de la sesión). Los anchos
+individuales por módulo llegaron después, en la Fase 3D
+(ADR-025). Cubierto por 36 pruebas unitarias nuevas
+(historial, selección, paneles) y un escenario Playwright
+con ~30 verificaciones y 10 capturas de evidencia.
+
+### ADR-025 — Distribución flexible de anchos por módulo (Fase 3D)
+
+**Problema:** los módulos se repartían uniformemente; un
+clóset real necesita anchos distintos (p. ej. una sección
+más ancha para colgar abrigos), también para usuarios sin
+conocimientos técnicos y sin perder precisión geométrica.
+
+**Decisión — contrato (extensión backward compatible de v1):**
+- `ModuleConfig.widthMm?: number` = **ancho interior LIBRE**
+  del módulo en mm enteros (el espacio útil entre divisiones
+  y laterales; la misma semántica que `Module.widthMm`
+  resuelto). NO es una medida nominal con tableros: los
+  tableros son piezas separadas y la conservación exacta es
+  `Σ(anchos libres) + divisiones + 2 · laterales = ancho
+  exterior`.
+- Ausencia = **automático**: el motor reparte por igual el
+  espacio que queda (residuo entero de 1 mm a los primeros
+  automáticos, de izquierda a derecha — la regla histórica).
+  Se admiten anchos **parciales**: los declarados se
+  respetan y los automáticos absorben el sobrante. Si todos
+  declaran, la suma debe coincidir **exactamente** con el
+  espacio disponible.
+- Sin nueva versión de esquema: misma estrategia que
+  `hangingRod`, `doors`, `backPanel` o `materials.drawer`
+  (campos opcionales dentro de `schemaVersion: 1`). Los
+  diseños antiguos (sin `widthMm`) producen salida idéntica
+  byte a byte; los nuevos con anchos sobreviven a
+  guardar/cargar, exportar/importar y deshacer/rehacer porque
+  viven dentro de la propia `WardrobeConfig`.
+
+**Decisión — motor (`engine/distribute.ts`):**
+- `distributeModules` acepta `declaredWidthsMm?: readonly
+  (number | undefined)[]` (una entrada por módulo). Valida
+  cada declarado (entero, ≥ mínimo y ≤ máximo provisional) y
+  la longitud de la lista.
+- Límites en `WARDROBE_LIMITS.moduleWidthMm`: mínimo 300 mm
+  (existente) y **máximo provisional 2000 mm** (nuevo,
+  colapso/deflexión de tableros anchos; PROVISIONAL en
+  `product-rules.md`). El máximo se aplica **solo a anchos
+  declarados**: así los diseños antiguos (reparto uniforme
+  del motor, p. ej. un módulo único de 3.964 mm) siguen
+  siendo válidos. El máximo FÍSICO de un módulo declarado lo
+  cierra además la validación de suma.
+- Nuevos códigos de error (documentados, estables):
+  `ERR_MODULE_WIDTH_INVALID` (valor no entero, fuera de rango
+  o lista con longitud distinta) y `ERR_MODULE_WIDTH_SUM`
+  (todos declaran y la suma no cuadra). El sobrante
+  insuficiente para los automáticos reutiliza
+  `ERR_MODULE_WIDTH_TOO_SMALL`.
+- `maxFixedWidthMm(input + targetIndex)`: ancho máximo que
+  puede declarar un módulo sin dejar sin espacio a los demás
+  (acotado además por el máximo provisional). La UI consulta
+  esta función en lugar de duplicar la aritmética.
+- `resolveWardrobe` declara los anchos de la configuración;
+  paneles, barras, cajones, puertas e ids (`module-N`) se
+  recalculan con los algoritmos existentes, sin cambios.
+
+**Decisión — capa web (helpers puros en `lib/config.ts`):**
+- `setModuleWidth` fija el ancho de un módulo (acotado al
+  rango válido); `releaseModuleWidth` lo devuelve a
+  automático; `equalizeModuleWidths` libera todos (reparto
+  uniforme, la "restablecer distribución uniforme");
+  `fixSelectedRedistributeOthers` conserva el ancho actual
+  del seleccionado y libera los demás ("repartir espacio
+  restante"; si el ancho no encaja, no aplica nada).
+- Para **evitar configuraciones inválidas**, `setDimension`
+  (solo al cambiar el ancho del mueble) y `setModuleCount`
+  conservan los fijados **solo si siguen encajando**
+  (prueba con el motor); si no, liberan todos y vuelven a
+  reparto uniforme. La recuperación es reversible con
+  deshacer. `setModuleKind` conserva el ancho fijado.
+- Studio: el panel contextual expone un control **numérico
+  preciso** con borrador local (se aplica al salir del campo
+  o con Enter; mientras se escribe se previsualizan los
+  anchos resultantes de los demás módulos, calculados por el
+  motor). Un valor fuera de rango no llega a aplicarse: se
+  informa el máximo disponible. Las tarjetas de la lista
+  muestran el ancho de cada módulo (chip "fijo"/"automático")
+  y la sección "Distribución de anchos" resume el estado
+  (incluido "no queda espacio por repartir" cuando todos
+  están fijados) y ofrece Igualar / Repartir resto.
+- Plantillas locales (`lib/studio/templates.ts`): catálogo
+  pequeño de 4 distribuciones (básico, colgar, cajonera,
+  mixto de cuatro módulos con 900 mm declarados) construido
+  sobre los contratos existentes; aplicar cambia dimensiones
+  y módulos, conserva materiales y opciones globales, es
+  una sola edición deshacerable y siempre produce
+  configuraciones válidas (garantizado por tests, con
+  espesores 15 y 18 mm).
+
+**Consecuencias:** el reparto sigue siendo determinista y
+exacto en mm enteros; la UI no calcula geometría (consulta
+`distributeModules`/`maxFixedWidthMm`). Queda pendiente, si
+la carpintería lo confirma, un máximo de tablero por
+deflexión y el arrastre libre de separadores (priorizado el
+control numérico). Cobertura: 27 pruebas nuevas en el motor,
+~30 en la web (helpers, plantillas, persistencia, historial
+y panel contextual) y 21 verificaciones visuales nuevas con
+3 capturas de evidencia.
 
 ## 4. Flujo de cálculo detallado
 

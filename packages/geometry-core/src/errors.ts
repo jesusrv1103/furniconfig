@@ -25,7 +25,9 @@ export type GeometryErrorCode =
   | 'ERR_HANGING_ROD_DIAMETER'
   | 'ERR_HANGING_ROD_HEIGHT'
   | 'ERR_WIDTH_INSUFFICIENT'
-  | 'ERR_MODULE_WIDTH_TOO_SMALL';
+  | 'ERR_MODULE_WIDTH_TOO_SMALL'
+  | 'ERR_MODULE_WIDTH_INVALID'
+  | 'ERR_MODULE_WIDTH_SUM';
 
 export class GeometryError extends Error {
   readonly code: GeometryErrorCode;

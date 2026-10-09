@@ -5,12 +5,14 @@ import {
   DEFAULT_ROD_DIAMETER_MM,
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
+  WARDROBE_CONFIG_SCHEMA_VERSION,
+  WARDROBE_LIMITS,
+  distributeModules,
+  maxFixedWidthMm,
   type DoorHingeSide,
   type DoorLeafCount,
   type ModuleKind,
   type WardrobeConfig,
-  WARDROBE_CONFIG_SCHEMA_VERSION,
-  WARDROBE_LIMITS,
 } from '@furniconfig/geometry-core';
 import {
   DEFAULT_DOOR_CLEARANCE_MM,
@@ -21,6 +23,8 @@ import {
   MODULE_KIND_LABELS,
   materialSpec,
   clearHangingRod,
+  equalizeModuleWidths,
+  fixSelectedRedistributeOthers,
   setBackPanelEnabled,
   setBackPanelThickness,
   setDimension,
@@ -41,6 +45,11 @@ import {
   type MaterialRole,
 } from '../lib/config.js';
 import { MODULE_KIND_FRIENDLY } from '../lib/studio/selection.js';
+import {
+  LAYOUT_TEMPLATES,
+  applyLayoutTemplate,
+} from '../lib/studio/templates.js';
+import { formatMm } from '../lib/units.js';
 
 const MATERIAL_ROLE_LABELS: Readonly<Record<MaterialRole, string>> = {
   structure: 'Estructura (laterales, superior, inferior, divisiones)',
@@ -68,11 +77,19 @@ interface ConfigPanelProps {
   onSelectModule?: (index: number) => void;
   /** Modo del editor: organiza las herramientas técnicas. */
   editorMode?: 'simple' | 'advanced';
+  /**
+   * Ancho interior resuelto por el motor de cada módulo
+   * (Fase 3D, opcional): si no llega (configuración
+   * inválida), las tarjetas ocultan el ancho.
+   */
+  moduleWidthsMm?: readonly number[];
 }
 
 type SectionId =
   | 'dimensions'
   | 'modules'
+  | 'distribution'
+  | 'templates'
   | 'doors'
   | 'backPanel'
   | 'rod'
@@ -82,6 +99,8 @@ type SectionId =
 const SECTION_IDS: readonly SectionId[] = [
   'dimensions',
   'modules',
+  'distribution',
+  'templates',
   'doors',
   'backPanel',
   'rod',
@@ -147,6 +166,7 @@ export function ConfigPanel({
   selectedModuleIndex = null,
   onSelectModule,
   editorMode = 'simple',
+  moduleWidthsMm,
 }: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
   // Capturas locales: el narrowing de `config.doors`
@@ -224,6 +244,100 @@ export function ConfigPanel({
     };
   };
 
+  // ── Distribución de anchos (Fase 3D) ─────────────────
+  //
+  // El reparto es cálculo del motor: aquí solo se consulta
+  // (`distributeModules` / `maxFixedWidthMm`) para mostrar
+  // el estado y habilitar las herramientas.
+  const structureThicknessMm = materials.structure.thicknessMm;
+  const hasFixedWidths = modules.some(
+    (module) => module.widthMm !== undefined,
+  );
+  const declaredCount = modules.filter(
+    (module) => module.widthMm !== undefined,
+  ).length;
+  const autoCount = modules.length - declaredCount;
+  const fixedSumMm = modules.reduce(
+    (sum, module) => sum + (module.widthMm ?? 0),
+    0,
+  );
+  let availableWidthMm: number | null = null;
+  try {
+    availableWidthMm = distributeModules({
+      totalWidthMm: widthMm,
+      moduleCount: modules.length,
+      sideThicknessMm: structureThicknessMm,
+      dividerThicknessMm: structureThicknessMm,
+      declaredWidthsMm: modules.map((module) => module.widthMm),
+    }).availableWidthMm;
+  } catch {
+    availableWidthMm = null;
+  }
+  const distributionStatus =
+    availableWidthMm === null
+      ? 'Corrige los errores de la configuración para repartir los anchos.'
+      : autoCount === 0
+        ? 'Todos los módulos tienen ancho fijado: no queda espacio por repartir.'
+        : !hasFixedWidths
+          ? `Reparto uniforme: los ${modules.length} módulos comparten todo el espacio por igual.`
+          : `${declaredCount === 1 ? 'Un módulo tiene' : `${declaredCount} módulos tienen`} ancho fijado; los ${autoCount} restantes reparten ${formatMm(availableWidthMm - fixedSumMm)} por igual.`;
+
+  const selectedWidthMm =
+    selectedModuleIndex !== null
+      ? (moduleWidthsMm?.[selectedModuleIndex] ?? null)
+      : null;
+  const selectedMaxFixedMm =
+    selectedModuleIndex !== null
+      ? maxFixedWidthMm({
+          totalWidthMm: widthMm,
+          moduleCount: modules.length,
+          sideThicknessMm: structureThicknessMm,
+          dividerThicknessMm: structureThicknessMm,
+          declaredWidthsMm: modules.map((module) => module.widthMm),
+          targetIndex: selectedModuleIndex,
+        })
+      : null;
+  const canRedistributeRest =
+    selectedModuleIndex !== null &&
+    selectedWidthMm !== null &&
+    selectedMaxFixedMm !== null &&
+    selectedWidthMm >= WARDROBE_LIMITS.moduleWidthMm.min &&
+    selectedWidthMm <= selectedMaxFixedMm;
+  const redistributeTitle =
+    selectedModuleIndex === null
+      ? 'Selecciona un módulo para conservar su ancho.'
+      : selectedWidthMm === null
+        ? 'Los anchos no están disponibles hasta que la configuración sea válida.'
+        : canRedistributeRest
+          ? `Conserva el ancho del módulo ${selectedModuleIndex + 1} y reparte el resto por igual.`
+          : 'El ancho del módulo seleccionado no puede fijarse (supera el máximo disponible).';
+  const handleRedistributeRest = () => {
+    if (selectedModuleIndex === null || selectedWidthMm === null) {
+      return;
+    }
+    onUpdate((current) =>
+      fixSelectedRedistributeOthers(current, selectedModuleIndex, selectedWidthMm),
+    );
+  };
+
+  const widthChip = (index: number) => {
+    const resolvedWidthMm = moduleWidthsMm?.[index];
+    if (resolvedWidthMm === undefined) {
+      return null;
+    }
+    const isFixed = modules[index]?.widthMm !== undefined;
+    return (
+      <span
+        className="module-card-width"
+        data-module-width-chip={index}
+        data-width-state={isFixed ? 'fixed' : 'auto'}
+      >
+        {formatMm(resolvedWidthMm)}
+        {isFixed ? ' · fijo' : ''}
+      </span>
+    );
+  };
+
   const handleMaterial =
     (role: MaterialRole) => (field: 'name' | 'finish' | 'thicknessMm') => {
       return (
@@ -272,6 +386,7 @@ export function ConfigPanel({
               min={dimensionLimits[key].min}
               max={dimensionLimits[key].max}
               value={value}
+              data-dimension-input={key}
               onChange={handleDimension(key)}
             />
             <small>
@@ -313,6 +428,7 @@ export function ConfigPanel({
               <span className="module-kind-friendly">
                 {MODULE_KIND_FRIENDLY[module.kind]}
               </span>
+              {widthChip(index)}
               <button
                 type="button"
                 className="module-select"
@@ -373,6 +489,77 @@ export function ConfigPanel({
               </label>
             )}
           </fieldset>
+        ))}
+      </ConfigSection>
+
+      <ConfigSection
+        id="distribution"
+        title="Distribución de anchos"
+        open={openSections.distribution}
+        onToggle={() => toggleSection('distribution')}
+      >
+        <p className="distribution-status" data-width-status>
+          {distributionStatus}
+        </p>
+        <div
+          className="distribution-actions"
+          role="group"
+          aria-label="Herramientas de distribución"
+        >
+          <button
+            type="button"
+            data-action="equalize-widths"
+            disabled={!hasFixedWidths}
+            title={
+              hasFixedWidths
+                ? 'Libera todos los anchos fijados y reparte por igual.'
+                : 'Los anchos ya se reparten por igual.'
+            }
+            onClick={() => onUpdate(equalizeModuleWidths)}
+          >
+            Igualar anchos
+          </button>
+          <button
+            type="button"
+            data-action="redistribute-rest"
+            disabled={!canRedistributeRest}
+            title={redistributeTitle}
+            onClick={handleRedistributeRest}
+          >
+            Repartir espacio restante
+          </button>
+        </div>
+        <p className="field-hint">
+          «Igualar anchos» devuelve el reparto uniforme. «Repartir espacio
+          restante» conserva el ancho del módulo seleccionado y reparte el
+          resto por igual. Para fijar un ancho con precisión, edita el
+          módulo desde el panel derecho.
+        </p>
+      </ConfigSection>
+
+      <ConfigSection
+        id="templates"
+        title="Plantillas de distribución"
+        open={openSections.templates}
+        onToggle={() => toggleSection('templates')}
+      >
+        <p className="field-hint">
+          Aplican una distribución prediseñada: cambian dimensiones y
+          módulos, y conservan tus materiales y opciones. Se puede deshacer.
+        </p>
+        {LAYOUT_TEMPLATES.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            className="template-button"
+            data-template-id={template.id}
+            onClick={() =>
+              onUpdate((current) => applyLayoutTemplate(current, template))
+            }
+          >
+            <strong>{template.name}</strong>
+            <small>{template.description}</small>
+          </button>
         ))}
       </ConfigSection>
 

@@ -26,6 +26,25 @@ export interface ModuleConfig {
    * la ausencia usa el default provisional del motor).
    */
   drawers?: number;
+  /**
+   * Ancho interior libre del módulo en mm (Fase 3D;
+   * extensión backward compatible del contrato v1).
+   *
+   * Es el espacio ÚTIL entre divisiones/laterales — la
+   * misma semántica que `Module.widthMm` resuelto — no
+   * una medida nominal que incluya tableros: los tableros
+   * son piezas separadas y la conservación exacta es
+   * Σ(anchos libres) + divisiones + 2 · laterales =
+   * ancho exterior.
+   *
+   * La ausencia significa "automático": el motor reparte
+   * el espacio restante por igual (residuo 1 mm de
+   * izquierda a derecha). Si TODOS los módulos declaran
+   * ancho, la suma debe coincidir exactamente con el
+   * espacio disponible. Rango provisional al declarar:
+   * `WARDROBE_LIMITS.moduleWidthMm` (300–2000 mm).
+   */
+  widthMm?: number;
 }
 
 /** Módulo resuelto, con dimensiones internas útiles en milímetros. */

@@ -73,6 +73,11 @@ export function resolveWardrobe(config: WardrobeConfig): Wardrobe {
     moduleCount: config.modules.length,
     sideThicknessMm: structure.thicknessMm,
     dividerThicknessMm: structure.thicknessMm,
+    // Anchos interiores libres declarados (Fase 3D):
+    // `undefined` = automático (reparto uniforme).
+    declaredWidthsMm: config.modules.map(
+      (moduleConfig) => moduleConfig.widthMm,
+    ),
   });
 
   const innerHeightMm = config.dimensions.heightMm - 2 * structure.thicknessMm;

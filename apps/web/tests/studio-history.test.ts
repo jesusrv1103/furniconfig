@@ -10,8 +10,10 @@ import {
 } from '../src/lib/studio/history.js';
 import {
   DEFAULT_CONFIG,
+  equalizeModuleWidths,
   setDimension,
   setModuleCount,
+  setModuleWidth,
 } from '../src/lib/config.js';
 
 function deepFreeze<T>(value: T): T {
@@ -159,5 +161,34 @@ describe('reinicio al cambiar de proyecto', () => {
     expect(restarted.future).toEqual([]);
     expect(canUndo(restarted)).toBe(false);
     expect(canRedo(restarted)).toBe(false);
+  });
+});
+
+describe('distribuciones de ancho en el historial (Fase 3D)', () => {
+  it('deshacer y rehacer conservan los anchos individuales', () => {
+    const fixed = setModuleWidth(DEFAULT_CONFIG, 0, 900);
+    const equalized = equalizeModuleWidths(fixed);
+    let history = createEditorHistory(DEFAULT_CONFIG);
+    history = commitEditorHistory(history, fixed);
+    history = commitEditorHistory(history, equalized);
+
+    history = undoEditorHistory(history);
+    expect(history.present.modules[0]?.widthMm).toBe(900);
+    history = undoEditorHistory(history);
+    expect(history.present).toBe(DEFAULT_CONFIG);
+    history = redoEditorHistory(history);
+    history = redoEditorHistory(history);
+    expect(history.present).toBe(equalized);
+  });
+
+  it('el restablecer uniforme es un paso reversible', () => {
+    const fixed = setModuleWidth(DEFAULT_CONFIG, 2, 500);
+    let history = createEditorHistory(fixed);
+    history = commitEditorHistory(history, equalizeModuleWidths(fixed));
+    expect(
+      history.present.modules.some((module) => module.widthMm !== undefined),
+    ).toBe(false);
+    history = undoEditorHistory(history);
+    expect(history.present.modules[2]?.widthMm).toBe(500);
   });
 });

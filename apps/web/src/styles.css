@@ -755,6 +755,104 @@ body {
   font-weight: 600;
 }
 
+/* Fase 3D: chip de ancho por módulo en la lista. */
+.module-card-width {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.module-card-width[data-width-state='fixed'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Fase 3D: editor de ancho del módulo (panel contextual). */
+.module-props-width {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.module-props-width-preview {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.module-props-width-preview p {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.module-props-width-preview ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+/* Fase 3D: sección de distribución y plantillas. */
+.distribution-status {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.8125rem;
+}
+
+.distribution-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.distribution-actions button,
+.template-button {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.distribution-actions button:hover:not(:disabled),
+.template-button:hover {
+  background: #eef1f5;
+}
+
+.distribution-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.template-button {
+  display: grid;
+  gap: 2px;
+}
+
+.template-button small {
+  color: var(--muted);
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 /* Barra inferior: datos del proyecto sin saturar. */
 .studio-bottombar {
   display: flex;
