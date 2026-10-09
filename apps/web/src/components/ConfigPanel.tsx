@@ -59,6 +59,8 @@ interface ConfigPanelProps {
   config: WardrobeConfig;
   onUpdate: (updater: (current: WardrobeConfig) => WardrobeConfig) => void;
   onReset: () => void;
+  /** Contenido de la sección de proyectos (diseños guardados). */
+  designSection?: ReactNode;
 }
 
 type SectionId =
@@ -67,7 +69,8 @@ type SectionId =
   | 'doors'
   | 'backPanel'
   | 'rod'
-  | 'materials';
+  | 'materials'
+  | 'designs';
 
 const SECTION_IDS: readonly SectionId[] = [
   'dimensions',
@@ -76,6 +79,7 @@ const SECTION_IDS: readonly SectionId[] = [
   'backPanel',
   'rod',
   'materials',
+  'designs',
 ];
 
 /**
@@ -128,7 +132,12 @@ function ConfigSection({
   );
 }
 
-export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
+export function ConfigPanel({
+  config,
+  onUpdate,
+  onReset,
+  designSection,
+}: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
   // Capturas locales: el narrowing de `config.doors`
   // se pierde dentro de los callbacks de los botones.
@@ -675,6 +684,17 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
           );
         })}
       </ConfigSection>
+
+      {designSection ? (
+        <ConfigSection
+          id="designs"
+          title="Proyectos"
+          open={openSections.designs}
+          onToggle={() => toggleSection('designs')}
+        >
+          {designSection}
+        </ConfigSection>
+      ) : null}
 
       <button type="button" className="reset-button" onClick={onReset}>
         Restablecer configuración

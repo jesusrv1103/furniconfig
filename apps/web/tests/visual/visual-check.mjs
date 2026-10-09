@@ -49,16 +49,22 @@
  *     (aria-expanded) y apertura 45°/110° en frontal.
  * 16. (Fase 3A) Sin respuestas 404 (favicon) y versión
  *     móvil sin desplazamiento horizontal.
+ * 17. (Fase 3B) Gestión de diseños: crear, guardado
+ *     automático con debounce, recuperación de sesión y
+ *     de la configuración tras recargar, renombrar,
+ *     duplicar, exportar/importar JSON, buscar, eliminar
+ *     con confirmación y "nuevo proyecto" sin pisar el
+ *     diseño anterior (página propia con storage limpio).
  *
  * Guarda capturas + `inspeccion.json` (mediciones) en
- * /tmp/opencode/fase3a.
+ * /tmp/opencode/fase3a (evidencias de Fase 3A y 3B).
  *
  * Uso: node tests/visual/visual-check.mjs
  * (o npm run test:visual)
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { chromium } from 'playwright';
@@ -712,8 +718,8 @@ try {
 
   // --- 9. Fase 3A: interfaz profesional ----------------------------------
   check(
-    'la cabecera indica la fase actual (Fase 3A)',
-    (await page.getByText('Fase 3A').count()) === 1,
+    'la cabecera indica la fase actual (Fase 3B)',
+    (await page.getByText('Fase 3B').count()) === 1,
   );
 
   const viewer = page.locator('.viewer-container');
@@ -967,6 +973,418 @@ try {
     (await sectionToggle.getAttribute('aria-expanded')) === 'true' &&
       (await page.getByLabel('Ancho').isVisible()),
   );
+
+  // --- 9g. Fase 3B: persistencia y gestión de diseños ---------------------
+  // Página propia con almacenamiento limpio: la gestión de
+  // diseños no interactúa con el estado de la página principal.
+  const designErrors = [];
+  const designPage = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  });
+  designPage.on('pageerror', (error) => designErrors.push(String(error)));
+
+  // Planificador de diálogos nativos (confirm/prompt).
+  let dialogPlan = { accept: true, value: undefined, seen: null };
+  designPage.on('dialog', async (dialog) => {
+    dialogPlan.seen = { type: dialog.type(), message: dialog.message() };
+    if (dialog.type() === 'prompt') {
+      await dialog.accept(dialogPlan.value ?? '');
+    } else if (dialogPlan.accept) {
+      await dialog.accept();
+    } else {
+      await dialog.dismiss();
+    }
+  });
+
+  await designPage.goto(baseUrl, { waitUntil: 'networkidle' });
+  await designPage.waitForSelector('canvas', { timeout: 15_000 });
+  await designPage
+    .locator('.design-section[data-hydrated="true"]')
+    .waitFor({ timeout: 10_000 });
+
+  check(
+    '3B: la sección Proyectos arranca vacía y sin diseño activo',
+    (await designPage.getByText('No hay diseños guardados todavía.').isVisible()) &&
+      (await designPage.getByText('Sin diseño activo').isVisible()),
+  );
+
+  // Configuración rica: dimensiones, módulos, cajones,
+  // material, puertas (2 hojas) y panel trasero.
+  await designPage.getByLabel('Ancho').fill('2800');
+  await designPage.waitForTimeout(150);
+  await designPage
+    .getByRole('group', { name: 'Número de módulos' })
+    .getByRole('button', { name: '4', exact: true })
+    .click();
+  await designPage.waitForTimeout(150);
+  await designPage.locator('.module-card').nth(2).locator('input').fill('5');
+  await designPage
+    .locator('.material-card')
+    .first()
+    .getByLabel('Nombre')
+    .fill('Nogal');
+  await designPage
+    .getByRole('group', { name: 'Puertas del clóset' })
+    .getByRole('button', { name: 'Con puertas' })
+    .click();
+  await designPage.waitForTimeout(150);
+  await designPage
+    .getByRole('group', { name: 'Hojas por módulo' })
+    .getByRole('button', { name: '2', exact: true })
+    .click();
+  await designPage
+    .getByRole('group', { name: 'Panel trasero' })
+    .getByRole('button', { name: 'Con panel' })
+    .click();
+  await designPage.waitForTimeout(250);
+
+  // Crear el diseño con esa configuración.
+  await designPage
+    .getByLabel('Nombre del nuevo diseño')
+    .fill('Clóset de prueba');
+  await designPage.getByRole('button', { name: 'Crear diseño' }).click();
+  await designPage.waitForTimeout(300);
+  check(
+    '3B: crear un diseño lo activa, lo lista y lo marca',
+    (await designPage.getByText('Diseño «Clóset de prueba» creado.').isVisible()) &&
+      (await designPage.locator('.design-item').count()) === 1 &&
+      (await designPage.locator('.design-badge').count()) === 1,
+  );
+
+  // Cambio posterior → cambios sin guardar → guardado automático.
+  await designPage.getByLabel('Alto').fill('2100');
+  await designPage.waitForFunction(
+    () => {
+      const strip = document.querySelector('.design-active');
+      return (
+        strip?.getAttribute('data-dirty') === 'true' &&
+        (strip?.textContent ?? '').includes('cambios sin guardar')
+      );
+    },
+    null,
+    { timeout: 5000 },
+  );
+  check('3B: un cambio marca "cambios sin guardar"', true);
+  await designPage.waitForTimeout(2200); // > debounce (1000 ms), holgura bajo carga
+  const dirtyAfterAutosave = await designPage
+    .locator('.design-active')
+    .getAttribute('data-dirty');
+  const statusAfterAutosave =
+    (await designPage.locator('.design-status').textContent()) ?? '';
+  check(
+    '3B: el guardado automático limpia los cambios pendientes',
+    dirtyAfterAutosave === 'false' &&
+      statusAfterAutosave.includes('Guardado automático'),
+    `dirty=${dirtyAfterAutosave} · estado="${statusAfterAutosave}"`,
+  );
+
+  // Recuperación de sesión tras recargar.
+  await designPage.reload({ waitUntil: 'networkidle' });
+  await designPage.waitForSelector('canvas', { timeout: 15_000 });
+  await designPage
+    .locator('.design-section[data-hydrated="true"]')
+    .waitFor({ timeout: 10_000 });
+
+  const summaryReload = await designPage.locator('.summary').innerText();
+  check(
+    '3B: la recarga conserva dimensiones, módulos, materiales y cajones',
+    (await designPage.getByLabel('Ancho').inputValue()) === '2800' &&
+      (await designPage.getByLabel('Alto').inputValue()) === '2100' &&
+      (await designPage.locator('.material-card').first().getByLabel('Nombre').inputValue()) ===
+        'Nogal' &&
+      (await designPage.locator('.module-card').nth(2).locator('input').inputValue()) === '5' &&
+      (await designPage.locator('.module-card').count()) === 4 &&
+      summaryReload.includes('2.800 mm') &&
+      summaryReload.includes('Módulo 4') &&
+      summaryReload.includes('Cajones (5)'),
+  );
+  check(
+    '3B: la recarga conserva barras, puertas y panel trasero',
+    summaryReload.includes('Barras de colgado') &&
+      (await designPage
+        .getByRole('group', { name: 'Puertas del clóset' })
+        .getByRole('button', { name: 'Con puertas' })
+        .getAttribute('aria-pressed')) === 'true' &&
+      (await designPage
+        .getByRole('group', { name: 'Panel trasero' })
+        .getByRole('button', { name: 'Con panel' })
+        .getAttribute('aria-pressed')) === 'true',
+  );
+  check(
+    '3B: la recarga restaura el diseño activo sin cambios pendientes',
+    (await designPage.locator('.design-active').getAttribute('data-dirty')) ===
+      'false' &&
+      (await designPage.getByText('Clóset de prueba').first().isVisible()) &&
+      (await designPage.locator('.design-item').count()) === 1,
+  );
+
+  // Nuevo proyecto + reabrir: el REGISTRO persiste la config.
+  await designPage.getByRole('button', { name: 'Nuevo proyecto' }).click();
+  await designPage.waitForTimeout(300);
+  check(
+    '3B: nuevo proyecto restaura los defaults sin tocar la lista',
+    (await designPage.getByLabel('Ancho').inputValue()) === '2400' &&
+      (await designPage.locator('.design-item').count()) === 1 &&
+      (await designPage.getByText('Sin diseño activo').isVisible()),
+  );
+  await designPage
+    .locator('.design-item')
+    .first()
+    .getByRole('button', { name: 'Abrir' })
+    .click();
+  await designPage.waitForTimeout(300);
+  check(
+    '3B: abrir el diseño recupera la configuración persistida',
+    (await designPage.getByLabel('Ancho').inputValue()) === '2800' &&
+      (await designPage.getByLabel('Alto').inputValue()) === '2100',
+  );
+
+  // Renombrar con prompt nativo.
+  dialogPlan = { accept: true, value: 'Clóset renombrado', seen: null };
+  await designPage
+    .locator('.design-item')
+    .first()
+    .getByRole('button', { name: 'Renombrar' })
+    .click();
+  await designPage.waitForTimeout(300);
+  check(
+    '3B: renombrar actualiza la lista y el diseño activo',
+    dialogPlan.seen?.type === 'prompt' &&
+      (await designPage
+        .getByText('Diseño renombrado a «Clóset renombrado».')
+        .isVisible()) &&
+      (await designPage.getByText('«Clóset renombrado»').first().isVisible()),
+  );
+
+  // Duplicar.
+  await designPage
+    .locator('.design-item')
+    .first()
+    .getByRole('button', { name: 'Duplicar' })
+    .click();
+  await designPage.waitForTimeout(300);
+  check(
+    '3B: duplicar crea una copia independiente en la lista',
+    (await designPage.locator('.design-item').count()) === 2 &&
+      (await designPage
+        .getByText('Clóset renombrado (copia)', { exact: true })
+        .isVisible()) &&
+      (await designPage
+        .getByText('Copia creada: «Clóset renombrado (copia)».')
+        .isVisible()),
+  );
+
+  // Exportar a JSON (descarga real del navegador).
+  const downloadPromise = designPage.waitForEvent('download');
+  await designPage
+    .locator('.design-item')
+    .first()
+    .getByRole('button', { name: 'Exportar' })
+    .click();
+  const download = await downloadPromise;
+  const exported = JSON.parse(
+    readFileSync(await download.path(), 'utf8'),
+  );
+  check(
+    '3B: exportar descarga un JSON versionado',
+    exported.format === 'furniconfig-design' && exported.storageVersion === 1,
+  );
+  check(
+    '3B: el JSON exportado conserva la configuración completa',
+    exported.design.config.dimensions.widthMm === 2800 &&
+      Array.isArray(exported.design.config.modules) &&
+      exported.design.config.modules.length === 4 &&
+      exported.design.config.modules[2].drawers === 5 &&
+      exported.design.config.doors?.leaves === 2 &&
+      exported.design.config.backPanel?.enabled === true &&
+      exported.design.config.materials.structure.name === 'Nogal',
+  );
+
+  // Importar con otro nombre: nunca sobrescribe el activo.
+  const importedEnvelope = {
+    ...exported,
+    design: { ...exported.design, name: 'Importado JSON' },
+  };
+  await designPage
+    .locator('input[aria-label="Importar diseño JSON"]')
+    .setInputFiles({
+      name: 'diseno.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(importedEnvelope)),
+    });
+  // Espera activa: la importación es asíncrona y el tiempo
+  // de respuesta varía con la carga del equipo.
+  await designPage
+    .waitForFunction(
+      () => {
+        const count = document.querySelectorAll('.design-item').length;
+        const status =
+          document.querySelector('.design-status')?.textContent ?? '';
+        return count === 3 && status.includes('importado');
+      },
+      null,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  const importCount = await designPage.locator('.design-item').count();
+  const importStatus =
+    (await designPage.locator('.design-status').textContent()) ?? '';
+  check(
+    '3B: importar añade un diseño y no toca el activo',
+    importCount === 3 &&
+      importStatus.includes('Diseño «Importado JSON» importado.') &&
+      (await designPage.locator('.design-badge').count()) === 1 &&
+      (await designPage
+        .locator('.design-item')
+        .first()
+        .locator('.design-badge')
+        .count()) === 0,
+    `filas=${importCount} · estado="${importStatus}"`,
+  );
+
+  // Import inválido: error comprensible y nada cambia.
+  await designPage
+    .locator('input[aria-label="Importar diseño JSON"]')
+    .setInputFiles({
+      name: 'roto.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('esto no es json {'),
+    });
+  await designPage
+    .waitForFunction(
+      () =>
+        (
+          document.querySelector('.design-status')?.textContent ?? ''
+        ).includes('JSON válido'),
+      null,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  const invalidStatus =
+    (await designPage.locator('.design-status').textContent()) ?? '';
+  const invalidCount = await designPage.locator('.design-item').count();
+  check(
+    '3B: importar JSON inválido muestra error y no altera nada',
+    invalidStatus.includes('El archivo no es JSON válido.') &&
+      invalidCount === 3 &&
+      (await designPage.locator('.design-badge').count()) === 1,
+    `filas=${invalidCount} · estado="${invalidStatus}"`,
+  );
+
+  // Búsqueda por nombre.
+  await designPage.getByLabel('Buscar diseños').fill('copia');
+  await designPage.waitForTimeout(250);
+  const filteredCount = await designPage.locator('.design-item').count();
+  await designPage.getByLabel('Buscar diseños').fill('');
+  await designPage.waitForTimeout(250);
+  check(
+    '3B: la búsqueda filtra la lista por nombre',
+    filteredCount === 1 && (await designPage.locator('.design-item').count()) === 3,
+  );
+
+  // Eliminar con confirmación: cancelar conserva, aceptar borra.
+  const copyRow = designPage
+    .locator('.design-item')
+    .filter({ hasText: 'Clóset renombrado (copia)' });
+  dialogPlan = { accept: false, value: undefined, seen: null };
+  await copyRow.getByRole('button', { name: 'Eliminar' }).click();
+  await designPage.waitForTimeout(300);
+  const keptAfterCancel = await copyRow.count();
+  dialogPlan = { accept: true, value: undefined, seen: null };
+  await copyRow.getByRole('button', { name: 'Eliminar' }).click();
+  await designPage.waitForTimeout(350);
+  check(
+    '3B: eliminar pide confirmación (cancelar conserva, aceptar borra)',
+    dialogPlan.seen?.message.includes('¿Eliminar el diseño') === true &&
+      keptAfterCancel === 1 &&
+      (await copyRow.count()) === 0 &&
+      (await designPage.locator('.design-item').count()) === 2,
+  );
+
+  // Cambio sin guardar + nuevo proyecto confirma antes de descartar.
+  // Bloqueo temporal de la escritura de la colección (cuota llena):
+  // el guardado automático falla, se comunica y los cambios siguen
+  // pendientes; así el diálogo de confirmación es determinista (sin
+  // depender del debounce de 1 s) y el récord nunca recibe el cambio.
+  await designPage.evaluate(() => {
+    window.__origSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'furniconfig.designs') {
+        throw new DOMException('sin espacio', 'QuotaExceededError');
+      }
+      return window.__origSetItem.call(this, key, value);
+    };
+  });
+  await designPage.getByLabel('Alto').fill('2050');
+  await designPage
+    .waitForFunction(
+      () =>
+        (
+          document.querySelector('.design-status')?.textContent ?? ''
+        ).includes('almacenamiento local está lleno'),
+      null,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  const fullStatus =
+    (await designPage.locator('.design-status').textContent()) ?? '';
+  const dirtyBeforeDialog = await designPage
+    .locator('.design-active')
+    .getAttribute('data-dirty');
+  check(
+    '3B: una escritura fallida (cuota llena) se comunica sin perder los cambios',
+    fullStatus.includes('almacenamiento local está lleno') &&
+      dirtyBeforeDialog === 'true',
+    `dirty=${dirtyBeforeDialog} · estado="${fullStatus}"`,
+  );
+
+  dialogPlan = { accept: true, value: undefined, seen: null };
+  await designPage.getByRole('button', { name: 'Nuevo proyecto' }).click();
+  await designPage.waitForTimeout(400);
+  const newProjectDialog = dialogPlan.seen?.message ?? '';
+  const altoAfterNew = await designPage.getByLabel('Alto').inputValue();
+  const statusAfterNew =
+    (await designPage.locator('.design-status').textContent()) ?? '';
+  check(
+    '3B: nuevo proyecto con cambios pendientes confirma antes de descartar',
+    newProjectDialog.includes('cambios sin guardar') &&
+      altoAfterNew === '2200' &&
+      (await designPage.getByText('Sin diseño activo').isVisible()),
+    `dialog="${newProjectDialog}" · alto=${altoAfterNew} · estado="${statusAfterNew}"`,
+  );
+
+  // Restaurar la escritura normal de la colección.
+  await designPage.evaluate(() => {
+    Storage.prototype.setItem = window.__origSetItem;
+  });
+
+  // El diseño anterior NO se sobrescribió.
+  await designPage
+    .locator('.design-item')
+    .filter({ hasText: 'Clóset renombrado' })
+    .getByRole('button', { name: 'Abrir' })
+    .click();
+  await designPage.waitForTimeout(350);
+  const finalAncho = await designPage.getByLabel('Ancho').inputValue();
+  const finalAlto = await designPage.getByLabel('Alto').inputValue();
+  const finalRows = await designPage.locator('.design-item').count();
+  check(
+    '3B: el diseño anterior sobrevive al nuevo proyecto (sin sobrescritura)',
+    finalAncho === '2800' && finalAlto === '2100' && finalRows === 2,
+    `ancho=${finalAncho} · alto=${finalAlto} · filas=${finalRows}`,
+  );
+
+  check(
+    '3B: sin errores de página en la gestión de diseños',
+    designErrors.length === 0,
+    designErrors[0] ?? '',
+  );
+
+  // Evidencia de Fase 3B: sección de proyectos con la lista.
+  await designPage.locator('.design-section').scrollIntoViewIfNeeded();
+  await designPage.waitForTimeout(250);
+  saveShot('evidencia-07-disenos', await designPage.screenshot());
+  await designPage.close();
 
   check(
     'sin respuestas 404 durante la sesión (favicon resuelto)',

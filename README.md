@@ -8,7 +8,7 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 3A — Interfaz profesional de taller** (completada).
+**Fase 3B — Persistencia local y gestión de diseños** (completada).
 Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
 (Fase 2A), cajoneras (Fase 2B) y puertas abatibles
@@ -21,9 +21,13 @@ panel trasero opcional por encaje; visualizador 3D
 predefinidas y reencuadre automático, iluminación
 IBL con sombras, interruptor de visibilidad de puertas,
 slider de apertura en el visor y panel de
-configuración colapsable. No hay backend,
-autenticación, pagos ni cotizaciones todavía
-(Fases 3–4).
+configuración colapsable. Sección "Proyectos":
+guardado local de diseños (`localStorage` vía
+contrato `DesignRepository`) con guardado automático,
+recuperación de sesión tras recargar, CRUD con
+confirmaciones y export/importación de JSON validado.
+No hay backend, autenticación, pagos ni cotizaciones
+todavía (Fases 3–4).
 
 ## Stack
 
@@ -75,10 +79,11 @@ furniconfig/
 └── apps/
     └── web/                  # visualizador 3D (React + Vite + React Three Fiber)
         ├── src/
-        │   ├── components/   # ConfigPanel, SummaryPanel, WardrobeScene…
-        │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config, derive
+        │   ├── components/   # ConfigPanel, SummaryPanel, DesignSection, WardrobeScene…
+        │   ├── hooks/        # use-design-session (sesión y guardado de diseños)
+        │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config, derive, camera-views, designs/
         │   └── App.tsx       # estado + validación derivada
-        ├── tests/            # unidades, transformación, config, render + visual/ (Playwright)
+        ├── tests/            # unidades, diseño de persistencia, render + visual/ (Playwright)
         └── index.html
 ```
 

@@ -226,6 +226,44 @@
       central, secciones, ángulos y móvil;
       83/83 verificaciones visuales.
 
+## Fase 3B — Persistencia local y gestión de diseños ✅
+
+- [x] Contrato `DesignRepository` + `SessionStore` con
+      adaptador `localStorage` (claves `furniconfig.designs`
+      y `furniconfig.session`; `storageVersion` propio,
+      independiente del `schemaVersion` del motor —
+      ADR-023).
+- [x] Operaciones: crear, guardar, guardado automático con
+      debounce (1 s), abrir, renombrar, duplicar, eliminar
+      con confirmación, nuevo proyecto sin sobrescribir el
+      anterior, exportar/importar JSON versionado
+      (`furniconfig-design`).
+- [x] Recuperación de sesión tras recargar (borrador +
+      diseño activo + cambios pendientes) y gestión
+      explícita del diseño activo y de los cambios sin
+      guardar.
+- [x] Integridad: validación con `validateWardrobeConfig`
+      en todo lo leído y escrito; versiones desconocidas
+      incompatibles sin migración silenciosa ni pisado de
+      datos; registros corruptos en cuarentena; errores de
+      cuota/almacenamiento bloqueado con mensajes
+      comprensibles; ids deterministas sin colisiones;
+      importación siempre con id nuevo; duplicados
+      independientes (deep clone); ninguna operación muta
+      la configuración recibida.
+- [x] UI: sección "Proyectos" al final del panel
+      (búsqueda por nombre, `role="status"` para mensajes,
+      confirmaciones nativas); el visor 3D sigue siendo el
+      elemento principal.
+- [x] Pruebas: 37 unitarias nuevas (adaptador, biblioteca,
+      debounce, sección) + escenario Playwright en Chromium
+      real: crear → autosave → recarga → renombrar →
+      duplicar → exportar/importar → buscar → eliminar con
+      confirmación → nuevo proyecto, verificando que
+      dimensiones, módulos, materiales, cajones, barras,
+      puertas y panel trasero sobreviven el ciclo
+      guardar/reabrir.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.

@@ -5,10 +5,12 @@ import {
   type WardrobeConfig,
 } from '@furniconfig/geometry-core';
 import { ConfigPanel } from './components/ConfigPanel.js';
+import { DesignSection } from './components/DesignSection.js';
 import { SummaryPanel } from './components/SummaryPanel.js';
 import { ValidationErrorList } from './components/ValidationErrorList.js';
 import { DEFAULT_CONFIG, resetConfig } from './lib/config.js';
 import { deriveGeometryState } from './lib/derive.js';
+import { useDesignSession } from './hooks/use-design-session.js';
 
 // Carga diferida: Three.js es pesado y no bloquea la UI inicial.
 // El módulo usa exports nombrados, así que se adapta al
@@ -25,6 +27,12 @@ interface AppProps {
 
 export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
   const [config, setConfig] = useState<WardrobeConfig>(initialConfig);
+
+  // Sesión de diseños: guarda/recupera el borrador y el diseño activo.
+  const designSession = useDesignSession({
+    config,
+    onConfigChange: setConfig,
+  });
 
   // Estado derivado de forma pura: el motor es la fuente
   // única de verdad (validación de forma y cálculo
@@ -58,14 +66,19 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
       <header className="app-header">
         <div>
           <h1>FurniConfig</h1>
-          <p>Visualizador de clósets modulares · Fase 3A</p>
+          <p>Visualizador de clósets modulares · Fase 3B</p>
         </div>
         <span className="chip">Contrato v{WARDROBE_CONFIG_SCHEMA_VERSION}</span>
       </header>
 
       <main className="layout">
         <aside className="sidebar" aria-label="Configuración">
-          <ConfigPanel config={config} onUpdate={update} onReset={handleReset} />
+          <ConfigPanel
+            config={config}
+            onUpdate={update}
+            onReset={handleReset}
+            designSection={<DesignSection session={designSession} />}
+          />
         </aside>
 
         <section className="viewer" aria-label="Visualizador 3D">
