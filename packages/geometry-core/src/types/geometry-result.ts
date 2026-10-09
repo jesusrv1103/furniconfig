@@ -7,6 +7,8 @@
 
 import type { Panel } from './panel.js';
 import type { DrawerAssembly } from './drawer.js';
+import type { Door } from './door.js';
+import type { DoorHandle } from './door.js';
 import type { HangingRod } from './rod.js';
 import type { Wardrobe } from './wardrobe.js';
 
@@ -21,6 +23,10 @@ export interface GeometryTotals {
   drawerCount: number;
   /** Cantidad de piezas de cajón (frentes, laterales, traseras, fondos). */
   drawerPartCount: number;
+  /** Cantidad de puertas (hojas). */
+  doorCount: number;
+  /** Cantidad de tiradores. */
+  handleCount: number;
 }
 
 export interface GeometryResult {
@@ -29,5 +35,9 @@ export interface GeometryResult {
   rods: HangingRod[];
   /** Cajoneras: ensamblajes que relacionan los paneles de cada cajón. */
   drawers: DrawerAssembly[];
+  /** Puertas abatibles (hojas, en posición cerrada). */
+  doors: Door[];
+  /** Tiradores de las puertas. */
+  handles: DoorHandle[];
   totals: GeometryTotals;
 }

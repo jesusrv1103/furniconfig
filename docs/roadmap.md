@@ -109,7 +109,75 @@
       escena, escena estable (cajones cerrados, con
       umbral de antialiasing), 30/30 verificaciones.
 
-## Fase 2C — Segundas familias de mueble
+## Fase 2C — Puertas abatibles y panel trasero ✅
+
+- [x] Puertas en el motor: `Door` (hoja) y
+      `DoorHandle` (tirador) como componentes
+      separados (`buildDoors`), montadas sobre
+      el frente (`z ∈ [−espesor, 0]`): montaje
+      puramente aditivo, sin alterar paneles,
+      barras ni cajones.
+- [x] Reglas PROVISIONALES: 1–2 hojas por
+      módulo (con 2, bisagras en los extremos
+      exteriores), holgura 0–10 mm (default 3,
+      residuo de 1 mm al borde derecho),
+      bisagra configurable con 1 hoja (default
+      izquierda), tirador cilíndrico horizontal
+      contra la cara frontal (40% del ancho de
+      hoja, 40–120 mm; diámetro 18 mm; a 30 mm
+      del borde libre, centrado verticalmente).
+- [x] Apertura como transformación pura de
+      presentación: `doorOpeningTransform`
+      (eje de bisagra + ángulo firmado 0–110°);
+      el motor genera las hojas cerradas y la
+      capa de presentación aplica `rotation.y`
+      sobre un group en el eje; el ángulo es
+      estado de UI, no de configuración.
+- [x] Contrato v1 backward compatible: `doors`
+      y `backPanel` opcionales (ausencia = sin
+      puertas / sin panel trasero; las
+      configuraciones Fase 0–2B siguen
+      validando).
+- [x] `GeometryResult` extendido de forma
+      aditiva (`doors`, `handles`,
+      `totals.doorCount`, `totals.handleCount`;
+      el panel trasero entra en `panels` con
+      role `back`).
+- [x] Panel trasero por encaje (PROVISIONAL):
+      `panel-back` entre laterales y tableros;
+      con el trasero activado, entrepaños,
+      divisiones, cajones y barra se acortan a
+      la profundidad útil.
+- [x] Validaciones: `ERR_INVALID_DOOR_LEAVES`,
+      `ERR_INVALID_HINGE_SIDE`,
+      `ERR_INVALID_DOOR_CLEARANCE`,
+      `ERR_DOOR_OPEN_ANGLE`,
+      `ERR_DOOR_WIDTH_INSUFFICIENT` y
+      `ERR_BACK_PANEL_DEPTH` (las dos últimas
+      defensivas con los límites actuales).
+- [x] Visualizador: activación de puertas,
+      hojas (1/2), lado de bisagra, holgura,
+      material de puerta; slider de apertura
+      0–110° (clic real sobre la pista);
+      interruptor de panel trasero con espesor
+      (15/18 mm); resumen de puertas,
+      tiradores y panel trasero.
+- [x] Pruebas unitarias: geometría de hojas y
+      tiradores, reparto de ancho con residuo,
+      bisagras y firma del ángulo, transformación
+      de apertura (rango y pureza), materiales
+      resueltos, panel trasero y encaje de
+      interiores, validaciones, adaptación
+      mm → m, helpers de configuración puros,
+      renderizado, cambios rápidos.
+- [x] Pruebas visuales Playwright + Chromium:
+      activación, dos hojas, apertura/cierre
+      con estabilidad de escena (umbral de
+      antialiasing), panel trasero, cambio de
+      dimensión con puertas y trasero activos,
+      material de puerta; 48/48 verificaciones.
+
+## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.
 - Refactor: motor genérico + "perfiles" por familia (reglas propias de
@@ -117,6 +185,8 @@
 - Guardar el contrato por familia con su propio `schemaVersion`.
 - Cajoneras: **completado en Fase 2B** (quedan las
   guías comerciales y la validación con carpintería).
+- Puertas corredizas y herrajes comerciales:
+  pendientes de validación con carpintería.
 
 ## Fase 3 — Backend y persistencia
 
@@ -136,4 +206,6 @@
 
 - **Validación con carpinterías** (pendiente desde Fase 0): ver
   `docs/product-rules.md` §6. Bloquea cotizaciones reales.
-- Playwright solo se activa en Fase 4, cuando exista la app completa.
+- Playwright: verificaciones visuales reales desde Fase 2A
+  (rotación, zoom, apertura de puertas, estabilidad de escena);
+  la suite end-to-end completa llega en Fase 4.

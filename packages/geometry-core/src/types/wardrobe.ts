@@ -6,6 +6,10 @@
 import type { Material } from './material.js';
 import type { Module } from './module.js';
 import type { RodMaterial } from './rod.js';
+import type {
+  DoorHingeSide,
+  DoorLeafCount,
+} from './door.js';
 
 export interface WardrobeDimensions {
   widthMm: number;
@@ -23,6 +27,12 @@ export interface WardrobeMaterials {
   /** Piezas de cajón (frentes, laterales, traseras, fondos);
    * presente solo con módulos "drawers". */
   drawer?: Material;
+  /** Hojas de puerta; presente solo con puertas activadas. */
+  door?: Material;
+  /** Tiradores de puerta; presente solo con puertas activadas. */
+  handle?: RodMaterial;
+  /** Panel trasero; presente solo con panel trasero activado. */
+  back?: Material;
 }
 
 export interface Wardrobe extends WardrobeDimensions {
@@ -30,4 +40,21 @@ export interface Wardrobe extends WardrobeDimensions {
   materials: WardrobeMaterials;
   /** Diámetro resuelto de las barras; presente con módulos "hanging". */
   hangingRodDiameterMm?: number;
+  /**
+   * Configuración de puertas resuelta
+   * (defaults aplicados); presente con
+   * puertas activadas.
+   */
+  doorsConfig?: {
+    leaves: DoorLeafCount;
+    hingeSide: DoorHingeSide;
+    clearanceMm: number;
+  };
+  /**
+   * Panel trasero resuelto (montaje por
+   * encaje); presente solo con panel
+   * trasero activado. El material se
+   * resuelve en `materials.back`.
+   */
+  backPanel?: { thicknessMm: number };
 }

@@ -12,6 +12,7 @@ import { GeometryError } from '../errors.js';
 import { buildPanels } from './panels.js';
 import { buildRods } from './rods.js';
 import { buildDrawers } from './drawers.js';
+import { buildDoors } from './doors.js';
 import { distributeModules } from './distribute.js';
 import type { Material } from '../types/material.js';
 import type { Module } from '../types/module.js';
@@ -25,6 +26,12 @@ import {
   DEFAULT_DRAWER_COUNT,
   DEFAULT_DRAWER_MATERIAL_SPEC,
 } from '../types/drawer.js';
+import {
+  DEFAULT_DOOR_CLEARANCE_MM,
+  DEFAULT_HANDLE_FINISH,
+  DEFAULT_HANDLE_NAME,
+  DEFAULT_HINGE_SIDE,
+} from '../types/door.js';
 import type { GeometryResult } from '../types/geometry-result.js';
 import type { Wardrobe } from '../types/wardrobe.js';
 
@@ -128,6 +135,54 @@ export function resolveWardrobe(config: WardrobeConfig): Wardrobe {
       }
     : undefined;
 
+  // Puertas (Fase 2C): la presencia del
+  // objeto `doors` las activa. El
+  // material de hoja admite un default
+  // de estructura; el tirador usa un
+  // material metálico fijo (Acero/brillo).
+  const doorsSpec = config.doors;
+  const doorMaterial: Material | undefined = doorsSpec
+    ? {
+        id: 'material-door',
+        ...(doorsSpec.material ??
+          config.materials.door ??
+          config.materials.structure),
+      }
+    : undefined;
+  const handleMaterial: RodMaterial | undefined = doorsSpec
+    ? {
+        id: 'material-handle',
+        name: DEFAULT_HANDLE_NAME,
+        finish: DEFAULT_HANDLE_FINISH,
+      }
+    : undefined;
+  const resolvedDoorsConfig = doorsSpec
+    ? {
+        leaves: doorsSpec.leaves,
+        hingeSide: doorsSpec.hingeSide ?? DEFAULT_HINGE_SIDE,
+        clearanceMm:
+          doorsSpec.clearanceMm ?? DEFAULT_DOOR_CLEARANCE_MM,
+      }
+    : undefined;
+
+  // Panel trasero (Fase 2C): activado
+  // por `backPanel.enabled`; material
+  // con default de estructura.
+  const backPanelSpec = config.backPanel;
+  const backEnabled = backPanelSpec?.enabled ?? false;
+  const backMaterial: Material | undefined = backEnabled
+    ? {
+        id: 'material-back',
+        ...(backPanelSpec?.material ??
+          config.materials.back ??
+          config.materials.structure),
+      }
+    : undefined;
+  const resolvedBackPanel =
+    backEnabled && backPanelSpec
+      ? { thicknessMm: backPanelSpec.thicknessMm }
+      : undefined;
+
   return {
     widthMm: config.dimensions.widthMm,
     heightMm: config.dimensions.heightMm,
@@ -138,10 +193,17 @@ export function resolveWardrobe(config: WardrobeConfig): Wardrobe {
       interior,
       ...(rodMaterial ? { rod: rodMaterial } : {}),
       ...(drawerMaterial ? { drawer: drawerMaterial } : {}),
+      ...(doorMaterial ? { door: doorMaterial } : {}),
+      ...(handleMaterial ? { handle: handleMaterial } : {}),
+      ...(backMaterial ? { back: backMaterial } : {}),
     },
     ...(hangingRodDiameterMm !== undefined
       ? { hangingRodDiameterMm }
       : {}),
+    ...(resolvedDoorsConfig
+      ? { doorsConfig: resolvedDoorsConfig }
+      : {}),
+    ...(resolvedBackPanel ? { backPanel: resolvedBackPanel } : {}),
   };
 }
 
@@ -157,6 +219,7 @@ export function calculateGeometry(config: WardrobeConfig): GeometryResult {
   const rods = buildRods(wardrobe);
   const { panels: drawerPanels, assemblies: drawers } =
     buildDrawers(wardrobe);
+  const { doors, handles } = buildDoors(wardrobe);
   // Los paneles de cajón son tableros reales:
   // se incluyen en el conjunto de paneles.
   const panels = [...structuralPanels, ...drawerPanels];
@@ -175,6 +238,8 @@ export function calculateGeometry(config: WardrobeConfig): GeometryResult {
     panels,
     rods,
     drawers,
+    doors,
+    handles,
     totals: {
       panelCount: panels.length,
       panelVolumeMm3,
@@ -182,6 +247,8 @@ export function calculateGeometry(config: WardrobeConfig): GeometryResult {
       rodLengthMm,
       drawerCount: drawers.length,
       drawerPartCount: drawerPanels.length,
+      doorCount: doors.length,
+      handleCount: handles.length,
     },
   };
 }

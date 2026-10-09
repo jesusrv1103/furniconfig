@@ -45,7 +45,12 @@ export function buildRods(wardrobe: Wardrobe): HangingRod[] {
   }
 
   const centerYMm = heightMm - structureThicknessMm - mountDistanceMm;
-  const centerZMm = depthMm / 2;
+  // Con panel trasero, la barra se centra
+  // en la profundidad útil (hasta la
+  // cara frontal del trasero).
+  const usableDepthMm =
+    depthMm - (wardrobe.backPanel?.thicknessMm ?? 0);
+  const centerZMm = usableDepthMm / 2;
   const radiusMm = diameterMm / 2;
 
   const rods: HangingRod[] = [];

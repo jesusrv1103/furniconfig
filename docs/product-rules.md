@@ -31,6 +31,20 @@
 | Profundidad del cajón | Toda la profundidad interior del módulo | **PROVISIONAL** (guías futuras) |
 | Material de cajón | Default "Blanco / 15 mm / mate" | **PROVISIONAL** |
 
+| Puertas (Fase 2C) | 1–2 hojas por módulo, activables por presencia de `doors` | **PROVISIONAL** (rango) |
+| Hoja de puerta | Abertura menos holgura (default 3 mm por lado) | **PROVISIONAL** |
+| Bisagra | 1 hoja: lado configurable (default izquierda); 2 hojas: extremos exteriores | **PROVISIONAL** |
+| Montaje de puerta | Sobre el frente: `z ∈ [−espesor, 0]` | **PROVISIONAL** |
+| Apertura | 0–110°, rotación pura de presentación sobre el eje de bisagra | **PROVISIONAL** (ángulo máx.) |
+| Tirador | Cilindro horizontal contra la cara frontal, a 30 mm del borde libre; 40% del ancho de hoja (40–120 mm); diámetro 18 mm | **PROVISIONAL** |
+| Material de puerta | Default = estructura (`material-door`) | **PROVISIONAL** |
+| Material de tirador | Metálico fijo "Acero / brillo" (`material-handle`) | **PROVISIONAL** (cosmético) |
+
+| Panel trasero (Fase 2C) | Opcional (`backPanel.enabled`), espesor 15 | 18 mm | **PROVISIONAL** |
+| Montaje del trasero | Por encaje: plano posterior entre laterales y tableros (role `back`) | **PROVISIONAL** |
+| Efecto en interiores | Entrepaños, divisiones, cajones y barra se acortan a la profundidad útil | **PROVISIONAL** |
+| Material del trasero | Default = estructura (`material-back`) | **PROVISIONAL** |
+
 ## 2. Límites operativos — PROVISIONAL (validar con carpintería)
 
 Centralizados en `packages/geometry-core/src/contract/limits.ts`.
@@ -51,8 +65,26 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
    adyacentes. Algunas carpinterías usan media división o sistema de rieles.
 2. **Entrepaños distribuidos uniformemente** en la altura interior del módulo
    (huecos iguales arriba y abajo; redondeo `Math.round` a mm).
-3. **Sin panel trasero** en Fase 0 (el brief no lo incluye). Muchos clósets
-   llevan trasera de 3–6 mm o anclaje a pared: **pendiente**.
+3. **Panel trasero (Fase 2C)**: opcional, montado
+   **por encaje** en el plano posterior entre
+   laterales y entre superior e inferior: tamaño
+   `(ancho − 2t, alto − 2t, espesor)`, posición
+   `(t, t, profundidad − espesor)`, role `back`,
+   id `panel-back`, incluido en `panels`. Con el
+   trasero activado, los interiores se acortan a
+   la **profundidad útil** (`profundidad −
+   espesor trasero`): entrepaños y divisiones a
+   `depthMm − th`; cajones con
+   `innerDepth = depthMm − 2t − th`; barras
+   centradas en la profundidad útil. Reglas
+   PROVISIONALES pendientes de validar:
+   - Espesor 15 | 18 mm (típica trasera de
+     melamina 15–18 mm; muchas carpinterías usan
+     3–6 mm de fibra o anclaje a pared:
+     confirmar sistema constructivo).
+   - **Compatibilidad**: la profundidad debe
+     admitir el encaje (`ERR_BACK_PANEL_DEPTH`,
+     defensivo con los límites actuales).
 4. **Barras de colgado (Fase 2A)**: una barra cilíndrica por módulo
    "hanging". Reglas PROVISIONALES pendientes de validar:
    - Orientación horizontal (eje X, a lo ancho del módulo).
@@ -92,6 +124,47 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
      (`ERR_DRAWER_DIMENSIONS`).
 7. **Laterales a toda altura** (el superior e inferior quedan *entre* laterales,
    no al revés). Confirmar sistema constructivo con carpintería.
+8. **Puertas abatibles (Fase 2C)**: activables por
+   presencia de `doors` en la configuración (ausencia
+   = sin puertas). Reglas PROVISIONALES pendientes
+   de validar:
+   - **Hojas**: 1 o 2 por módulo. Con 2, las
+     bisagras van en los extremos exteriores
+     (apertura simétrica hacia afuera).
+   - **Holguras**: `clearanceMm` (default 3,
+     rango 0–10) entre hojas y bordes del
+     módulo, y entre hojas (el residuo de 1 mm
+     del reparto queda como holgura extra en el
+     borde derecho).
+   - **Montaje sobre el frente**: la hoja cerrada
+     ocupa `z ∈ [−espesor, 0]` (por delante del
+     plano frontal del cuerpo; puramente aditivo,
+     no altera paneles, barras ni cajones).
+     Confirmar si el montaje es sobre el frente,
+     empotrado o al ras.
+   - **Apertura**: transformación pura de
+     presentación (`doorOpeningTransform`) sobre
+     el eje de bisagra vertical; el motor genera
+     las hojas cerradas y la capa de presentación
+     aplica `rotation.y` (bisagra izquierda →
+     ángulo positivo; derecha → negativo; el
+     borde libre se aleja del frente hacia el
+     observador). Ángulo máximo 110°
+     (`ERR_DOOR_OPEN_ANGLE`).
+   - **Tirador**: cilindro horizontal (eje X)
+     contra la cara frontal de la hoja, a 30 mm
+     del borde libre (opuesto a la bisagra),
+     centrado verticalmente; longitud = 40% del
+     ancho de hoja acotada entre 40 y 120 mm;
+     diámetro 18 mm. Confirmar tipo de tirador
+     (perfil, asa, invisible) y su geometría.
+   - **Materiales**: hoja default = estructura
+     (`material-door`); tirador metálico fijo
+     "Acero / brillo" (`material-handle`).
+   - **Compatibilidad**: la abertura debe admitir
+     hojas con la holgura (`ERR_DOOR_WIDTH_
+     INSUFFICIENT`, defensivo con los límites
+     actuales).
 
 ## 4. Módulos
 
@@ -100,6 +173,9 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
 - `drawers` (cajones): `drawers` opcional (cantidad de cajones, 1–8,
   default 3; ausencia = default para compatibilidad con el contrato v1);
   genera cajoneras —frentes, laterales, traseras, fondos— desde Fase 2B.
+- Todos los tipos de módulo admiten puertas abatibles (Fase 2C) cuando
+  la configuración declara `doors`; la configuración de puertas es
+  global (hojas, bisagra y holgura para todo el clóset).
 
 ## 5. Validaciones implementadas
 
@@ -108,19 +184,35 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
 - Módulos: 1–4, tipo válido, `shelves` coherente con el tipo,
   `drawers` entero 1–8 cuando se declara (opcional: default 3).
 - Materiales: nombre y acabado no vacíos; espesor ∈ {15, 18} mm;
-  material de cajón (`materials.drawer`) válido cuando se declara.
+  material de cajón (`materials.drawer`), de puerta (`materials.door`)
+  y de panel trasero (`materials.back`) válidos cuando se declaran.
+- Puertas (`doors`, opcional): `leaves` ∈ {1, 2}; `hingeSide` ∈
+  {left, right}; `clearanceMm` entero 0–10 (`ERR_INVALID_DOOR_LEAVES`,
+  `ERR_INVALID_HINGE_SIDE`, `ERR_INVALID_DOOR_CLEARANCE`).
+- Panel trasero (`backPanel`, opcional): `enabled` booleano;
+  `thicknessMm` ∈ {15, 18} (`ERR_INVALID_THICKNESS`).
 - Motor: ancho total suficiente para laterales + divisiones + ancho mínimo de
   módulo (`ERR_WIDTH_INSUFFICIENT`, `ERR_MODULE_WIDTH_TOO_SMALL`);
-  caja de cajón físicamente viable (`ERR_DRAWER_DIMENSIONS`).
+  caja de cajón físicamente viable (`ERR_DRAWER_DIMENSIONS`);
+  altura de módulo "hanging" suficiente para la barra
+  (`ERR_HANGING_ROD_HEIGHT`); ángulo de apertura de puertas
+  dentro de 0–110° (`ERR_DOOR_OPEN_ANGLE`).
 
 ## 6. Pendientes de validación con carpinterías (bloquean fases posteriores)
 
 - [ ] Rangos reales de ancho/alto/profundidad y ancho mínimo de módulo.
 - [ ] Sistema de divisiones (espesor completo vs. rieles).
-- [ ] Panel trasero: sí/no, espesor, cómo se fija.
+- [ ] Panel trasero: sistema constructivo confirmado (encaje de
+      15–18 mm vs. trasera fina de 3–6 mm vs. anclaje a pared),
+      fijación y si resta profundidad útil.
 - [ ] Herrajes: barra de colgado (altura mínima del módulo colgado) y
       guías de cajón (restarán profundidad a la caja del cajón).
 - [ ] Cajoneras: holguras (3 mm), altura mínima de cajón, material de
       caja y sistema constructivo (caja vista vs. frente a toda altura).
+- [ ] Puertas: sistema de montaje (sobre el frente vs. empotrado vs.
+      al ras), holguras reales (3 mm), cantidad máxima de hojas por
+      módulo, lado y tipo de bisagra comercial, tirador real (perfil,
+      asa o invisible) y su geometría, y ángulo máximo de apertura
+      (110°).
 - [ ] Tolerancias de fabricación y si se restan del ancho útil.
 - [ ] Distribución de entrepaños: uniforme o a gusto del usuario.

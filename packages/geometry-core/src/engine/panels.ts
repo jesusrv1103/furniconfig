@@ -1,16 +1,26 @@
 /**
  * Generación de paneles a partir de un clóset resuelto.
  *
- * Paneles globales: laterales (a toda altura), superior e inferior (entre los
- * laterales). Por módulo: entrepaños (solo `kind: 'shelves'`, distribuidos
- * uniformemente) y divisiones entre módulos consecutivos.
+ * Paneles globales: laterales (a toda altura), superior e
+ * inferior (entre los laterales). Por módulo: entrepaños
+ * (solo `kind: 'shelves'`, distribuidos uniformemente) y
+ * divisiones entre módulos consecutivos.
  *
- * Supuestos PROVISIONAL (docs/product-rules.md §3): sin panel trasero, sin
- * herrajes, sin cajas de cajón ni barras de colgado.
+ * Panel trasero (Fase 2C, opcional): montaje por encaje
+ * PROVISIONAL — ocupa el plano posterior entre laterales y
+ * entre superior e inferior; con panel trasero activado,
+ * los paneles interiores (entrepaños y divisiones) se
+ * acortan a `profundidad − espesor trasero` para evitar
+ * intersecciones.
+ *
+ * Supuestos PROVISIONAL (docs/product-rules.md §3): sin
+ * herrajes; puertas y cajones se generan en sus propios
+ * constructores.
  *
  * Función pura y determinista.
  */
 
+import { GeometryError } from '../errors.js';
 import type { Panel } from '../types/panel.js';
 import type { Wardrobe } from '../types/wardrobe.js';
 
@@ -19,6 +29,30 @@ export function buildPanels(wardrobe: Wardrobe): Panel[] {
   const { widthMm, heightMm, depthMm } = wardrobe;
   const { structure, interior } = wardrobe.materials;
   const t = structure.thicknessMm;
+  // Panel trasero (encaje): los
+  // paneles interiores no penetran
+  // el plano posterior.
+  const backThicknessMm =
+    wardrobe.backPanel?.thicknessMm ?? 0;
+  const backMaterial = wardrobe.materials.back;
+  if (backThicknessMm > 0 && !backMaterial) {
+    // Inalcanzable por construcción:
+    // el trasero se resuelve con su
+    // material en resolveWardrobe.
+    throw new GeometryError(
+      'ERR_INVALID_MATERIAL',
+      'El panel trasero requiere un material resuelto.',
+      {},
+    );
+  }
+  const innerDepthMm = depthMm - backThicknessMm;
+  if (backThicknessMm > 0 && innerDepthMm <= 2 * t) {
+    throw new GeometryError(
+      'ERR_BACK_PANEL_DEPTH',
+      `La profundidad (${depthMm} mm) no admite un panel trasero de ${backThicknessMm} mm con laterales de ${t} mm.`,
+      { depthMm, backThicknessMm, structureThicknessMm: t },
+    );
+  }
 
   // Laterales: a toda altura, en los extremos del ancho.
   panels.push({
@@ -72,7 +106,10 @@ export function buildPanels(wardrobe: Wardrobe): Panel[] {
           role: 'shelf',
           moduleId: module.id,
           materialId: interior.id,
-          sizeMm: { x: module.widthMm, y: interior.thicknessMm, z: depthMm },
+          // Con panel trasero, el entrepaño
+          // llega hasta la cara frontal del
+          // trasero (encaje).
+          sizeMm: { x: module.widthMm, y: interior.thicknessMm, z: innerDepthMm },
           positionMm: {
             x: cursorX,
             y: Math.round(centerYmm - interior.thicknessMm / 2),
@@ -89,7 +126,7 @@ export function buildPanels(wardrobe: Wardrobe): Panel[] {
         role: 'divider',
         moduleId: null,
         materialId: structure.id,
-        sizeMm: { x: t, y: innerHeightMm, z: depthMm },
+        sizeMm: { x: t, y: innerHeightMm, z: innerDepthMm },
         positionMm: { x: cursorX + module.widthMm, y: t, z: 0 },
       });
       cursorX += module.widthMm + t;
@@ -97,6 +134,20 @@ export function buildPanels(wardrobe: Wardrobe): Panel[] {
       cursorX += module.widthMm;
     }
   });
+
+  // Panel trasero: entre laterales y entre
+  // superior e inferior, contra la cara
+  // posterior del mueble.
+  if (backThicknessMm > 0 && backMaterial) {
+    panels.push({
+      id: 'panel-back',
+      role: 'back',
+      moduleId: null,
+      materialId: backMaterial.id,
+      sizeMm: { x: innerWidthMm, y: innerHeightMm, z: backThicknessMm },
+      positionMm: { x: t, y: t, z: depthMm - backThicknessMm },
+    });
+  }
 
   return panels;
 }

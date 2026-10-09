@@ -76,7 +76,13 @@ export function buildDrawers(
   } = WARDROBE_LIMITS.drawerClearanceMm;
 
   const { depthMm } = wardrobe;
-  const innerDepthMm = depthMm - 2 * structureThicknessMm;
+  // Con panel trasero, el cajón vive
+  // entre el frente y la cara frontal
+  // del trasero (encaje).
+  const innerDepthMm =
+    depthMm -
+    2 * structureThicknessMm -
+    (wardrobe.backPanel?.thicknessMm ?? 0);
   // La caja vive entre el frente y la trasera.
   const boxDepthMm = innerDepthMm - 2 * drawerThicknessMm;
   if (boxDepthMm <= 0) {

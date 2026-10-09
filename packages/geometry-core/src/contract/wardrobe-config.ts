@@ -9,6 +9,10 @@
 import type { MaterialSpec } from '../types/material.js';
 import type { ModuleConfig } from '../types/module.js';
 import type { RodMaterial } from '../types/rod.js';
+import type {
+  DoorHingeSide,
+  DoorLeafCount,
+} from '../types/door.js';
 
 export const WARDROBE_CONFIG_SCHEMA_VERSION = 1;
 
@@ -26,6 +30,51 @@ export interface HangingRodSpec {
   name?: string;
   /** Acabado. Default: 'brillo'. */
   finish?: string;
+}
+
+/**
+ * Configuración de puertas abatibles (Fase 2C).
+ *
+ * La presencia del objeto activa las puertas
+ * (una o dos hojas por módulo); su ausencia
+ * las desactiva. El motor genera las hojas
+ * cerradas: la apertura es una transformación
+ * de presentación (`doorOpeningTransform`).
+ */
+export interface DoorsConfig {
+  /** Hojas por módulo: 1 o 2 (PROVISIONAL). */
+  leaves: DoorLeafCount;
+  /**
+   * Lado de la bisagra para una hoja
+   * (PROVISIONAL; default 'left'). Con dos
+   * hojas se ignora: las bisagras van en
+   * los extremos exteriores.
+   */
+  hingeSide?: DoorHingeSide;
+  /**
+   * Holgura en mm entre hojas y bordes del
+   * módulo (PROVISIONAL: 0–10; default 3).
+   */
+  clearanceMm?: number;
+  /** Material de las hojas (opcional; default: estructura). */
+  material?: MaterialSpec;
+}
+
+/**
+ * Configuración del panel trasero (Fase 2C).
+ *
+ * `enabled` activa/desactiva el panel (montaje
+ * por encaje, PROVISIONAL: ocupa el plano
+ * posterior entre laterales y entre superior
+ * e inferior).
+ */
+export interface BackPanelConfig {
+  /** Activa o desactiva el panel trasero. */
+  enabled: boolean;
+  /** Espesor del tablero trasero: 15 o 18 mm. */
+  thicknessMm: MaterialSpec['thicknessMm'];
+  /** Material (opcional; default: estructura). */
+  material?: MaterialSpec;
 }
 
 export interface WardrobeConfig {
@@ -47,7 +96,15 @@ export interface WardrobeConfig {
      * aplica un default provisional si no se declara.
      */
     drawer?: MaterialSpec;
+    /** Material de hojas de puerta (opcional; default: estructura). */
+    door?: MaterialSpec;
+    /** Material del panel trasero (opcional; default: estructura). */
+    back?: MaterialSpec;
   };
   /** Barras de colgado para módulos "hanging" (opcional). */
   hangingRod?: HangingRodSpec;
+  /** Puertas abatibles (opcional; ausencia = sin puertas). */
+  doors?: DoorsConfig;
+  /** Panel trasero (opcional; ausencia = sin panel trasero). */
+  backPanel?: BackPanelConfig;
 }

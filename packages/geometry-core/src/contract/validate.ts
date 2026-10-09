@@ -22,9 +22,15 @@ import type { WardrobeDimensions } from '../types/wardrobe.js';
 import { WARDROBE_LIMITS } from './limits.js';
 import {
   WARDROBE_CONFIG_SCHEMA_VERSION,
+  type BackPanelConfig,
+  type DoorsConfig,
   type HangingRodSpec,
   type WardrobeConfig,
 } from './wardrobe-config.js';
+import {
+  DEFAULT_DOOR_LEAVES,
+  type DoorLeafCount,
+} from '../types/door.js';
 
 export interface ConfigIssue {
   code: GeometryErrorCode;
@@ -360,6 +366,168 @@ function validateHangingRod(
 }
 
 /**
+ * Valida la configuración de puertas
+ * abatibles (opcional). `undefined` (campo
+ * ausente) es válido: sin puertas. Devuelve
+ * `undefined` para ausente y `null` cuando
+ * hubo errores.
+ */
+function validateDoors(
+  raw: unknown,
+  errors: ConfigIssue[],
+): DoorsConfig | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!isRecord(raw)) {
+    errors.push({
+      code: 'ERR_INVALID_DOOR_LEAVES',
+      field: 'doors',
+      message: 'La configuración de puertas debe ser un objeto.',
+    });
+    return null;
+  }
+
+  let valid = true;
+  const spec: DoorsConfig = { leaves: DEFAULT_DOOR_LEAVES };
+
+  const leaves = raw.leaves;
+  const { min: leafMin, max: leafMax } =
+    WARDROBE_LIMITS.doors.leaves;
+  if (
+    typeof leaves !== 'number' ||
+    !Number.isInteger(leaves) ||
+    leaves < leafMin ||
+    leaves > leafMax
+  ) {
+    errors.push({
+      code: 'ERR_INVALID_DOOR_LEAVES',
+      field: 'doors.leaves',
+      message: `"leaves" debe ser ${leafMin} o ${leafMax}.`,
+    });
+    valid = false;
+  } else {
+    spec.leaves = leaves as DoorLeafCount;
+  }
+
+  if (raw.hingeSide !== undefined) {
+    const hingeSide = raw.hingeSide;
+    if (hingeSide !== 'left' && hingeSide !== 'right') {
+      errors.push({
+        code: 'ERR_INVALID_HINGE_SIDE',
+        field: 'doors.hingeSide',
+        message: 'Valores válidos: "left" o "right".',
+      });
+      valid = false;
+    } else {
+      spec.hingeSide = hingeSide;
+    }
+  }
+
+  if (raw.clearanceMm !== undefined) {
+    const clearanceMm = raw.clearanceMm;
+    const { min: clearanceMin, max: clearanceMax } =
+      WARDROBE_LIMITS.doors.clearanceMm;
+    if (
+      typeof clearanceMm !== 'number' ||
+      !Number.isInteger(clearanceMm) ||
+      clearanceMm < clearanceMin ||
+      clearanceMm > clearanceMax
+    ) {
+      errors.push({
+        code: 'ERR_INVALID_DOOR_CLEARANCE',
+        field: 'doors.clearanceMm',
+        message: `Debe ser un entero entre ${clearanceMin} y ${clearanceMax} mm (provisional).`,
+      });
+      valid = false;
+    } else {
+      spec.clearanceMm = clearanceMm;
+    }
+  }
+
+  const material = validateOptionalMaterialSpec(
+    raw.material,
+    'doors.material',
+    errors,
+  );
+  if (material === null) {
+    valid = false;
+  } else if (material !== undefined) {
+    spec.material = material;
+  }
+
+  return valid ? spec : null;
+}
+
+/**
+ * Valida la configuración del panel trasero
+ * (opcional). `undefined` (campo ausente) es
+ * válido: sin panel trasero. Devuelve
+ * `undefined` para ausente y `null` cuando
+ * hubo errores.
+ */
+function validateBackPanel(
+  raw: unknown,
+  errors: ConfigIssue[],
+): BackPanelConfig | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!isRecord(raw)) {
+    errors.push({
+      code: 'ERR_INVALID_CONFIG',
+      field: 'backPanel',
+      message:
+        'La configuración del panel trasero debe ser un objeto.',
+    });
+    return null;
+  }
+
+  let valid = true;
+  const spec: BackPanelConfig = {
+    enabled: false,
+    thicknessMm: 18,
+  };
+
+  const enabled = raw.enabled;
+  if (typeof enabled !== 'boolean') {
+    errors.push({
+      code: 'ERR_INVALID_CONFIG',
+      field: 'backPanel.enabled',
+      message: '"enabled" debe ser verdadero o falso.',
+    });
+    valid = false;
+  } else {
+    spec.enabled = enabled;
+  }
+
+  const thicknessMm = raw.thicknessMm;
+  if (!isBoardThicknessMm(thicknessMm)) {
+    errors.push({
+      code: 'ERR_INVALID_THICKNESS',
+      field: 'backPanel.thicknessMm',
+      message: 'Debe ser 15 o 18 mm.',
+    });
+    valid = false;
+  } else {
+    spec.thicknessMm = thicknessMm;
+  }
+
+  const material = validateOptionalMaterialSpec(
+    raw.material,
+    'backPanel.material',
+    errors,
+  );
+  if (material === null) {
+    valid = false;
+  } else if (material !== undefined) {
+    spec.material = material;
+  }
+
+  return valid ? spec : null;
+}
+
+/**
  * Valida una configuración de clóset proveniente de una fuente no confiable.
  * Devuelve todos los errores encontrados (no solo el primero).
  */
@@ -413,11 +581,29 @@ export function validateWardrobeConfig(input: unknown): ValidationResult {
         errors,
       )
     : undefined;
+  // Materiales opcionales de puertas y panel
+  // trasero (Fase 2C): default = estructura.
+  const doorMaterial = materialsRecord
+    ? validateOptionalMaterialSpec(
+        materialsRecord.door,
+        'door',
+        errors,
+      )
+    : undefined;
+  const backMaterial = materialsRecord
+    ? validateOptionalMaterialSpec(
+        materialsRecord.back,
+        'back',
+        errors,
+      )
+    : undefined;
 
   const modules = validateModules(input.modules, errors);
   // `null` solo ocurre cuando hubo errores (ya retornamos);
   // `undefined` indica ausencia del campo.
   const hangingRod = validateHangingRod(input.hangingRod, errors) ?? undefined;
+  const doors = validateDoors(input.doors, errors) ?? undefined;
+  const backPanel = validateBackPanel(input.backPanel, errors) ?? undefined;
 
   if (errors.length > 0) {
     return { ok: false, errors };
@@ -434,8 +620,18 @@ export function validateWardrobeConfig(input: unknown): ValidationResult {
       ...(drawerMaterial !== undefined && drawerMaterial !== null
         ? { drawer: drawerMaterial }
         : {}),
+      ...(doorMaterial !== undefined && doorMaterial !== null
+        ? { door: doorMaterial }
+        : {}),
+      ...(backMaterial !== undefined && backMaterial !== null
+        ? { back: backMaterial }
+        : {}),
     },
     ...(hangingRod !== undefined ? { hangingRod } : {}),
+    ...(doors !== undefined && doors !== null ? { doors } : {}),
+    ...(backPanel !== undefined && backPanel !== null
+      ? { backPanel }
+      : {}),
   };
   return { ok: true, config };
 }

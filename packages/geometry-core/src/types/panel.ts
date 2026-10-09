@@ -15,7 +15,8 @@ export type PanelRole =
   | 'drawer-front'
   | 'drawer-side'
   | 'drawer-back'
-  | 'drawer-bottom';
+  | 'drawer-bottom'
+  | 'back';
 
 export interface Panel {
   id: string;

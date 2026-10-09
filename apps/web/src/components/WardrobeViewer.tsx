@@ -1,6 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import type { GeometryResult } from '@furniconfig/geometry-core';
+import {
+  MAX_DOOR_OPEN_ANGLE_DEG,
+  type GeometryResult,
+} from '@furniconfig/geometry-core';
 import { mmToM } from '../lib/units.js';
 import { WardrobeScene } from './WardrobeScene.js';
 
@@ -10,9 +13,16 @@ import { WardrobeScene } from './WardrobeScene.js';
  * Recibe el GeometryResult ya calculado por el motor y lo renderiza
  * en metros. La cámara se posiciona de forma determinista según el
  * tamaño del clóset; la interacción es con OrbitControls (Drei).
+ *
+ * El ángulo de apertura de puertas es estado de presentación
+ * (no de configuración): se aplica como rotación pura sobre la
+ * geometría cerrada del motor.
  */
 export function WardrobeViewer({ geometry }: { geometry: GeometryResult }) {
   const { widthMm, heightMm, depthMm } = geometry.wardrobe;
+  const hasDoors = geometry.doors.length > 0;
+
+  const [doorOpenAngleDeg, setDoorOpenAngleDeg] = useState(0);
 
   const camera = useMemo(() => {
     const widthM = mmToM(widthMm);
@@ -29,11 +39,34 @@ export function WardrobeViewer({ geometry }: { geometry: GeometryResult }) {
   }, [widthMm, heightMm, depthMm]);
 
   return (
-    <Canvas
-      shadows
-      camera={{ position: camera.position, fov: 45, near: 0.05, far: 200 }}
-    >
-      <WardrobeScene geometry={geometry} />
-    </Canvas>
+    <div className="viewer-container">
+      <Canvas
+        shadows
+        camera={{ position: camera.position, fov: 45, near: 0.05, far: 200 }}
+      >
+        <WardrobeScene
+          geometry={geometry}
+          doorOpenAngleDeg={doorOpenAngleDeg}
+        />
+      </Canvas>
+      {hasDoors && (
+        <div className="viewer-controls" aria-label="Controles del visualizador">
+          <label className="viewer-control">
+            <span>Apertura de puertas</span>
+            <input
+              type="range"
+              min={0}
+              max={MAX_DOOR_OPEN_ANGLE_DEG}
+              step={1}
+              value={doorOpenAngleDeg}
+              onChange={(event) =>
+                setDoorOpenAngleDeg(Number(event.target.value))
+              }
+            />
+            <output>{doorOpenAngleDeg}°</output>
+          </label>
+        </div>
+      )}
+    </div>
   );
 }

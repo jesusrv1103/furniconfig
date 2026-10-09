@@ -9,14 +9,20 @@
  */
 
 import {
+  DEFAULT_DOOR_CLEARANCE_MM,
+  DEFAULT_DOOR_LEAVES,
   DEFAULT_DRAWER_COUNT,
   DEFAULT_DRAWER_MATERIAL_SPEC,
+  DEFAULT_HINGE_SIDE,
   DEFAULT_ROD_DIAMETER_MM,
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
   WARDROBE_CONFIG_SCHEMA_VERSION,
   WARDROBE_LIMITS,
+  type BackPanelConfig,
   type BoardThicknessMm,
+  type DoorHingeSide,
+  type DoorLeafCount,
   type MaterialSpec,
   type ModuleKind,
   type WardrobeConfig,
@@ -33,6 +39,14 @@ export {
 // Valor por defecto provisional para cajones
 // (el motor lo aplica cuando no hay cantidad explícita).
 export { DEFAULT_DRAWER_COUNT };
+
+// Valores por defecto provisionales para puertas
+// (el motor los aplica cuando no hay spec explícito).
+export {
+  DEFAULT_DOOR_CLEARANCE_MM,
+  DEFAULT_DOOR_LEAVES,
+  DEFAULT_HINGE_SIDE,
+};
 
 /** Cantidad de entrepaños al crear un módulo de tipo "shelves". */
 export const DEFAULT_SHELVES = 3;
@@ -60,14 +74,15 @@ export const MODULE_KIND_LABELS: Readonly<Record<ModuleKind, string>> = {
 export const FINISH_OPTIONS = ['mate', 'brillo', 'texturado'] as const;
 
 export type DimensionKey = 'widthMm' | 'heightMm' | 'depthMm';
-export type MaterialRole = 'structure' | 'interior' | 'drawer';
+export type MaterialRole = 'structure' | 'interior' | 'drawer' | 'door' | 'back';
 
 /**
  * Especificación de material base para un rol.
- * El rol "drawer" es opcional en el contrato: parte
- * del default provisional del motor.
+ * Los roles "drawer", "door" y "back" son opcionales
+ * en el contrato: parten del default provisional del
+ * motor (drawer: su spec; door y back: estructura).
  */
-function materialSpec(
+export function materialSpec(
   config: WardrobeConfig,
   role: MaterialRole,
 ): MaterialSpec {
@@ -75,6 +90,13 @@ function materialSpec(
     return {
       ...DEFAULT_DRAWER_MATERIAL_SPEC,
       ...config.materials.drawer,
+    };
+  }
+  if (role === 'door' || role === 'back') {
+    // Default de puertas y panel trasero: estructura.
+    return {
+      ...config.materials.structure,
+      ...config.materials[role],
     };
   }
   return config.materials[role];
@@ -235,4 +257,124 @@ export function setHangingRodMaterial(
 export function clearHangingRod(config: WardrobeConfig): WardrobeConfig {
   const { hangingRod, ...rest } = config;
   return rest;
+}
+
+/**
+ * Activa o desactiva las puertas abatibles.
+ *
+ * La presencia del campo `doors` en la configuración
+ * activa las puertas (el motor las genera); su ausencia
+ * las desactiva. Al activar sin configuración previa,
+ * usa los defaults del motor (1 hoja, bisagra
+ * izquierda, holgura 3 mm).
+ */
+export function setDoorsEnabled(
+  config: WardrobeConfig,
+  enabled: boolean,
+): WardrobeConfig {
+  if (!enabled) {
+    return clearDoors(config);
+  }
+  return {
+    ...config,
+    doors: config.doors ?? { leaves: DEFAULT_DOOR_LEAVES },
+  };
+}
+
+/**
+ * Elimina la configuración de puertas: el motor deja
+ * de generarlas.
+ */
+export function clearDoors(config: WardrobeConfig): WardrobeConfig {
+  const { doors, ...rest } = config;
+  return rest;
+}
+
+/**
+ * Establece la cantidad de hojas por módulo (1 o 2).
+ * Requiere puertas activadas; si no lo están, las
+ * activa con el valor indicado.
+ */
+export function setDoorLeaves(
+  config: WardrobeConfig,
+  leaves: DoorLeafCount,
+): WardrobeConfig {
+  return {
+    ...config,
+    doors: { ...config.doors, leaves },
+  };
+}
+
+/**
+ * Establece el lado de la bisagra (una hoja). Con dos
+ * hojas el motor la ignora (bisagras en los extremos
+ * exteriores).
+ */
+export function setDoorHingeSide(
+  config: WardrobeConfig,
+  hingeSide: DoorHingeSide,
+): WardrobeConfig {
+  return {
+    ...config,
+    doors: {
+      ...config.doors,
+      leaves: config.doors?.leaves ?? DEFAULT_DOOR_LEAVES,
+      hingeSide,
+    },
+  };
+}
+
+/**
+ * Establece la holgura de puertas (mm), acotada al
+ * rango provisional del motor (0–10).
+ */
+export function setDoorClearance(
+  config: WardrobeConfig,
+  clearanceMm: number,
+): WardrobeConfig {
+  const { min, max } = WARDROBE_LIMITS.doors.clearanceMm;
+  const clamped = Math.min(
+    Math.max(Math.round(clearanceMm), min),
+    max,
+  );
+  return {
+    ...config,
+    doors: {
+      ...config.doors,
+      leaves: config.doors?.leaves ?? DEFAULT_DOOR_LEAVES,
+      clearanceMm: clamped,
+    },
+  };
+}
+
+/**
+ * Activa o desactiva el panel trasero (montaje por
+ * encaje). El espesor se conserva al reactivar;
+ * por defecto 18 mm.
+ */
+export function setBackPanelEnabled(
+  config: WardrobeConfig,
+  enabled: boolean,
+): WardrobeConfig {
+  const backPanel: BackPanelConfig = {
+    enabled,
+    thicknessMm: config.backPanel?.thicknessMm ?? 18,
+  };
+  return { ...config, backPanel };
+}
+
+/**
+ * Establece el espesor del panel trasero (15 | 18 mm).
+ * El panel sigue activado/desactivado según su estado
+ * previo.
+ */
+export function setBackPanelThickness(
+  config: WardrobeConfig,
+  thicknessMm: BoardThicknessMm,
+): WardrobeConfig {
+  const backPanel: BackPanelConfig = {
+    enabled: config.backPanel?.enabled ?? false,
+    thicknessMm,
+  };
+  return { ...config, backPanel };
 }

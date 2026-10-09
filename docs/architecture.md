@@ -20,9 +20,12 @@ resolveWardrobe()
        │
        ▼
 buildPanels()                   → Panel[] (dimensiones y posiciones en mm)
+  + buildRods()                 → HangingRod[] (barras de colgado)
+  + buildDrawers()              → paneles "drawer-*" + DrawerAssembly[]
+  + buildDoors()                → Door[] + DoorHandle[] (posición cerrada)
        │
        ▼
-GeometryResult { wardrobe, panels, totals }
+GeometryResult { wardrobe, panels, rods, drawers, doors, handles, totals }
 ```
 
 El motor **no conoce Three.js ni React**: la capa de visualización (Fase 1)
@@ -40,6 +43,9 @@ furniconfig/
 │       │   │   ├── material.ts      # Material, MaterialSpec, espesores 15|18
 │       │   │   ├── module.ts        # Module, ModuleConfig, ModuleKind
 │       │   │   ├── panel.ts         # Panel, PanelRole
+│       │   │   ├── rod.ts           # HangingRod, RodMaterial
+│       │   │   ├── drawer.ts        # DrawerAssembly
+│       │   │   ├── door.ts          # Door, DoorHandle, DoorOpeningTransform
 │       │   │   ├── wardrobe.ts      # Wardrobe (resuelta)
 │       │   │   └── geometry-result.ts
 │       │   ├── contract/            # frontera de entrada
@@ -48,7 +54,10 @@ furniconfig/
 │       │   │   └── validate.ts          # validación runtime de unknown
 │       │   └── engine/              # funciones puras
 │       │       ├── distribute.ts    # anchos útiles y distribución de módulos
-│       │       ├── panels.ts        # generación de paneles
+│       │       ├── panels.ts        # generación de paneles (+ panel trasero)
+│       │       ├── rods.ts          # barras de colgado
+│       │       ├── drawers.ts       # cajoneras (5 piezas por cajón)
+│       │       ├── doors.ts         # puertas abatibles y tiradores
 │       │       └── geometry.ts      # calculateGeometry() (orquestador puro)
 │       └── tests/
 ```
@@ -256,6 +265,95 @@ cajón; las pruebas de "drawers no genera paneles" de
 fases anteriores evolucionan a "genera solo paneles de
 cajón" (comportamiento nuevo planeado, no una regresión).
 
+### ADR-019 — Puertas abatibles sobre el frente (Fase 2C)
+**Contexto:** el clóset necesita puertas; un tablero
+(`Panel`) no modela la apertura, y alterar los
+constructores existentes para alojarlas rompería la
+geometría de Fases 0–2B.
+**Decisión:**
+- Las puertas son **componentes geométricos separados**
+  (como las barras): `Door` (hoja) y `DoorHandle`
+  (tirador) en el motor, generados por
+  `buildDoors(wardrobe)` y expuestos de forma aditiva
+  en `GeometryResult.doors` / `handles` (con
+  `totals.doorCount` / `handleCount`).
+- **Activación por presencia:** el contrato v1 extiende
+  con `doors?: DoorsConfig` (`leaves` 1|2, `hingeSide?`,
+  `clearanceMm?`, `material?` opcional). La ausencia del
+  campo = sin puertas (backward compatible con
+  configuraciones de fases anteriores).
+- **Montaje sobre el frente (PROVISIONAL):** la hoja
+  cerrada ocupa `z ∈ [−espesor, 0]` — por delante del
+  plano frontal del cuerpo. Es puramente aditivo:
+  paneles, barras y cajones NO se alteran.
+- **La apertura es una transformación pura de
+  presentación:** `doorOpeningTransform(door,
+  openAngleDeg)` devuelve `{ hingeXmm, hingeZmm,
+  centerOffsetMm, signedAngleRad }`; la capa de
+  presentación aplica `rotation.y` sobre un group
+  situado en el eje de bisagra. Los datos geométricos
+  originales **no se alteran** (la puerta del motor
+  permanece cerrada). El ángulo (0–110°) es **estado
+  de UI**, no de configuración.
+**Reglas PROVISIONALES** (docs/product-rules.md §3):
+1–2 hojas por módulo (con 2, las bisagras van en los
+extremos exteriores); holgura 0–10 mm (default 3) entre
+hojas y bordes del módulo, y entre hojas; el residuo de
+1 mm del reparto queda como holgura extra en el borde
+derecho; bisagra configurable con una hoja (default
+`left`); tirador: cilindro horizontal contra la cara
+frontal de la hoja, a 30 mm del borde libre (opuesto a
+la bisagra), centrado verticalmente, longitud = 40% del
+ancho de hoja acotada entre 40 y 120 mm, diámetro 18 mm;
+material de hoja default = estructura (`material-door`);
+tirador metálico fijo "Acero/brillo" (`material-handle`).
+**Validaciones:** `ERR_INVALID_DOOR_LEAVES`,
+`ERR_INVALID_HINGE_SIDE`, `ERR_INVALID_DOOR_CLEARANCE`,
+`ERR_DOOR_OPEN_ANGLE` (ángulo fuera de 0–110°) y
+`ERR_DOOR_WIDTH_INSUFFICIENT` (defensivo: la abertura
+no admite hojas con la holgura).
+**Consecuencias:** la escena renderiza un `group` por
+puerta en su eje de bisagra (rotación firmada: bisagra
+izquierda → ángulo positivo; derecha → negativo; en
+ambos casos el borde libre se aleja del frente hacia el
+observador) con el `Box` de la hoja y el `Cylinder` del
+tirador como hijos; `toRenderableDoor` /
+`toRenderableHandle` en `lib/panels-to-mesh.ts`; mm → m
+solo en esa capa.
+
+### ADR-020 — Panel trasero por encaje (Fase 2C)
+**Contexto:** el mueble lleva panel trasero; debe ser
+opcional y no alterar la geometría frontal ni requerir
+un constructor nuevo de paneles.
+**Decisión:**
+- El contrato v1 extiende con `backPanel?:
+  BackPanelConfig` (`enabled: boolean`, `thicknessMm:
+  15 | 18`, `material?: MaterialSpec` opcional).
+  Ausencia del campo o `enabled: false` = sin panel
+  trasero (backward compatible).
+- **Montaje por encaje (PROVISIONAL):** el trasero es
+  un `Panel` con role `'back'` (id `panel-back`,
+  `moduleId: null`) **incluido en `GeometryResult.panels`**
+  — se renderiza como cualquier tablero, sin inventar
+  geometría. Ocupa el plano posterior entre laterales y
+  entre superior e inferior: tamaño
+  `(ancho − 2t, alto − 2t, espesor)`, posición
+  `(t, t, profundidad − espesor)`.
+- Con panel trasero activado, los interiores se acortan
+  a la **profundidad útil** (`profundidad − espesor
+  trasero`): entrepaños y divisiones a `depthMm − th`;
+  cajones con `innerDepth = depthMm − 2t − th` (la caja
+  vive entre el frente y la cara frontal del trasero);
+  barras de colgado centradas en la profundidad útil.
+- Material default = estructura (`material-back`).
+**Validación:** `ERR_BACK_PANEL_DEPTH` (defensivo con
+los límites actuales: la profundidad debe admitir el
+encaje).
+**Consecuencias:** `GeometryTotals.panelCount` y el
+volumen de tableros incluyen el trasero; **sin panel
+trasero, la geometría es idéntica a Fase 2B** (cero
+regresiones, verificado por tests).
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa
@@ -279,10 +377,21 @@ cajón" (comportamiento nuevo planeado, no una regresión).
    roles `drawer-*` (frente, 2 laterales, trasera, fondo)
    incluidos en `panels`, relacionados por un
    `DrawerAssembly` en `drawers`.
+   `buildDoors(wardrobe)`: si `doors` está presente en la
+   configuración, una hoja (o dos) por módulo montada
+   sobre el frente (`z ∈ [−espesor, 0]`) con su tirador
+   cilíndrico; componentes separados en `doors`/`handles`
+   (posición cerrada; la apertura es
+   `doorOpeningTransform`, una transformación pura de
+   presentación).
+   Si `backPanel.enabled`, el panel trasero por encaje
+   entra en `panels` (role `back`) y los interiores se
+   acortan a la profundidad útil.
 4. `calculateGeometry` ensambla `GeometryResult` con totales (conteo y volumen
-   de paneles en mm³ —incluidas las piezas de cajón—,
-   útil para estimaciones futuras de material; barras y
-   cajones con sus propios conteos).
+   de paneles en mm³ —incluidas las piezas de cajón y el
+   panel trasero—, útil para estimaciones futuras de
+   material; barras, cajones, puertas y tiradores con
+   sus propios conteos).
 
 ## 5. Invariantes geométricos (verificados con tests)
 
@@ -291,9 +400,17 @@ cajón" (comportamiento nuevo planeado, no una regresión).
   (las piezas de un cajón se tocan como máximo; los cajones
   entre sí quedan separados por la holgura de 3 mm).
 - Todo panel referencia un material existente en `wardrobe.materials`
-  (incluidos `material-rod` y `material-drawer` cuando aplican).
+  (incluidos `material-rod`, `material-drawer`, `material-door`
+  y `material-back` cuando aplican).
 - Todo `partId` de un `DrawerAssembly` existe en `panels`, y
   todo panel `drawer-*` pertenece a exactamente un ensamblaje.
+- Toda puerta y todo tirador referencian materiales existentes
+  (`material-door`, `material-handle`); cada tirador pertenece
+  a exactamente una puerta (`doorId` existe en `doors`).
+- Las hojas cerradas ocupan `z ∈ [−espesor, 0]` (montaje sobre
+  el frente): nunca intersecan paneles, barras ni cajones.
+- Con panel trasero activado, ningún panel interior penetra el
+  plano posterior del trasero (encaje: `z ≤ profundidad − th`).
 - Misma entrada → `GeometryResult` idéntico (determinismo, verificado por test).
 
 ## 6. Capa de presentación (`apps/web`, Fase 1)
@@ -309,9 +426,14 @@ calculateGeometry() ──▶ GeometryResult   ──▶ GeometryError capturado
        │                                          (estado inválido)
        ▼
 toRenderablePanels()   (mm → m, esquina mínima → centro)
+toRenderableRods()     (mm → m, cilindros por eje+longitud+diámetro)
+toRenderableDoors()    (mm → m; hojas y tiradores, posición cerrada)
+toRenderableHandles()  (mm → m, centro del cilindro)
        │
        ▼
-React Three Fiber: un Box por Panel, OrbitControls (Drei),
+React Three Fiber: un Box por Panel/hoja, un Cylinder por barra y
+tirador, group por puerta rotado sobre su eje de bisagra
+(doorOpeningTransform + ángulo de UI), OrbitControls (Drei),
 geometrías y materiales reutilizados, carga diferida (lazy).
 ```
 
@@ -324,8 +446,10 @@ de verdad de dimensiones y paneles.
 - Sin backend, base de datos, autenticación, pagos, cotizaciones
   (Fases 3–4).
 - Sin editor CAD ni características de carpintería pendientes de
-  validación (panel trasero, herrajes, guías comerciales de
-  cajón).
+  validación (herrajes reales, guías comerciales de cajón,
+  bisagras comerciales).
 - Sin animaciones de apertura de cajones (permanecen cerrados).
+- Sin puertas corredizas ni puertas con varios paneles
+  (solo hojas lisas de 1–2 leaves en esta fase).
 - Sin cotizaciones: el volumen de tableros se muestra como dato
   geométrico, no como precio.

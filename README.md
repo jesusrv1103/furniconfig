@@ -8,12 +8,15 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 2B — Cajoneras paramétricas** (completada).
+**Fase 2C — Puertas abatibles y panel trasero** (completada).
 Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
-(Fase 2A) y cajoneras (Fase 2B: frentes, laterales,
-traseras y fondos como ensamblajes identificables);
-visualizador 3D (`apps/web`, React + Three.js).
+(Fase 2A), cajoneras (Fase 2B) y puertas abatibles
+con tiradores (Fase 2C: hojas de 1–2 por módulo,
+montadas sobre el frente, con apertura pura de
+presentación 0–110°); panel trasero opcional por
+encaje; visualizador 3D (`apps/web`, React +
+Three.js) con control de apertura de puertas.
 No hay backend, autenticación, pagos ni cotizaciones
 todavía (Fases 3–4).
 
@@ -61,8 +64,8 @@ furniconfig/
 │   └── geometry-core/        # motor paramétrico puro (mm, sin Three.js)
 │       ├── src/
 │       │   ├── contract/     # contrato de configuración versionado + validación
-│       │   ├── engine/       # funciones puras: distribución, paneles, barras, cajones
-│       │   └── types/        # Wardrobe, Module, Panel, HangingRod, DrawerAssembly, GeometryResult
+│       │   ├── engine/       # funciones puras: distribución, paneles, barras, cajones, puertas
+│       │   └── types/        # Wardrobe, Module, Panel, HangingRod, DrawerAssembly, Door, GeometryResult
 │       └── tests/            # pruebas unitarias (Vitest)
 └── apps/
     └── web/                  # visualizador 3D (React + Vite + React Three Fiber)

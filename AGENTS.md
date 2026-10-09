@@ -3,7 +3,8 @@
 ## Proyecto
 
 **FurniConfig**: SaaS B2B para diseño paramétrico de muebles a medida.
-Primer producto: clósets rectos modulares. Fase actual: **Fase 0** (motor paramétrico).
+Primer producto: clósets rectos modulares. Fase actual: **Fase 2C**
+(puertas abatibles y panel trasero).
 
 Antes de implementar cualquier cosa, lee `README.md`, `docs/architecture.md` y
 `docs/product-rules.md`.
@@ -18,6 +19,9 @@ npm run build        # compilación a dist/ y build de apps/web
 
 # Servidor de desarrollo del visualizador
 npm run dev --workspace @furniconfig/web   # http://localhost:5173
+
+# Pruebas visuales reales (Playwright + Chromium)
+npm run test:visual --workspace @furniconfig/web
 ```
 
 Requiere Node.js >= 22.12. Gestor de paquetes: **npm workspaces** (no usar pnpm/yarn

@@ -1,21 +1,32 @@
 import type { ChangeEvent } from 'react';
 import {
   BOARD_THICKNESSES_MM,
-  DEFAULT_DRAWER_MATERIAL_SPEC,
   DEFAULT_ROD_DIAMETER_MM,
   DEFAULT_ROD_FINISH,
   DEFAULT_ROD_NAME,
-  WARDROBE_CONFIG_SCHEMA_VERSION,
-  WARDROBE_LIMITS,
+  type DoorHingeSide,
+  type DoorLeafCount,
   type ModuleKind,
   type WardrobeConfig,
+  WARDROBE_CONFIG_SCHEMA_VERSION,
+  WARDROBE_LIMITS,
 } from '@furniconfig/geometry-core';
 import {
+  DEFAULT_DOOR_CLEARANCE_MM,
+  DEFAULT_DOOR_LEAVES,
+  DEFAULT_DRAWER_COUNT,
+  DEFAULT_HINGE_SIDE,
   FINISH_OPTIONS,
   MODULE_KIND_LABELS,
-  DEFAULT_DRAWER_COUNT,
+  materialSpec,
   clearHangingRod,
+  setBackPanelEnabled,
+  setBackPanelThickness,
   setDimension,
+  setDoorClearance,
+  setDoorHingeSide,
+  setDoorLeaves,
+  setDoorsEnabled,
   setHangingRodDiameter,
   setHangingRodMaterial,
   setMaterialFinish,
@@ -33,6 +44,8 @@ const MATERIAL_ROLE_LABELS: Readonly<Record<MaterialRole, string>> = {
   structure: 'Estructura (laterales, superior, inferior, divisiones)',
   interior: 'Interior (entrepaños)',
   drawer: 'Cajones (frentes, laterales, traseras, fondos)',
+  door: 'Puertas (hojas)',
+  back: 'Panel trasero',
 };
 
 const DIMENSION_LABELS: Readonly<Record<DimensionKey, string>> = {
@@ -49,6 +62,10 @@ interface ConfigPanelProps {
 
 export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
+  // Capturas locales: el narrowing de `config.doors`
+  // se pierde dentro de los callbacks de los botones.
+  const doors = config.doors;
+  const backPanel = config.backPanel;
   const { widthMm, heightMm, depthMm } = dimensions;
   const dimensionLimits = WARDROBE_LIMITS;
   const hasHangingModules = modules.some(
@@ -215,6 +232,193 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
         ))}
       </fieldset>
 
+      <fieldset>
+        <legend>Puertas abatibles</legend>
+        <p className="provisional-note">
+          Reglas provisionales: 1–2 hojas por módulo,
+          holgura 0–10 mm, montaje sobre el frente.
+          La apertura se controla en el visualizador.
+          Validar con carpintería.
+        </p>
+        <div
+          className="module-count"
+          role="group"
+          aria-label="Puertas del clóset"
+        >
+          <button
+            type="button"
+            className="count-button"
+            aria-pressed={!doors}
+            onClick={() =>
+              onUpdate((current) => setDoorsEnabled(current, false))
+            }
+          >
+            Sin puertas
+          </button>
+          <button
+            type="button"
+            className="count-button"
+            aria-pressed={!!doors}
+            onClick={() =>
+              onUpdate((current) => setDoorsEnabled(current, true))
+            }
+          >
+            Con puertas
+          </button>
+        </div>
+        {doors && (
+          <>
+            <label className="field">
+              <span>Hojas</span>
+              <div
+                className="module-count"
+                role="group"
+                aria-label="Hojas por módulo"
+              >
+                {[1, 2].map((leaves) => (
+                  <button
+                    key={leaves}
+                    type="button"
+                    className="count-button"
+                    aria-pressed={doors.leaves === leaves}
+                    onClick={() =>
+                      onUpdate((current) =>
+                        setDoorLeaves(
+                          current,
+                          leaves as DoorLeafCount,
+                        ),
+                      )
+                    }
+                  >
+                    {leaves}
+                  </button>
+                ))}
+              </div>
+            </label>
+            {doors.leaves === 1 && (
+              <label className="field">
+                <span>Bisagra</span>
+                <div
+                  className="module-count"
+                  role="group"
+                  aria-label="Lado de la bisagra"
+                >
+                  {(['left', 'right'] as DoorHingeSide[]).map(
+                    (side) => (
+                      <button
+                        key={side}
+                        type="button"
+                        className="count-button"
+                        aria-pressed={
+                          (doors.hingeSide ??
+                            DEFAULT_HINGE_SIDE) === side
+                        }
+                        onClick={() =>
+                          onUpdate((current) =>
+                            setDoorHingeSide(current, side),
+                          )
+                        }
+                      >
+                        {side === 'left' ? 'Izquierda' : 'Derecha'}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </label>
+            )}
+            <label className="field">
+              <span>Holgura</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                step={1}
+                min={WARDROBE_LIMITS.doors.clearanceMm.min}
+                max={WARDROBE_LIMITS.doors.clearanceMm.max}
+                value={
+                  doors.clearanceMm ??
+                  DEFAULT_DOOR_CLEARANCE_MM
+                }
+                onChange={(event) =>
+                  onUpdate((current) =>
+                    setDoorClearance(
+                      current,
+                      Number(event.target.value),
+                    ),
+                  )
+                }
+              />
+              <small>
+                Provisional:{' '}
+                {WARDROBE_LIMITS.doors.clearanceMm.min}–
+                {WARDROBE_LIMITS.doors.clearanceMm.max} mm
+              </small>
+            </label>
+          </>
+        )}
+      </fieldset>
+
+      <fieldset>
+        <legend>Panel trasero</legend>
+        <p className="provisional-note">
+          Montaje por encaje PROVISIONAL: el panel ocupa el
+          plano posterior y entrepaños, divisiones, cajones
+          y barra se acortan a la profundidad útil. Validar
+          con carpintería.
+        </p>
+        <div
+          className="module-count"
+          role="group"
+          aria-label="Panel trasero"
+        >
+          <button
+            type="button"
+            className="count-button"
+            aria-pressed={!backPanel?.enabled}
+            onClick={() =>
+              onUpdate((current) =>
+                setBackPanelEnabled(current, false),
+              )
+            }
+          >
+            Sin panel
+          </button>
+          <button
+            type="button"
+            className="count-button"
+            aria-pressed={!!backPanel?.enabled}
+            onClick={() =>
+              onUpdate((current) =>
+                setBackPanelEnabled(current, true),
+              )
+            }
+          >
+            Con panel
+          </button>
+        </div>
+        {backPanel?.enabled && (
+          <label className="field">
+            <span>Espesor</span>
+            <select
+              value={backPanel.thicknessMm}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setBackPanelThickness(
+                    current,
+                    Number(event.target.value) as 15 | 18,
+                  ),
+                )
+              }
+            >
+              {BOARD_THICKNESSES_MM.map((thickness) => (
+                <option key={thickness} value={thickness}>
+                  {thickness} mm
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </fieldset>
+
       {hasHangingModules && (
         <fieldset>
           <legend>Barra de colgado</legend>
@@ -297,18 +501,21 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
       <fieldset>
         <legend>Materiales y acabados</legend>
         {(
-          ['structure', 'interior', 'drawer'] as MaterialRole[]
+          [
+            'structure',
+            'interior',
+            'drawer',
+            // Puertas y panel trasero: editables
+            // solo con la función activada.
+            ...(config.doors ? ['door'] : []),
+            ...(config.backPanel?.enabled ? ['back'] : []),
+          ] as MaterialRole[]
         ).map((role) => {
-          // El material de cajón es opcional en el
-          // contrato: la interfaz edita sobre el
-          // default provisional del motor.
-          const spec =
-            role === 'drawer'
-              ? {
-                  ...DEFAULT_DRAWER_MATERIAL_SPEC,
-                  ...materials.drawer,
-                }
-              : materials[role];
+          // Los roles opcionales del contrato se
+          // editan sobre el default provisional
+          // del motor (drawer: su spec; door y
+          // back: estructura).
+          const spec = materialSpec(config, role);
           return (
             <fieldset key={role} className="material-card">
               <legend>{MATERIAL_ROLE_LABELS[role]}</legend>
@@ -346,10 +553,16 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
                   ))}
                 </select>
               </label>
-              {role === 'drawer' && (
+              {role !== 'structure' && role !== 'interior' && (
                 <small className="provisional-note">
                   Provisional: el motor aplica este
-                  material a los módulos de cajones.
+                  material a
+                  {role === 'drawer'
+                    ? ' los módulos de cajones'
+                    : role === 'door'
+                      ? ' las hojas de puerta'
+                      : ' el panel trasero'}
+                  .
                 </small>
               )}
             </fieldset>

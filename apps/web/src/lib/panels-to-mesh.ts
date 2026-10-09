@@ -7,6 +7,9 @@
  */
 
 import type {
+  Door,
+  DoorHandle,
+  DoorHingeSide,
   HangingRod,
   Panel,
   PanelRole,
@@ -131,4 +134,104 @@ export function toRenderableRods(
   rods: readonly HangingRod[],
 ): RenderableRod[] {
   return rods.map(toRenderableRod);
+}
+
+export interface RenderableDoor {
+  id: string;
+  moduleId: string;
+  /** Orden de la hoja dentro del módulo (1-based). */
+  leafIndex: number;
+  /** Cantidad de hojas del módulo (1 o 2). */
+  leafCount: number;
+  /** Lado de la bisagra (eje de apertura). */
+  hingeSide: DoorHingeSide;
+  /** Tamaño en metros (x = ancho, y = alto, z = espesor). */
+  sizeM: [number, number, number];
+  /** Esquina mínima en metros (posición CERRADA). */
+  positionM: [number, number, number];
+  /** Centro en metros (posición CERRADA). */
+  centerM: [number, number, number];
+  materialId: string;
+}
+
+/** Convierte una puerta del motor (mm) a datos de renderizado (m). */
+export function toRenderableDoor(door: Door): RenderableDoor {
+  const positionM: [number, number, number] = [
+    mmToM(door.positionMm.x),
+    mmToM(door.positionMm.y),
+    mmToM(door.positionMm.z),
+  ];
+  const sizeM: [number, number, number] = [
+    mmToM(door.widthMm),
+    mmToM(door.heightMm),
+    mmToM(door.thicknessMm),
+  ];
+  const centerM: [number, number, number] = [
+    positionM[0] + sizeM[0] / 2,
+    positionM[1] + sizeM[1] / 2,
+    positionM[2] + sizeM[2] / 2,
+  ];
+
+  return {
+    id: door.id,
+    moduleId: door.moduleId,
+    leafIndex: door.leafIndex,
+    leafCount: door.leafCount,
+    hingeSide: door.hingeSide,
+    sizeM,
+    positionM,
+    centerM,
+    materialId: door.materialId,
+  };
+}
+
+/** Convierte todas las puertas de un GeometryResult. */
+export function toRenderableDoors(
+  doors: readonly Door[],
+): RenderableDoor[] {
+  return doors.map(toRenderableDoor);
+}
+
+export interface RenderableHandle {
+  id: string;
+  /** Puerta a la que pertenece el tirador. */
+  doorId: string;
+  moduleId: string;
+  axis: RodAxis;
+  /** Longitud en metros, sobre el eje del tirador. */
+  lengthM: number;
+  /** Diámetro en metros. */
+  diameterM: number;
+  /** Centro del cilindro en metros (posición CERRADA). */
+  centerM: [number, number, number];
+  materialId: string;
+}
+
+/** Convierte un tirador del motor (mm) a datos de renderizado (m). */
+export function toRenderableHandle(
+  handle: DoorHandle,
+): RenderableHandle {
+  const centerM: [number, number, number] = [
+    mmToM(handle.positionMm.x + handle.lengthMm / 2),
+    mmToM(handle.positionMm.y + handle.diameterMm / 2),
+    mmToM(handle.positionMm.z + handle.diameterMm / 2),
+  ];
+
+  return {
+    id: handle.id,
+    doorId: handle.doorId,
+    moduleId: handle.moduleId,
+    axis: handle.axis,
+    lengthM: mmToM(handle.lengthMm),
+    diameterM: mmToM(handle.diameterMm),
+    centerM,
+    materialId: handle.materialId,
+  };
+}
+
+/** Convierte todos los tiradores de un GeometryResult. */
+export function toRenderableHandles(
+  handles: readonly DoorHandle[],
+): RenderableHandle[] {
+  return handles.map(toRenderableHandle);
 }

@@ -14,6 +14,32 @@ export const WARDROBE_LIMITS = {
   moduleWidthMm: { min: 300 },
   shelfCount: { min: 1, max: 8 },
   drawerCount: { min: 1, max: 8 },
+  doors: {
+    /** Hojas por módulo (PROVISIONAL). */
+    leaves: { min: 1, max: 2 },
+    /**
+     * Holgura PROVISIONAL (mm) entre hojas
+     * y bordes del módulo.
+     */
+    clearanceMm: { min: 0, max: 10 },
+    /** Ángulo máximo de apertura (grados, PROVISIONAL). */
+    openAngleDeg: { min: 0, max: 110 },
+    /** Diámetro del tirador (mm, PROVISIONAL). */
+    handleDiameterMm: 18,
+    /**
+     * Longitud del tirador: ratio PROVISIONAL
+     * del ancho de hoja, acotada entre mínimo
+     * y máximo (mm).
+     */
+    handleLengthRatio: 0.4,
+    handleMinLengthMm: 40,
+    handleMaxLengthMm: 120,
+    /**
+     * Distancia PROVISIONAL (mm) del tirador
+     * al borde libre de la hoja.
+     */
+    handleStandoffMm: 30,
+  },
   drawerClearanceMm: {
     /**
      * Holgura PROVISIONAL (mm) que queda arriba de

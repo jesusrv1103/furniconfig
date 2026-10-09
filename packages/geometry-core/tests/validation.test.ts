@@ -247,6 +247,188 @@ describe('validateWardrobeConfig', () => {
     expect(widthError).toBeDefined();
     expect(widthError?.message).not.toBe('');
   });
+
+  it('ausencia de doors/backPanel es válida (sin puertas ni trasero)', () => {
+    const result = validateWardrobeConfig(validConfig);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.doors).toBeUndefined();
+    expect(result.config.backPanel).toBeUndefined();
+  });
+
+  it('acepta y preserva la configuración de puertas válida', () => {
+    const result = validateWardrobeConfig({
+      ...validConfig,
+      doors: { leaves: 2, hingeSide: 'right', clearanceMm: 5 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.doors).toEqual({
+      leaves: 2,
+      hingeSide: 'right',
+      clearanceMm: 5,
+    });
+  });
+
+  it('rechaza hojas de puerta que no sean 1 o 2', () => {
+    for (const leaves of [undefined, 0, 3, 1.5, '2', null]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        doors: { leaves: leaves as 1 },
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.errors.some(
+          (error) => error.code === 'ERR_INVALID_DOOR_LEAVES',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('rechaza "doors" que no sea un objeto', () => {
+    for (const doors of ['dos', 42, true, []]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        doors,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.errors.some(
+          (error) => error.code === 'ERR_INVALID_DOOR_LEAVES',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('rechaza lados de bisagra inválidos', () => {
+    for (const hingeSide of ['center', 'LEFT', 0, null]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        doors: { leaves: 1, hingeSide: hingeSide as 'left' },
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.errors.some(
+          (error) => error.code === 'ERR_INVALID_HINGE_SIDE',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('rechaza holguras de puerta fuera de [0, 10] o no enteras', () => {
+    for (const clearanceMm of [-1, 11, 2.5, '3', null]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        doors: { leaves: 1, clearanceMm: clearanceMm as number },
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.errors.some(
+          (error) => error.code === 'ERR_INVALID_DOOR_CLEARANCE',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('acepta los límites de holgura de puerta (0 y 10 mm)', () => {
+    for (const clearanceMm of [0, 10]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        doors: { leaves: 1, clearanceMm },
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it('rechaza materiales de puerta inválidos (materials.door)', () => {
+    const result = validateWardrobeConfig({
+      ...validConfig,
+      materials: {
+        ...validConfig.materials,
+        door: { name: 'Roble', thicknessMm: 12, finish: 'mate' },
+      },
+      doors: { leaves: 1 },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some(
+        (error) =>
+          error.code === 'ERR_INVALID_MATERIAL' ||
+          error.code === 'ERR_INVALID_THICKNESS',
+      ),
+    ).toBe(true);
+  });
+
+  it('acepta y preserva el panel trasero válido', () => {
+    const result = validateWardrobeConfig({
+      ...validConfig,
+      backPanel: { enabled: true, thicknessMm: 15 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.backPanel).toEqual({
+      enabled: true,
+      thicknessMm: 15,
+    });
+  });
+
+  it('rechaza "backPanel" que no sea un objeto o "enabled" no booleano', () => {
+    for (const backPanel of [
+      'si',
+      42,
+      true,
+      { enabled: 'si', thicknessMm: 18 },
+    ]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        backPanel,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.errors.some((error) => error.field.startsWith('backPanel')),
+      ).toBe(true);
+    }
+  });
+
+  it('rechaza espesores de panel trasero distintos de 15/18', () => {
+    for (const thicknessMm of [12, 16, 16.5, '18', null]) {
+      const result = validateWardrobeConfig({
+        ...validConfig,
+        backPanel: { enabled: true, thicknessMm },
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.errors.some(
+          (error) => error.code === 'ERR_INVALID_THICKNESS',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('rechaza materiales de panel trasero inválidos (materials.back)', () => {
+    const result = validateWardrobeConfig({
+      ...validConfig,
+      materials: {
+        ...validConfig.materials,
+        back: { name: '', thicknessMm: 18, finish: 'mate' },
+      },
+      backPanel: { enabled: true, thicknessMm: 18 },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some(
+        (error) => error.code === 'ERR_INVALID_MATERIAL',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('type guards', () => {

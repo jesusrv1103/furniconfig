@@ -14,6 +14,7 @@ const ROLE_LABELS: Readonly<Record<PanelRole, string>> = {
   'drawer-side': 'Laterales de cajón',
   'drawer-back': 'Traseras de cajón',
   'drawer-bottom': 'Fondos de cajón',
+  back: 'Panel trasero',
 };
 
 const ROLE_ORDER: readonly PanelRole[] = [
@@ -26,6 +27,7 @@ const ROLE_ORDER: readonly PanelRole[] = [
   'drawer-side',
   'drawer-back',
   'drawer-bottom',
+  'back',
 ];
 
 export function SummaryPanel({ geometry }: { geometry: GeometryResult }) {
@@ -157,6 +159,60 @@ export function SummaryPanel({ geometry }: { geometry: GeometryResult }) {
             </ul>
           )}
         </>
+      )}
+
+      {geometry.doors.length > 0 && (
+        <>
+          <h3>Puertas ({geometry.totals.doorCount})</h3>
+          <ul className="panel-list">
+            {geometry.doors.map((door) => (
+              <li key={door.id}>
+                {door.id} · {door.leafCount}{' '}
+                {door.leafCount === 1 ? 'hoja' : 'hojas'} ·
+                bisagra{' '}
+                {door.hingeSide === 'left'
+                  ? 'izquierda'
+                  : 'derecha'}
+                · {formatMm(door.widthMm)} ×{' '}
+                {formatMm(door.heightMm)} ×{' '}
+                {formatMm(door.thicknessMm)}
+              </li>
+            ))}
+          </ul>
+          <dl className="summary-list">
+            <div>
+              <dt>Tiradores</dt>
+              <dd>{geometry.totals.handleCount}</dd>
+            </div>
+          </dl>
+          {wardrobe.materials.door && (
+            <ul className="material-list">
+              <li>
+                Puertas: {wardrobe.materials.door.name} ·{' '}
+                {wardrobe.materials.door.thicknessMm} mm ·{' '}
+                {wardrobe.materials.door.finish}
+              </li>
+            </ul>
+          )}
+          {wardrobe.materials.handle && (
+            <ul className="material-list">
+              <li>
+                Tiradores: {wardrobe.materials.handle.name} ·{' '}
+                {wardrobe.materials.handle.finish}
+              </li>
+            </ul>
+          )}
+        </>
+      )}
+
+      {wardrobe.backPanel && wardrobe.materials.back && (
+        <ul className="material-list">
+          <li>
+            Panel trasero: {wardrobe.materials.back.name} ·{' '}
+            {wardrobe.backPanel.thicknessMm} mm ·{' '}
+            {wardrobe.materials.back.finish}
+          </li>
+        </ul>
       )}
 
       <h3>Materiales</h3>
