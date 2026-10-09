@@ -18,6 +18,11 @@
 | Tipos de módulo | Entrepaños (`shelves`), colgado (`hanging`), cajones (`drawers`) | Confirmado |
 | Materiales y acabados | Configurables (nombre, espesor, acabado) | Confirmado |
 
+| Ancho por módulo (Fase 3D) | Ancho interior libre declarable en mm enteros; sin declaración, reparto automático | Confirmado (producto: anchos independientes) |
+| Ancho mínimo de módulo | 300 mm por módulo (resuelto o declarado) | **PROVISIONAL** |
+| Ancho máximo de módulo declarado | 2.000 mm, SOLO para anchos declarados (los repartos uniformes del motor no se acotan, así los diseños antiguos siguen válidos) | **PROVISIONAL** (deflexión/colapso de tableros anchos) |
+| Reparto del sobrante | Los módulos automáticos comparten por igual el espacio que queda; el residuo entero (1 mm) va a los primeros automáticos, de izquierda a derecha | Confirmado (ADR-006/ADR-025) |
+
 | Barras de colgado | 1 por módulo "hanging" (Fase 2A) | Confirmado (producto) |
 | Diámetro de barra | 18–60 mm, default 30 mm | **PROVISIONAL** |
 | Montaje de barra | 100 mm bajo el superior, centrada en Z | **PROVISIONAL** |
@@ -198,7 +203,9 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
 - Contrato: `schemaVersion` debe ser `1`.
 - Dimensiones: enteros positivos dentro de límites provisionales.
 - Módulos: 1–4, tipo válido, `shelves` coherente con el tipo,
-  `drawers` entero 1–8 cuando se declara (opcional: default 3).
+  `drawers` entero 1–8 cuando se declara (opcional: default 3),
+  `widthMm` opcional (entero, 300–2.000 mm) = ancho interior libre
+  declarado (`ERR_MODULE_WIDTH_INVALID`).
 - Materiales: nombre y acabado no vacíos; espesor ∈ {15, 18} mm;
   material de cajón (`materials.drawer`), de puerta (`materials.door`)
   y de panel trasero (`materials.back`) válidos cuando se declaran.
@@ -209,7 +216,9 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
   `thicknessMm` ∈ {15, 18} (`ERR_INVALID_THICKNESS`).
 - Motor: ancho total suficiente para laterales + divisiones + ancho mínimo de
   módulo (`ERR_WIDTH_INSUFFICIENT`, `ERR_MODULE_WIDTH_TOO_SMALL`);
-  caja de cajón físicamente viable (`ERR_DRAWER_DIMENSIONS`);
+  con anchos declarados: suma exacta cuando todos declaran
+  (`ERR_MODULE_WIDTH_SUM`) y sobrante suficiente para los módulos
+  automáticos; caja de cajón físicamente viable (`ERR_DRAWER_DIMENSIONS`);
   altura de módulo "hanging" suficiente para la barra
   (`ERR_HANGING_ROD_HEIGHT`); ángulo de apertura de puertas
   dentro de 0–110° (`ERR_DOOR_OPEN_ANGLE`).

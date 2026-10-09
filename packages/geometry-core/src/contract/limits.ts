@@ -11,7 +11,19 @@ export const WARDROBE_LIMITS = {
   heightMm: { min: 1000, max: 2800 },
   depthMm: { min: 400, max: 700 },
   moduleCount: { min: 1, max: 4 },
-  moduleWidthMm: { min: 300 },
+  /**
+   * Ancho interior útil por módulo (Fase 3D).
+   *
+   * El mínimo se aplica a cualquier módulo resuelto. El
+   * máximo es PROVISIONAL (colapso/deflexión de tableros
+   * anchos; validar con carpintería) y se aplica SOLO a
+   * los anchos declarados explícitamente en la
+   * configuración: así los diseños antiguos (sin
+   * `widthMm`, con distribución uniforme del motor)
+   * siguen siendo válidos aunque el reparto les asigne
+   * un ancho mayor.
+   */
+  moduleWidthMm: { min: 300, max: 2000 },
   shelfCount: { min: 1, max: 8 },
   drawerCount: { min: 1, max: 8 },
   doors: {

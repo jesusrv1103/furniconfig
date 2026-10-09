@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { calculateGeometry } from '@furniconfig/geometry-core';
 import { DesignStorageError } from '../src/lib/designs/errors.js';
 import {
   createLocalStorageDesignStorage,
@@ -10,7 +11,7 @@ import {
   DESIGN_STORAGE_VERSION,
   type DesignRecord,
 } from '../src/lib/designs/types.js';
-import { DEFAULT_CONFIG } from '../src/lib/config.js';
+import { DEFAULT_CONFIG, setModuleWidth } from '../src/lib/config.js';
 import { MemoryStorage, quotaError } from './helpers/memory-storage.js';
 
 function makeRecord(overrides: Partial<DesignRecord> = {}): DesignRecord {
@@ -197,5 +198,55 @@ describe('adaptador local de diseños (localStorage)', () => {
     await expect(storage.put(makeRecord())).rejects.toMatchObject({
       code: 'storage-unavailable',
     });
+  });
+});
+
+describe('persistencia de anchos individuales (Fase 3D)', () => {
+  it('un diseño con anchos fijados guarda y recupera la distribución', async () => {
+    const memory = new MemoryStorage();
+    const storage = createLocalStorageDesignStorage(memory);
+    const config = setModuleWidth(DEFAULT_CONFIG, 0, 900);
+    await storage.put(makeRecord({ config }));
+
+    const loaded = await storage.get('design-1');
+    expect(loaded?.config.modules[0]?.widthMm).toBe(900);
+    expect(calculateGeometry(loaded?.config ?? config).wardrobe.modules.map(
+      (module) => module.widthMm,
+    )).toEqual([900, 714, 714]);
+  });
+
+  it('la sesión de editor conserva los anchos fijados', async () => {
+    const memory = new MemoryStorage();
+    const storage = createLocalStorageDesignStorage(memory);
+    const config = setModuleWidth(DEFAULT_CONFIG, 1, 600);
+    await storage.save({
+      storageVersion: DESIGN_SESSION_VERSION,
+      config,
+      activeId: null,
+      dirty: false,
+    });
+
+    const session = await storage.load();
+    expect(session?.config.modules[1]?.widthMm).toBe(600);
+  });
+
+  it('un diseño antiguo (sin anchos) sigue abriendo con reparto uniforme', async () => {
+    const memory = new MemoryStorage();
+    const storage = createLocalStorageDesignStorage(memory);
+    // JSON tal y como lo escribían las fases anteriores
+    // (sin `widthMm` en los módulos).
+    memory.seed(
+      DESIGNS_STORAGE_KEY,
+      JSON.stringify({
+        storageVersion: DESIGN_STORAGE_VERSION,
+        designs: [makeRecord()],
+      }),
+    );
+
+    const loaded = await storage.get('design-1');
+    expect(loaded?.config.modules).toEqual(DEFAULT_CONFIG.modules);
+    expect(calculateGeometry(loaded?.config ?? DEFAULT_CONFIG).wardrobe.modules.map(
+      (module) => module.widthMm,
+    )).toEqual([776, 776, 776]);
   });
 });

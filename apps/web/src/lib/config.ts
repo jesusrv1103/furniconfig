@@ -19,11 +19,14 @@ import {
   DEFAULT_ROD_NAME,
   WARDROBE_CONFIG_SCHEMA_VERSION,
   WARDROBE_LIMITS,
+  distributeModules,
+  maxFixedWidthMm,
   type BackPanelConfig,
   type BoardThicknessMm,
   type DoorHingeSide,
   type DoorLeafCount,
   type MaterialSpec,
+  type ModuleConfig,
   type ModuleKind,
   type WardrobeConfig,
 } from '@furniconfig/geometry-core';
@@ -102,7 +105,15 @@ export function materialSpec(
   return config.materials[role];
 }
 
-/** Establece una dimensión externa (mm). */
+/**
+ * Establece una dimensión externa (mm).
+ *
+ * Fase 3D: al cambiar el ANCHO del mueble se conservan los
+ * anchos fijados de los módulos solo si siguen encajando
+ * (`withWidthsIfConsistent`); si no, la distribución vuelve
+ * a ser uniforme para no dejar la configuración inválida.
+ * El cambio es reversible con deshacer.
+ */
 export function setDimension(
   config: WardrobeConfig,
   key: DimensionKey,
@@ -110,13 +121,18 @@ export function setDimension(
 ): WardrobeConfig {
   const dimensions = { ...config.dimensions };
   dimensions[key] = value;
-  return { ...config, dimensions };
+  const next = { ...config, dimensions };
+  return key === 'widthMm' ? withWidthsIfConsistent(next) : next;
 }
 
 /**
  * Ajusta el número de módulos al rango confirmado (1–4).
  * Los módulos nuevos se añaden como "hanging"; al quitar, se
  * truncan desde la derecha.
+ *
+ * Fase 3D: como cambio estructural, se conservan los anchos
+ * fijados solo si siguen encajando con el nuevo reparto
+ * (si no, vuelve a distribución uniforme).
  */
 export function setModuleCount(
   config: WardrobeConfig,
@@ -129,7 +145,7 @@ export function setModuleCount(
     modules.push({ kind: 'hanging' });
   }
   modules.length = clamped;
-  return { ...config, modules };
+  return withWidthsIfConsistent({ ...config, modules });
 }
 
 /** Cambia el tipo de un módulo. "shelves" conserva o añade estantes. */
@@ -142,10 +158,18 @@ export function setModuleKind(
     if (current !== index) {
       return module;
     }
+    // El ancho declarado (Fase 3D) pertenece al módulo,
+    // no a su tipo: se conserva al cambiar de tipo.
+    const widthField =
+      module.widthMm !== undefined ? { widthMm: module.widthMm } : {};
     if (kind === 'shelves') {
-      return { kind, shelves: module.shelves ?? DEFAULT_SHELVES };
+      return {
+        kind,
+        shelves: module.shelves ?? DEFAULT_SHELVES,
+        ...widthField,
+      };
     }
-    return { kind };
+    return { kind, ...widthField };
   });
   return { ...config, modules };
 }
@@ -181,6 +205,186 @@ export function setModuleDrawers(
       : module,
   );
   return { ...config, modules };
+}
+
+// ── Distribución de ancho por módulo (Fase 3D) ─────────
+//
+// Anchos interiores libres declarados en la configuración
+// (`ModuleConfig.widthMm`): los helpers son puros y no
+// mutan la entrada. El motor es la única fuente de verdad
+// del reparto; aquí solo se declaran/liberan anchos y se
+// consulta al motor si el resultado sigue siendo válido.
+
+function distributionInput(config: WardrobeConfig) {
+  return {
+    totalWidthMm: config.dimensions.widthMm,
+    moduleCount: config.modules.length,
+    sideThicknessMm: config.materials.structure.thicknessMm,
+    dividerThicknessMm: config.materials.structure.thicknessMm,
+    declaredWidthsMm: config.modules.map((module) => module.widthMm),
+  };
+}
+
+/** `true` si el motor puede repartir la configuración. */
+function widthsConsistent(config: WardrobeConfig): boolean {
+  try {
+    distributeModules(distributionInput(config));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Módulo sin ancho declarado (vuelve a reparto automático). */
+function withoutDeclaredWidth(module: ModuleConfig): ModuleConfig {
+  if (module.widthMm === undefined) {
+    return module;
+  }
+  const next: ModuleConfig = { kind: module.kind };
+  if (module.shelves !== undefined) {
+    next.shelves = module.shelves;
+  }
+  if (module.drawers !== undefined) {
+    next.drawers = module.drawers;
+  }
+  return next;
+}
+
+function equalizeAllWidths(config: WardrobeConfig): WardrobeConfig {
+  if (!config.modules.some((module) => module.widthMm !== undefined)) {
+    return config;
+  }
+  return { ...config, modules: config.modules.map(withoutDeclaredWidth) };
+}
+
+/**
+ * Conserva los anchos fijados de `next` solo si el motor
+ * sigue pudiendo repartir el espacio; si no, libera todos
+ * (vuelve a distribución uniforme). Evita que un cambio de
+ * dimensión o de conteo deje la configuración inválida.
+ */
+function withWidthsIfConsistent(next: WardrobeConfig): WardrobeConfig {
+  if (!next.modules.some((module) => module.widthMm !== undefined)) {
+    return next;
+  }
+  return widthsConsistent(next) ? next : equalizeAllWidths(next);
+}
+
+/**
+ * Fija el ancho interior libre del módulo `index` (mm).
+ *
+ * El valor se redondea a entero y se acota al rango
+ * válido: mínimo provisional y ancho máximo disponible
+ * (`maxFixedWidthMm`, que deja el mínimo a los demás).
+ * Si el resultado no cambia nada, se devuelve la misma
+ * configuración (sin paso de historial).
+ */
+export function setModuleWidth(
+  config: WardrobeConfig,
+  index: number,
+  widthMm: number,
+): WardrobeConfig {
+  const target = config.modules[index];
+  if (target === undefined || !Number.isFinite(widthMm)) {
+    return config;
+  }
+  const minMm = WARDROBE_LIMITS.moduleWidthMm.min;
+  const maxMm = maxFixedWidthMm({
+    ...distributionInput(config),
+    targetIndex: index,
+  });
+  const clamped = Math.min(
+    Math.max(Math.round(widthMm), minMm),
+    Math.max(maxMm, minMm),
+  );
+  if (target.widthMm === clamped) {
+    return config;
+  }
+  const modules = config.modules.map((module, current) =>
+    current === index ? { ...module, widthMm: clamped } : module,
+  );
+  return { ...config, modules };
+}
+
+/**
+ * Libera el ancho fijado del módulo `index`: vuelve a ser
+ * automático y comparte el espacio restante con los demás
+ * módulos automáticos.
+ */
+export function releaseModuleWidth(
+  config: WardrobeConfig,
+  index: number,
+): WardrobeConfig {
+  const target = config.modules[index];
+  if (target?.widthMm === undefined) {
+    return config;
+  }
+  return {
+    ...config,
+    modules: config.modules.map((module, current) =>
+      current === index ? withoutDeclaredWidth(module) : module,
+    ),
+  };
+}
+
+/**
+ * "Igualar anchos": libera TODOS los anchos fijados y
+ * devuelve el reparto uniforme (comportamiento histórico
+ * del motor, con residuo 1 mm de izquierda a derecha).
+ */
+export function equalizeModuleWidths(
+  config: WardrobeConfig,
+): WardrobeConfig {
+  return equalizeAllWidths(config);
+}
+
+/**
+ * "Repartir espacio restante": conserva el ancho actual
+ * del módulo `index` (fijado) y libera los demás para que
+ * compartan por igual el espacio restante.
+ *
+ * Si el ancho actual no encaja (p. ej. supera el máximo
+ * provisional al declararlo), no se aplica nada: se
+ * devuelve la configuración original en lugar de producir
+ * un estado inválido.
+ */
+export function fixSelectedRedistributeOthers(
+  config: WardrobeConfig,
+  index: number,
+  currentWidthMm: number,
+): WardrobeConfig {
+  const target = config.modules[index];
+  if (target === undefined || !Number.isFinite(currentWidthMm)) {
+    return config;
+  }
+  const released = {
+    ...config,
+    modules: config.modules.map((module, current) =>
+      current === index ? module : withoutDeclaredWidth(module),
+    ),
+  };
+  const requestedMm = Math.round(currentWidthMm);
+  const minMm = WARDROBE_LIMITS.moduleWidthMm.min;
+  const maxMm = maxFixedWidthMm({
+    ...distributionInput(released),
+    targetIndex: index,
+  });
+  if (requestedMm < minMm || requestedMm > Math.max(maxMm, minMm)) {
+    return config;
+  }
+  if (target.widthMm === requestedMm) {
+    const othersReleased = released.modules.some(
+      (module, current) =>
+        current !== index && module !== config.modules[current],
+    );
+    return othersReleased ? released : config;
+  }
+  return {
+    ...released,
+    modules: released.modules.map((module, current) =>
+      current === index ? { ...module, widthMm: requestedMm } : module,
+    ),
+  };
 }
 
 /** Establece el espesor (15 | 18 mm) de un rol de material. */

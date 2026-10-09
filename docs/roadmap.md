@@ -299,6 +299,49 @@
       paneles del Studio) + escenario Playwright con ~30
       verificaciones nuevas y 10 capturas de evidencia.
 
+## Fase 3D — Diseño paramétrico flexible ✅
+
+- [x] Motor de distribución flexible (ADR-025):
+      `ModuleConfig.widthMm?` (ancho interior libre en mm
+      enteros, opcional) con reparto uniforme idéntico al
+      histórico cuando no hay declaraciones; anchos
+      parciales (los declarados se respetan y los
+      automáticos reparten el sobrante con residuo 1 mm
+      izq→der), suma exacta cuando todos declaran, límites
+      (mínimo 300 mm, máximo provisional 2.000 mm solo para
+      declarados) y códigos nuevos `ERR_MODULE_WIDTH_INVALID`
+      y `ERR_MODULE_WIDTH_SUM`. Paneles, barras, cajones,
+      puertas e ids se recalculan con los algoritmos
+      existentes.
+- [x] Edición desde el Studio: ancho real en el panel
+      contextual con control numérico preciso (borrador con
+      previsualización de los módulos afectados, límite
+      máximo informado y confirmación al salir/Enter),
+      liberar ancho, chips de ancho en las tarjetas y
+      sección "Distribución de anchos" con Igualar anchos,
+      Repartir espacio restante e indicador de "sin espacio
+      por repartir". Lenguaje sencillo; sin espesores ni
+      coordenadas para el usuario.
+- [x] Plantillas locales: 4 distribuciones prediseñadas
+      (básico, colgar, cajonera, mixto con ancho declarado)
+      sobre los contratos existentes, siempre válidas, que
+      conservan materiales y opciones y son deshacerables.
+- [x] Persistencia e integridad: los diseños antiguos siguen
+      abriendo (reparto uniforme); los nuevos con anchos
+      individuales se guardan, importan/exportan y
+      sobreviven a deshacer/rehacer; cambios de dimensión o
+      de conteo conservan los fijados si siguen encajando y
+      si no vuelven a reparto uniforme (nunca dejan la
+      configuración inválida por los anchos).
+- [x] CI en GitHub: workflow de PRs hacia `main` con `npm
+      ci`, typecheck, pruebas unitarias y build (Node 22,
+      sin secretos ni despliegues). Las pruebas visuales
+      siguen siendo locales.
+- [x] Pruebas: 27 unitarias nuevas en el motor, ~30 en la
+      web (helpers, plantillas, persistencia, historial,
+      panel contextual) y 21 verificaciones visuales nuevas
+      con 3 capturas de evidencia.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.

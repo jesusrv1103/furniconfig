@@ -66,9 +66,17 @@
  *     dimensiones y limpieza al desaparecer el módulo,
  *     paneles laterales contraíbles, modo sencillo/
  *     avanzado y encuadre de cámara al módulo.
+ * 19. (Fase 3D) Distribución flexible: ancho por módulo
+ *     en el panel contextual (con previsualización de los
+ *     módulos afectados y límite máximo informado),
+ *     fijar/liberar anchos, Igualar anchos, Repartir
+ *     espacio restante, chips de ancho en las tarjetas,
+ *     plantilla mixto (4 módulos con ancho declarado) y
+ *     deshacer/rehacer de distribuciones.
  *
  * Guarda capturas + `inspeccion.json` (mediciones) en
- * /tmp/opencode/fase3a (evidencias de Fase 3A, 3B y 3C).
+ * /tmp/opencode/fase3a (evidencias de Fase 3A, 3B, 3C y
+ * 3D).
  *
  * Uso: node tests/visual/visual-check.mjs
  * (o npm run test:visual)
@@ -438,7 +446,7 @@ try {
   saveShot('01-inicial', await page.screenshot());
 
   // 2. Cambiar ancho 2400 → 2800
-  await page.getByLabel('Ancho').fill('2800');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2800');
   await page.waitForTimeout(200);
   text = await summary.innerText();
   check('el resumen actualiza el ancho a 2.800 mm', text.includes('2.800 mm'));
@@ -711,7 +719,7 @@ try {
   saveShot('06b-sin-barra', await page.screenshot());
 
   // 7. Estado de error controlado (ancho fuera de rango)
-  await page.getByLabel('Ancho').fill('100');
+  await page.locator('[data-dimension-input="widthMm"]').fill('100');
   await page.waitForTimeout(200);
   const invalidVisible = await page.locator('.viewer-invalid').isVisible();
   const errorPanelVisible = await page.locator('.error-panel').isVisible();
@@ -719,7 +727,7 @@ try {
   check('la lista de errores de validación es visible', errorPanelVisible);
 
   // 8. Restaurar configuración válida
-  await page.getByLabel('Ancho').fill('2400');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2400');
   await page.locator('.module-card').nth(1).locator('select').selectOption('hanging');
   await page.getByRole('button', { name: '3', exact: true }).click();
   await page.waitForTimeout(200);
@@ -835,7 +843,7 @@ try {
   await page.waitForTimeout(400);
   await shootCanvasStable(page, 'c-front-ancho-2400');
   const reframeBefore = await chromaticBox(page, shots['c-front-ancho-2400']);
-  await page.getByLabel('Ancho').fill('2800');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2800');
   await page.waitForTimeout(400);
   await shootCanvasStable(page, 'c-front-ancho-2800');
   const reframeAfter = await chromaticBox(page, shots['c-front-ancho-2800']);
@@ -846,7 +854,7 @@ try {
     reframeAfter.widthFrac > 0.6 && reframeAfter.widthFrac < 0.97,
     `ancho ${(reframeBefore.widthFrac * 100).toFixed(1)}% → ${(reframeAfter.widthFrac * 100).toFixed(1)}% (sin reencuadre: recorte al 100%)`,
   );
-  await page.getByLabel('Ancho').fill('2400');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2400');
   await page.waitForTimeout(300);
 
   // 9c. Interruptor "Puertas visibles" (presentación, no
@@ -980,13 +988,13 @@ try {
   );
   check(
     'el contenido de la sección colapsada queda oculto',
-    !(await page.getByLabel('Ancho').isVisible()),
+    !(await page.locator('[data-dimension-input="widthMm"]').isVisible()),
   );
   await sectionToggle.click();
   check(
     'reabrir la sección restaura aria-expanded y el contenido',
     (await sectionToggle.getAttribute('aria-expanded')) === 'true' &&
-      (await page.getByLabel('Ancho').isVisible()),
+      (await page.locator('[data-dimension-input="widthMm"]').isVisible()),
   );
 
   // --- 9g. Fase 3B: persistencia y gestión de diseños ---------------------
@@ -1025,7 +1033,7 @@ try {
 
   // Configuración rica: dimensiones, módulos, cajones,
   // material, puertas (2 hojas) y panel trasero.
-  await designPage.getByLabel('Ancho').fill('2800');
+  await designPage.locator('[data-dimension-input="widthMm"]').fill('2800');
   await designPage.waitForTimeout(150);
   await designPage
     .getByRole('group', { name: 'Número de módulos' })
@@ -1103,7 +1111,7 @@ try {
   const summaryReload = await designPage.locator('.summary').innerText();
   check(
     '3B: la recarga conserva dimensiones, módulos, materiales y cajones',
-    (await designPage.getByLabel('Ancho').inputValue()) === '2800' &&
+    (await designPage.locator('[data-dimension-input="widthMm"]').inputValue()) === '2800' &&
       (await designPage.getByLabel('Alto').inputValue()) === '2100' &&
       (await designPage.locator('.material-card').first().getByLabel('Nombre').inputValue()) ===
         'Nogal' &&
@@ -1138,7 +1146,7 @@ try {
   await designPage.waitForTimeout(300);
   check(
     '3B: nuevo proyecto restaura los defaults sin tocar la lista',
-    (await designPage.getByLabel('Ancho').inputValue()) === '2400' &&
+    (await designPage.locator('[data-dimension-input="widthMm"]').inputValue()) === '2400' &&
       (await designPage.locator('.design-item').count()) === 1 &&
       (await designPage.locator('.design-section').getByText('Sin diseño activo').isVisible()),
   );
@@ -1150,7 +1158,7 @@ try {
   await designPage.waitForTimeout(300);
   check(
     '3B: abrir el diseño recupera la configuración persistida',
-    (await designPage.getByLabel('Ancho').inputValue()) === '2800' &&
+    (await designPage.locator('[data-dimension-input="widthMm"]').inputValue()) === '2800' &&
       (await designPage.getByLabel('Alto').inputValue()) === '2100',
   );
 
@@ -1380,7 +1388,7 @@ try {
     .getByRole('button', { name: 'Abrir' })
     .click();
   await designPage.waitForTimeout(350);
-  const finalAncho = await designPage.getByLabel('Ancho').inputValue();
+  const finalAncho = await designPage.locator('[data-dimension-input="widthMm"]').inputValue();
   const finalAlto = await designPage.getByLabel('Alto').inputValue();
   const finalRows = await designPage.locator('.design-item').count();
   check(
@@ -1466,7 +1474,7 @@ try {
   // ancho, 3 módulos (repisas, colgado, cajones), puertas
   // visibles y cerradas. Se fija explícitamente para que
   // las coordenadas del clic 3D sean deterministas.
-  await page.getByLabel('Ancho').fill('2400');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2400');
   await page.waitForTimeout(250);
   await page
     .getByRole('group', { name: 'Número de módulos' })
@@ -1646,13 +1654,13 @@ try {
   // desaparece.
   await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
   await page.waitForTimeout(200);
-  await page.getByLabel('Ancho').fill('2600');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2600');
   await page.waitForTimeout(300);
   check(
     '3C: la selección sobrevive al cambio de dimensión',
     (await moduleProps.getAttribute('data-selected-module')) === 'module-1',
   );
-  await page.getByLabel('Ancho').fill('2400');
+  await page.locator('[data-dimension-input="widthMm"]').fill('2400');
   await page.waitForTimeout(250);
   await page.getByRole('button', { name: 'Seleccionar módulo 3', exact: true }).click();
   await page.waitForTimeout(200);
@@ -1677,7 +1685,7 @@ try {
   check(
     '3C: el panel izquierdo se contrae (controles ocultos)',
     (await page.locator('.sidebar').getAttribute('data-open')) === 'false' &&
-      !(await page.getByLabel('Ancho').isVisible()),
+      !(await page.locator('[data-dimension-input="widthMm"]').isVisible()),
   );
   await shootStable(page, 'evidencia-3c-07-panel-izquierdo-contraido');
   await page.getByRole('button', { name: 'Abrir panel izquierdo' }).click();
@@ -1773,6 +1781,187 @@ try {
   await shootStable(page, 'evidencia-3c-06-puertas-abiertas');
   await setSliderByClick(viewerSlider, 0);
   await page.waitForTimeout(300);
+
+  // ── Fase 3D: distribución flexible de anchos ─────────
+  const widthStatus = page.locator('[data-width-status]');
+  check(
+    '3D: la sección de distribución arranca en reparto uniforme',
+    (await widthStatus.innerText()).includes('Reparto uniforme'),
+  );
+  check(
+    '3D: las tarjetas muestran el ancho resuelto de cada módulo',
+    (await page.locator('.module-card-width').count()) === 3 &&
+      (await page.locator('.module-card-width').first().innerText()).includes(
+        '776 mm',
+      ),
+  );
+  check(
+    '3D: Igualar anchos está deshabilitado sin fijados',
+    await page.getByRole('button', { name: 'Igualar anchos' }).isDisabled(),
+  );
+  await shootStable(page, 'evidencia-3d-01-distribucion-uniforme');
+
+  // Edición numérica de ancho desde el panel contextual.
+  await page.getByRole('button', { name: 'Seleccionar módulo 2', exact: true }).click();
+  await page.waitForTimeout(250);
+  const widthInput = moduleProps.getByLabel('Ancho del módulo 2 en milímetros');
+  check(
+    '3D: el panel contextual expone el ancho real del módulo',
+    (await widthInput.inputValue()) === '776',
+  );
+  await shootCanvasStable(page, 'c-3d-antes-ancho');
+  await widthInput.fill('900');
+  await widthInput.press('Enter');
+  await page.waitForTimeout(350);
+  await shootCanvasStable(page, 'c-3d-ancho-900');
+  check(
+    '3D: fijar el ancho aplica el valor y actualiza la escena',
+    (await widthInput.inputValue()) === '900' &&
+      changed(shots['c-3d-antes-ancho'], shots['c-3d-ancho-900']),
+  );
+  check(
+    '3D: los demás módulos absorben el cambio por igual (714 mm)',
+    (
+      await page
+        .locator('.module-card[data-module-index="0"] .module-card-width')
+        .innerText()
+    ).includes('714 mm') &&
+      (
+        await page
+          .locator('.module-card[data-module-index="2"] .module-card-width')
+          .innerText()
+      ).includes('714 mm'),
+  );
+  check(
+    '3D: el módulo fijado se marca como fijo en su tarjeta',
+    (
+      await page
+        .locator('.module-card[data-module-index="1"] .module-card-width')
+        .getAttribute('data-width-state')
+    ) === 'fixed',
+  );
+  check(
+    '3D: el panel muestra los módulos afectados con su ancho resultante',
+    (
+      await page.locator('[data-module-width-preview="module-1"]').innerText()
+    ).includes('714 mm'),
+  );
+  check(
+    '3D: el estado indica el ancho fijado y el espacio restante',
+    (await widthStatus.innerText()).includes('ancho fijado'),
+  );
+  await shootStable(page, 'evidencia-3d-02-ancho-fijado');
+
+  // Un ancho imposible no se aplica: se informa el límite.
+  await widthInput.fill('9000');
+  await page.waitForTimeout(200);
+  check(
+    '3D: al escribir un ancho imposible se informa el máximo (1.728 mm)',
+    (await page.locator('[data-width-hint="invalid"]').innerText()).includes(
+      '1.728 mm',
+    ),
+  );
+  await widthInput.press('Enter');
+  await page.waitForTimeout(250);
+  check(
+    '3D: el ancho imposible se descarta y se conserva el fijado (900 mm)',
+    (await widthInput.inputValue()) === '900',
+  );
+
+  // Liberar el ancho vuelve al reparto automático.
+  await page.locator('[data-action="release-width"]').click();
+  await page.waitForTimeout(250);
+  check(
+    '3D: Liberar ancho devuelve el módulo a reparto automático',
+    (
+      await page
+        .locator('.module-card[data-module-index="1"] .module-card-width')
+        .getAttribute('data-width-state')
+    ) === 'auto',
+  );
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3D: Deshacer restaura la distribución fijada (900 mm)',
+    (await widthInput.inputValue()) === '900' &&
+      (
+        await page
+          .locator('.module-card[data-module-index="1"] .module-card-width')
+          .getAttribute('data-width-state')
+      ) === 'fixed',
+  );
+
+  // Igualar anchos (restablecer distribución uniforme).
+  await page.getByRole('button', { name: 'Igualar anchos' }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3D: Igualar anchos libera todos los fijados',
+    (await widthStatus.innerText()).includes('Reparto uniforme'),
+  );
+  check(
+    '3D: Igualar anchos se deshabilita cuando no hay fijados',
+    await page.getByRole('button', { name: 'Igualar anchos' }).isDisabled(),
+  );
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3D: el restablecer uniforme es reversible con Deshacer',
+    (await widthStatus.innerText()).includes('ancho fijado'),
+  );
+
+  // Repartir espacio restante desde la selección.
+  await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
+  await page.waitForTimeout(200);
+  const redistribute = page.getByRole('button', {
+    name: 'Repartir espacio restante',
+  });
+  check(
+    '3D: Repartir espacio restante se habilita con selección válida',
+    await redistribute.isEnabled(),
+  );
+  await redistribute.click();
+  await page.waitForTimeout(250);
+  check(
+    '3D: repartir fija el seleccionado y libera los demás módulos',
+    (
+      await page
+        .locator('.module-card[data-module-index="0"] .module-card-width')
+        .getAttribute('data-width-state')
+    ) === 'fixed' &&
+      (
+        await page
+          .locator('.module-card[data-module-index="1"] .module-card-width')
+          .getAttribute('data-width-state')
+      ) === 'auto',
+  );
+
+  // Plantillas de distribución locales.
+  await page.locator('[data-template-id="mixto"]').click();
+  await page.waitForTimeout(400);
+  const afterTemplateText = await bottombar.innerText();
+  check(
+    '3D: la plantilla mixto aplica 4 módulos y sigue siendo válida',
+    afterTemplateText.includes('4 módulos') &&
+      afterTemplateText.includes('Configuración válida'),
+    `bottombar="${afterTemplateText.replace(/\n/g, ' · ')}"`,
+  );
+  const widthChips = await page.locator('.module-card-width').allInnerTexts();
+  check(
+    '3D: la plantilla mixto declara 900 mm y reparte el resto automáticamente',
+    widthChips.length === 4 &&
+      widthChips[0].includes('900 mm') &&
+      widthChips[0].includes('fijo') &&
+      widthChips[1].includes('537 mm') &&
+      widthChips[3].includes('536 mm'),
+    widthChips.join(' | '),
+  );
+  await shootStable(page, 'evidencia-3d-03-plantilla-mixto');
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(300);
+  check(
+    '3D: Deshacer revierte la plantilla completa (3 módulos)',
+    (await bottombar.innerText()).includes('3 módulos'),
+  );
 
   // E6: versión móvil (390×844).
   const mobile = await browser.newPage({

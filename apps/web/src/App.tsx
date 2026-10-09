@@ -215,6 +215,11 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
               selectedModuleIndex={selectedModuleIndex}
               onSelectModule={selectModuleByIndex}
               editorMode={editorMode}
+              moduleWidthsMm={
+                derived.geometry?.wardrobe.modules.map(
+                  (module) => module.widthMm,
+                )
+              }
             />
           </div>
         </aside>
@@ -266,6 +271,7 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
                 context={selectedContext}
                 config={config}
                 mode={editorMode}
+                resolvedModules={derived.geometry?.wardrobe.modules ?? []}
                 onUpdate={update}
                 onDeselect={() => setSelectedModuleId(null)}
               />

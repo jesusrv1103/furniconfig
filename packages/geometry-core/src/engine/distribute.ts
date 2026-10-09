@@ -24,6 +24,16 @@ export interface DistributeModulesInput {
   dividerThicknessMm: number;
   /** Ancho mínimo admisible por módulo. Por defecto, límite provisional. */
   minModuleWidthMm?: number;
+  /**
+   * Anchos interiores libres declarados por módulo (Fase
+   * 3D), de izquierda a derecha. `undefined` en una
+   * posición = módulo automático: reparte por igual el
+   * sobrante (residuo 1 mm izq→der). Si todos declaran,
+   * la suma debe coincidir exactamente con
+   * `availableWidthMm`. Campo opcional: ausencia total =
+   * distribución uniforme (comportamiento histórico).
+   */
+  declaredWidthsMm?: readonly (number | undefined)[];
 }
 
 export interface ModuleDistribution {
@@ -96,25 +106,134 @@ export function distributeModules(
   }
 
   const requiredWidthMm = moduleCount * minModuleWidthMm;
-  if (availableWidthMm < requiredWidthMm) {
+  const declaredWidthsMm = input.declaredWidthsMm;
+
+  // Sin declaraciones: distribución uniforme histórica
+  // (residuo entero de izquierda a derecha, 1 mm por
+  // módulo). Comportamiento idéntico a la Fase 0.
+  if (declaredWidthsMm === undefined) {
+    if (availableWidthMm < requiredWidthMm) {
+      throw new GeometryError(
+        'ERR_MODULE_WIDTH_TOO_SMALL',
+        `El ancho disponible (${availableWidthMm} mm) no alcanza para ${moduleCount} módulos de al menos ${minModuleWidthMm} mm.`,
+        {
+          availableWidthMm,
+          requiredWidthMm,
+          moduleCount,
+          minModuleWidthMm,
+        },
+      );
+    }
+
+    const baseWidthMm = Math.floor(availableWidthMm / moduleCount);
+    const remainderMm = availableWidthMm - baseWidthMm * moduleCount;
+    const moduleWidthsMm = Array.from(
+      { length: moduleCount },
+      (_, index) => (index < remainderMm ? baseWidthMm + 1 : baseWidthMm),
+    );
+
+    return {
+      totalWidthMm,
+      usableWidthMm,
+      dividerTotalMm,
+      availableWidthMm,
+      moduleCount,
+      moduleWidthsMm,
+    };
+  }
+
+  // Con anchos declarados (Fase 3D): los declarados se
+  // respetan; los automáticos reparten el sobrante.
+  if (declaredWidthsMm.length !== moduleCount) {
+    throw new GeometryError(
+      'ERR_MODULE_WIDTH_INVALID',
+      'La lista de anchos declarados debe tener un valor por módulo.',
+      { declaredCount: declaredWidthsMm.length, moduleCount },
+    );
+  }
+
+  const maxDeclaredWidthMm = WARDROBE_LIMITS.moduleWidthMm.max;
+  declaredWidthsMm.forEach((width, index) => {
+    if (width === undefined) {
+      return;
+    }
+    if (
+      !Number.isInteger(width) ||
+      width < minModuleWidthMm ||
+      width > maxDeclaredWidthMm
+    ) {
+      throw new GeometryError(
+        'ERR_MODULE_WIDTH_INVALID',
+        `El ancho declarado del módulo ${index + 1} debe ser un entero entre ${minModuleWidthMm} y ${maxDeclaredWidthMm} mm (máximo provisional).`,
+        { index: index + 1, widthMm: width, minModuleWidthMm, maxDeclaredWidthMm },
+      );
+    }
+  });
+
+  const autoIndexes = declaredWidthsMm
+    .map((width, index) => (width === undefined ? index : -1))
+    .filter((index) => index >= 0);
+  const fixedSumMm = declaredWidthsMm.reduce<number>(
+    (sum, width) => sum + (width ?? 0),
+    0,
+  );
+
+  // Todos declarados: la suma debe coincidir exactamente
+  // (conservación del ancho interior útil).
+  if (autoIndexes.length === 0) {
+    if (fixedSumMm !== availableWidthMm) {
+      throw new GeometryError(
+        'ERR_MODULE_WIDTH_SUM',
+        `Los anchos declarados suman ${fixedSumMm} mm pero el espacio disponible es de ${availableWidthMm} mm (diferencia de ${fixedSumMm - availableWidthMm} mm).`,
+        {
+          declaredSumMm: fixedSumMm,
+          availableWidthMm,
+          differenceMm: fixedSumMm - availableWidthMm,
+        },
+      );
+    }
+    return {
+      totalWidthMm,
+      usableWidthMm,
+      dividerTotalMm,
+      availableWidthMm,
+      moduleCount,
+      moduleWidthsMm: [...declaredWidthsMm] as number[],
+    };
+  }
+
+  // Automáticos: reparten por igual el sobrante, con el
+  // mismo residuo determinista (1 mm de izquierda a
+  // derecha).
+  const leftoverWidthMm = availableWidthMm - fixedSumMm;
+  const autoCount = autoIndexes.length;
+  const autoRequiredWidthMm = autoCount * minModuleWidthMm;
+  if (leftoverWidthMm < autoRequiredWidthMm) {
     throw new GeometryError(
       'ERR_MODULE_WIDTH_TOO_SMALL',
-      `El ancho disponible (${availableWidthMm} mm) no alcanza para ${moduleCount} módulos de al menos ${minModuleWidthMm} mm.`,
+      `El espacio restante (${leftoverWidthMm} mm tras los anchos fijados) no alcanza para ${autoCount} módulos automáticos de al menos ${minModuleWidthMm} mm.`,
       {
-        availableWidthMm,
-        requiredWidthMm,
-        moduleCount,
+        leftoverWidthMm,
+        autoRequiredWidthMm,
+        autoCount,
         minModuleWidthMm,
+        fixedSumMm,
+        availableWidthMm,
       },
     );
   }
 
-  const baseWidthMm = Math.floor(availableWidthMm / moduleCount);
-  const remainderMm = availableWidthMm - baseWidthMm * moduleCount;
-  const moduleWidthsMm = Array.from(
-    { length: moduleCount },
-    (_, index) => (index < remainderMm ? baseWidthMm + 1 : baseWidthMm),
-  );
+  const autoBaseWidthMm = Math.floor(leftoverWidthMm / autoCount);
+  const autoRemainderMm = leftoverWidthMm - autoBaseWidthMm * autoCount;
+  const moduleWidthsMm = declaredWidthsMm.map((width, index) => {
+    if (width !== undefined) {
+      return width;
+    }
+    const autoRank = autoIndexes.indexOf(index);
+    return autoRank < autoRemainderMm
+      ? autoBaseWidthMm + 1
+      : autoBaseWidthMm;
+  });
 
   return {
     totalWidthMm,
@@ -124,6 +243,65 @@ export function distributeModules(
     moduleCount,
     moduleWidthsMm,
   };
+}
+
+/**
+ * Ancho máximo que puede declarar el módulo `targetIndex`
+ * sin dejar sin espacio a los demás (Fase 3D).
+ *
+ * Es el espacio disponible menos lo declarado por los
+ * demás módulos y el mínimo que necesitan los automáticos
+ * (incluido el propio objetivo si es automático), acotado
+ * además por el máximo provisional del contrato. Función
+ * pura para que la UI ofrezca el límite sin duplicar el
+ * cálculo del motor.
+ */
+export function maxFixedWidthMm(
+  input: DistributeModulesInput & { targetIndex: number },
+): number {
+  const { targetIndex } = input;
+  const moduleCount = input.moduleCount;
+  const minModuleWidthMm =
+    input.minModuleWidthMm ?? WARDROBE_LIMITS.moduleWidthMm.min;
+  const declaredWidthsMm = input.declaredWidthsMm;
+
+  if (
+    !Number.isInteger(targetIndex) ||
+    targetIndex < 0 ||
+    targetIndex >= moduleCount
+  ) {
+    return 0;
+  }
+
+  const usableWidthMm =
+    input.totalWidthMm - 2 * input.sideThicknessMm;
+  const dividerTotalMm = (moduleCount - 1) * input.dividerThicknessMm;
+  const availableWidthMm = usableWidthMm - dividerTotalMm;
+  if (availableWidthMm <= 0) {
+    return 0;
+  }
+
+  const declared = declaredWidthsMm ?? [];
+  let fixedOthersMm = 0;
+  let autoOthersCount = 0;
+  for (let index = 0; index < moduleCount; index += 1) {
+    if (index === targetIndex) {
+      continue;
+    }
+    const width = declared[index];
+    if (width === undefined) {
+      autoOthersCount += 1;
+    } else {
+      fixedOthersMm += width;
+    }
+  }
+
+  const spaceMaxMm =
+    availableWidthMm - fixedOthersMm - autoOthersCount * minModuleWidthMm;
+  return Math.max(
+    0,
+    Math.min(spaceMaxMm, WARDROBE_LIMITS.moduleWidthMm.max),
+  );
 }
 
 /**

@@ -8,7 +8,7 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 3C — FurniConfig Studio** (completada).
+**Fase 3D — Diseño paramétrico flexible** (completada).
 Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
 (Fase 2A), cajoneras (Fase 2B) y puertas abatibles
@@ -16,23 +16,30 @@ con tiradores (Fase 2C: hojas de 1–2 por módulo,
 montadas sobre el frente, con apertura pura de
 presentación 0–110° y eje de bisagra en el plano medio
 del canto — corrección con evidencia de la Fase 3A);
-panel trasero opcional por encaje. La interfaz es un
-**estudio de diseño 3D** (`apps/web`, React + Three.js):
-visor central grande con selección directa de módulos
-por clic (resaltado y umbral anti-drag), vistas
-predefinidas, "Ajustar" y "Encuadrar módulo", barra
-superior con deshacer/rehacer (historial acotado de
-configuraciones), panel izquierdo con estructura y
-diseños, panel derecho contextual editable (tipo,
-repisas, cajones, barra), barra inferior de estado,
-paneles laterales colapsables y modo sencillo/
-avanzado. Sección "Proyectos": guardado local de
-diseños (`localStorage` vía contrato
-`DesignRepository`) con guardado automático,
-recuperación de sesión tras recargar, CRUD con
-confirmaciones y export/importación de JSON validado.
-No hay backend, autenticación, pagos ni cotizaciones
-todavía (Fases 3–4).
+panel trasero opcional por encaje; y **anchos
+individuales por módulo** (Fase 3D: ancho interior libre
+en mm enteros, compatible con el reparto uniforme
+histórico, con suma exacta y códigos de error
+estables). La interfaz es un **estudio de diseño 3D**
+(`apps/web`, React + Three.js): visor central grande
+con selección directa de módulos por clic (resaltado y
+umbral anti-drag), vistas predefinidas, "Ajustar" y
+"Encuadrar módulo", barra superior con deshacer/rehacer
+(historial acotado de configuraciones), panel izquierdo
+con estructura (ancho por módulo, herramientas de
+distribución y plantillas locales) y diseños, panel
+derecho contextual editable (tipo, repisas, cajones,
+barra y ancho del módulo con previsualización de los
+módulos afectados), barra inferior de estado, paneles
+laterales colapsables y modo sencillo/avanzado. Sección
+"Proyectos": guardado local de diseños (`localStorage`
+vía contrato `DesignRepository`) con guardado
+automático, recuperación de sesión tras recargar, CRUD
+con confirmaciones y export/importación de JSON
+validado. CI en GitHub Actions para Pull Requests hacia
+`main` (npm ci, typecheck, pruebas y build; Node 22, sin
+secretos). No hay backend, autenticación, pagos ni
+cotizaciones todavía (Fases 3–4).
 
 ## Stack
 
