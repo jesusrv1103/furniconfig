@@ -436,6 +436,50 @@ pasado ~88–92° es bloqueo físico real y queda como
 decisión PROVISIONAL de carpintería (¿limitar el ángulo
 común a ≤90°? — `docs/product-rules.md`).
 
+### ADR-023 — Persistencia local de diseños (Fase 3B)
+
+**Contexto:** la Fase 3B exige guardar, recuperar y
+administrar diseños sin backend, autenticación ni
+dependencias nuevas, dejando preparado el salto a un
+almacenamiento remoto.
+
+**Decisión:**
+- Contrato `DesignRepository` + `SessionStore`
+  (operaciones asíncronas) en `lib/designs/repository.ts`;
+  el adaptador `localStorage`
+  (`lib/designs/local-storage.ts`) es intercambiable sin
+  tocar la lógica de negocio (`DesignLibrary`) ni la UI.
+- `DesignRecord` con `id`, `nombre`, fechas ISO,
+  `storageVersion` **propio** (independiente de
+  `WARDROBE_CONFIG_SCHEMA_VERSION` del motor) y la
+  `WardrobeConfig` completa. Nunca se persisten mallas,
+  geometrías derivadas ni estado de presentación.
+- La sesión de trabajo (borrador + diseño activo +
+  cambios pendientes) vive en una clave propia
+  (`furniconfig.session`), separada de la colección
+  (`furniconfig.designs`), y se recupera al recargar.
+- Guardado automático con debounce (1 s) sobre el diseño
+  activo; `dirty` distingue "edición" de "cambio
+  intencional" (abrir, restaurar, nuevo proyecto).
+
+**Integridad:** todo lo leído y escrito pasa por
+`validateWardrobeConfig`; versiones desconocidas se
+rechazan como incompatibles **sin migración silenciosa y
+sin pisar el dato**; los registros corruptos se
+cuarentenan (visibles: no; eliminados: no); la cuota
+llena o el almacenamiento bloqueado se traducen en
+`DesignStorageError` con mensajes comprensibles; los ids
+son deterministas (`design-N`) sin reutilización; toda
+importación recibe un id nuevo (jamás sobrescribe) y
+duplicar usa copia profunda.
+
+**Consecuencias:** la Fase 3 (Laravel/MariaDB) puede
+sustituir el adaptador por un repositorio remoto sin
+cambiar la interfaz; sin dependencias nuevas; cobierto
+por 37 pruebas unitarias y un escenario Playwright en
+Chromium real (crear, autosave, recarga, CRUD, import/
+export).
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa

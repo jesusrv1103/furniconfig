@@ -549,3 +549,197 @@ body {
     width: min(140px, 40vw);
   }
 }
+
+/* --- Sección de proyectos (diseños, Fase 3B) ---------------------- */
+
+.design-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.design-active {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.design-dirty {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.design-clean {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.design-status {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.design-status[data-tone='error'] {
+  color: var(--error);
+}
+
+.design-status[data-tone='success'] {
+  color: var(--accent-pressed);
+}
+
+.design-create {
+  display: flex;
+  gap: 8px;
+}
+
+.design-create .design-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.design-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.875rem;
+  background: #fff;
+}
+
+.design-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.design-input:disabled {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.design-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.design-actions .design-button {
+  flex: 1;
+  min-width: 120px;
+}
+
+.design-button {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.design-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.design-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.design-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.design-button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.design-button-primary:hover:not(:disabled) {
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
+  color: #fff;
+}
+
+.design-button-danger {
+  color: var(--error);
+}
+
+.design-button-danger:hover:not(:disabled) {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.design-button-small {
+  padding: 5px 8px;
+  font-size: 0.75rem;
+}
+
+.design-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+}
+
+.design-field span {
+  color: var(--muted);
+}
+
+.design-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.design-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--bg);
+}
+
+.design-item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.design-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.design-item-date {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.design-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.design-empty {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}

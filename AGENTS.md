@@ -3,8 +3,8 @@
 ## Proyecto
 
 **FurniConfig**: SaaS B2B para diseño paramétrico de muebles a medida.
-Primer producto: clósets rectos modulares. Fase actual: **Fase 3A**
-(interfaz profesional de taller; completada, cambios sin commit).
+Primer producto: clósets rectos modulares. Fase actual: **Fase 3B**
+(persistencia local y gestión de diseños; completada, cambios sin commit).
 
 Antes de implementar cualquier cosa, lee `README.md`, `docs/architecture.md` y
 `docs/product-rules.md`.
