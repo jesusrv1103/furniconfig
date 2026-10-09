@@ -58,7 +58,7 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
       <header className="app-header">
         <div>
           <h1>FurniConfig</h1>
-          <p>Visualizador de clósets modulares · Fase 2C</p>
+          <p>Visualizador de clósets modulares · Fase 3A</p>
         </div>
         <span className="chip">Contrato v{WARDROBE_CONFIG_SCHEMA_VERSION}</span>
       </header>

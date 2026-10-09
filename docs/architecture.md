@@ -354,6 +354,88 @@ volumen de tableros incluyen el trasero; **sin panel
 trasero, la geometría es idéntica a Fase 2B** (cero
 regresiones, verificado por tests).
 
+### ADR-021 — Cámara, encuadre y estado de presentación (Fase 3A)
+
+**Contexto:** la interfaz profesional necesita vistas
+predefinidas, reencuadre automático al cambiar dimensiones
+y mostrar/ocultar puertas con un ángulo de apertura, todo
+sin mutar la configuración ni la geometría.
+
+**Decisión:**
+- Módulo puro `lib/camera-views.ts` (sin imports de
+  three): `VIEW_DIRECTIONS` (front, side, isometric),
+  `fitDistance` (distancia que encaja la caja AABB con
+  margen ×1.12, considerando FOV y aspecto), `viewPosition`,
+  `reframe` (mantiene la dirección y escala el offset) y
+  `boxCenter`. Toda la matemática es unit testable sin
+  WebGL (cierre analítico, monotonía, pureza).
+- `CameraRig` dentro de `WardrobeScene`: gestiona la
+  posición de cámara con `useLayoutEffect` (se aplica antes
+  del primer pintado), monta en isométrica frontal, aplica
+  `ViewRequest { view, nonce }` y recalcula el encuadre al
+  cambiar `bounds`/aspecto manteniendo la dirección. Tras
+  un arrastre, OrbitControls queda en modo libre.
+- `VIEWER_CAMERA = { fov: 45, near: 0.05, far: 200 }` sin
+  `position`: la posición es responsabilidad del rig, no de
+  R3F, para que no la sobrescriba en cada render.
+- Escena: luces clave (frontal-izquierda) + relleno
+  (frontal-derecha), hemisférica y ambiente; sombras
+  2048 con `bias −0.00015` / `normalBias 0.02` y orto
+  ajustado al span; suelo receptor con `shadowMaterial`;
+  IBL con `RoomEnvironment` (procedural, de three; **sin
+  dependencias nuevas**); fondo `#e7e9ed` y rejilla.
+- Estado de presentación en `WardrobeViewer`:
+  `doorsVisible` (interruptor `aria-pressed` +
+  `data-doors-visible`) y el slider de apertura 0–110°
+  (trasladado del ConfigPanel al visor). **Ninguno de los
+  dos muta `WardrobeConfig` ni `GeometryResult`.**
+- `ConfigPanel`: secciones colapsables (`ConfigSection`,
+  `aria-expanded`/`aria-controls`, abiertas por defecto).
+- CSS: `.viewer-container` es caja absoluta (`inset: 0`)
+  dentro de `.viewer`; los porcentajes de altura solo
+  resuelven contra alturas explícitas, así que con
+  `height:100% + min-height` la cadena de R3F colapsaba a
+  `auto` y el lienzo quedaba en su tamaño intrínseco 2:1
+  (359 de 648 px en escritorio; 182 de 506 px en móvil).
+
+**Consecuencias:** la matemática de cámara tiene tests
+unitarios; el encuadre se verifica midiendo la silueta
+cromática en la suite Playwright (relleno y centrado, píxel
+central del panel trasero); las funciones de presentación
+siguen siendo puras respecto a la configuración.
+
+### ADR-022 — Eje de bisagra en el plano medio del canto (Fase 3A)
+
+**Contexto:** la verificación de intersecciones (SAT +
+recorte Sutherland–Hodgman) demostró que, con el eje de
+bisagra en el plano frontal (`z = 0`), las hojas de módulos
+adyacentes se interpenetraban desde ~44° de apertura.
+
+**Decisión:**
+- `doorOpeningTransform` sitúa el eje en
+  `hingeZmm = −door.thicknessMm / 2` (plano medio del
+  canto de la hoja). Documentado en `engine/doors.ts` y
+  `types/door.ts`.
+- Con el eje en el plano medio: el punto medio del canto
+  de bisagra permanece sobre el eje (rigidez), ninguna
+  hoja excede `z ≤ 0` en ningún ángulo
+  (`z máx = −t/2·(1−|cos α|)`, −5,9 mm a 110°), las hojas
+  del mismo módulo nunca se solapan y las de módulos
+  adyacentes quedan limpias en [0°, ~90°].
+
+**Validación:** 7 tests de intersección en
+`packages/geometry-core/tests/doors.test.ts` (ángulos
+limpios estrictos 0–85°; zona de bloqueo acotada
+90–110°: hoja-hoja ≤ 2746 mm², tirador-tirador ≤ 2016 mm²,
+tirador-tablero ≤ 1320 mm², todo en la columna del divisor
+x ≤ 20 mm).
+
+**Consecuencias:** cambio de contrato **con evidencia**
+(excepción permitida en AGENTS.md §3); el bloqueo mutuo
+pasado ~88–92° es bloqueo físico real y queda como
+decisión PROVISIONAL de carpintería (¿limitar el ángulo
+común a ≤90°? — `docs/product-rules.md`).
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa
@@ -439,7 +521,11 @@ geometrías y materiales reutilizados, carga diferida (lazy).
 
 Reglas de la capa: mm → m solo en `lib/units.ts`; no mutar la
 configuración; no inventar geometría; el motor es la fuente única
-de verdad de dimensiones y paneles.
+de verdad de dimensiones y paneles. La matemática de cámara vive
+en `lib/camera-views.ts` (pura, sin three; Fase 3A) y el estado de
+presentación (visibilidad de puertas, ángulo de apertura, vista
+predefinida) es UI: tampoco toca `WardrobeConfig` ni
+`GeometryResult`.
 
 ## 7. No-go explícitos de esta fase
 

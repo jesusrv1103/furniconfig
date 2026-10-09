@@ -36,6 +36,8 @@
 | Bisagra | 1 hoja: lado configurable (default izquierda); 2 hojas: extremos exteriores | **PROVISIONAL** |
 | Montaje de puerta | Sobre el frente: `z ∈ [−espesor, 0]` | **PROVISIONAL** |
 | Apertura | 0–110°, rotación pura de presentación sobre el eje de bisagra | **PROVISIONAL** (ángulo máx.) |
+| Eje de bisagra (Fase 3A) | Plano medio del canto de la hoja, `z = −espesor/2` (con el eje en el plano frontal `z = 0` las hojas de módulos adyacentes se interpenetraban desde ~44°; defecto verificado con SAT y corregido) | **PROVISIONAL** (herraje real) |
+| Apertura entre módulos vecinos | Bloqueo mutuo de hojas/tiradores desde ~88–92° en la columna del divisor (bloqueo físico real, acotado en tests); decidir si el ángulo común se limita a ≤90° | **PROVISIONAL** |
 | Tirador | Cilindro horizontal contra la cara frontal, a 30 mm del borde libre; 40% del ancho de hoja (40–120 mm); diámetro 18 mm | **PROVISIONAL** |
 | Material de puerta | Default = estructura (`material-door`) | **PROVISIONAL** |
 | Material de tirador | Metálico fijo "Acero / brillo" (`material-handle`) | **PROVISIONAL** (cosmético) |
@@ -144,13 +146,27 @@ Centralizados en `packages/geometry-core/src/contract/limits.ts`.
      empotrado o al ras.
    - **Apertura**: transformación pura de
      presentación (`doorOpeningTransform`) sobre
-     el eje de bisagra vertical; el motor genera
+     el eje de bisagra vertical **en el plano medio
+     del canto de la hoja** (`z = −espesor/2`;
+     Fase 3A: con el eje en el plano frontal `z = 0`
+     las hojas de módulos adyacentes se
+     interpenetraban desde ~44°, verificado con SAT
+     y corregido); el motor genera
      las hojas cerradas y la capa de presentación
      aplica `rotation.y` (bisagra izquierda →
      ángulo positivo; derecha → negativo; el
      borde libre se aleja del frente hacia el
      observador). Ángulo máximo 110°
      (`ERR_DOOR_OPEN_ANGLE`).
+   - **Bloqueo mutuo entre módulos adyacentes**
+     (Fase 3A): más allá de ~88–92°, las hojas y
+     tiradores internas de módulos vecinos se
+     solapan en la columna del divisor — es el
+     bloqueo físico real de puertas que se abren
+     en exceso. Acotado en tests (área y extensión
+     en X). **PROVISIONAL**: decidir con carpintería
+     si el visor debe limitar la apertura común a
+     ≤90°.
    - **Tirador**: cilindro horizontal (eje X)
      contra la cara frontal de la hoja, a 30 mm
      del borde libre (opuesto a la bisagra),

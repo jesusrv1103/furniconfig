@@ -1,5 +1,5 @@
 /**
- * Verificación visual real de Fases 2A, 2B y 2C con
+ * Verificación visual real de Fases 2A → 3A con
  * Playwright + Chromium.
  *
  * Lanza el dev server de Vite, abre la aplicación en
@@ -31,6 +31,27 @@
  * 10. (Fase 2C) El panel trasero se activa/desactiva y
  *     cambia la escena; un cambio de dimensión con
  *     puertas y panel trasero activos recalcula todo.
+ * 11. (Fase 3A) Barra de vistas: Isométrica/Frontal/
+ *     Lateral cambian la cámara (data-view + píxeles) y
+ *     el encuadre llena el lienzo con el mueble centrado
+ *     (medición de la silueta cromática).
+ * 12. (Fase 3A) Reencuadre automático: al cambiar una
+ *     dimensión en vista predefinida, el mueble mantiene
+ *     el encuadre.
+ * 13. (Fase 3A) Interruptor "Puertas visibles" (estado de
+ *     presentación, aria-pressed/data-doors-visible) y su
+ *     efecto en la escena; el slider de apertura se oculta
+ *     con las puertas ocultas.
+ * 14. (Fase 3A) Panel trasero visible en el frontal: el
+ *     píxel central muestra madera con panel y el fondo
+ *     del lienzo sin panel.
+ * 15. (Fase 3A) Secciones colapsables del panel
+ *     (aria-expanded) y apertura 45°/110° en frontal.
+ * 16. (Fase 3A) Sin respuestas 404 (favicon) y versión
+ *     móvil sin desplazamiento horizontal.
+ *
+ * Guarda capturas + `inspeccion.json` (mediciones) en
+ * /tmp/opencode/fase3a.
  *
  * Uso: node tests/visual/visual-check.mjs
  * (o npm run test:visual)
@@ -43,7 +64,7 @@ import { join, dirname } from 'node:path';
 import { chromium } from 'playwright';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const outDir = '/tmp/opencode/fase2c';
+const outDir = '/tmp/opencode/fase3a';
 const port = 4180;
 const baseUrl = `http://localhost:${port}`;
 
@@ -161,6 +182,128 @@ async function pixelDiffRatio(page, pngA, pngB, tolerance = 8) {
   );
 }
 
+/**
+ * Mediciones de las pruebas de Fase 3A (rellenos,
+ * centrados, colores), guardadas en inspeccion.json.
+ */
+const measurements = [];
+
+function measure(name, data) {
+  measurements.push({ name, ...data });
+}
+
+/**
+ * Captura estable SOLO del lienzo (element screenshot),
+ * ocultando temporalmente los elementos superpuestos
+ * (toolbar/slider) para medir la silueta limpia.
+ */
+async function shootCanvasStable(page, name) {
+  const hide = await page.addStyleTag({
+    content:
+      '.viewer-toolbar, .viewer-controls { visibility: hidden !important }',
+  });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+  saveShot(name, await page.locator('canvas').screenshot());
+  await page.evaluate((element) => element.remove(), hide);
+}
+
+/**
+ * Caja envolvente de los píxeles CROMÁTICOS (máx−mín > 25):
+ * excluye el fondo gris, la rejilla grisácea y la sombra
+ * neutra, por lo que devuelve la silueta del mueble (madera
+ * y puertas). Sirve para medir relleno y centrado del
+ * encuadre.
+ */
+async function chromaticBox(page, png) {
+  return page.evaluate(async (base64) => {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = reject;
+      element.src = `data:image/png;base64,${base64}`;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext('2d', {
+      willReadFrequently: true,
+    });
+    context.drawImage(image, 0, 0);
+    const { data } = context.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+    let minX = canvas.width;
+    let maxX = -1;
+    let minY = canvas.height;
+    let maxY = -1;
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        const index = (y * canvas.width + x) * 4;
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+        if (Math.max(r, g, b) - Math.min(r, g, b) > 25) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    return {
+      heightFrac: maxY >= 0 ? (maxY - minY + 1) / canvas.height : 0,
+      widthFrac: maxX >= 0 ? (maxX - minX + 1) / canvas.width : 0,
+      centerX: maxX >= 0 ? (minX + maxX) / 2 / canvas.width : 0,
+      centerY: maxY >= 0 ? (minY + maxY) / 2 / canvas.height : 0,
+    };
+  }, png.toString('base64'));
+}
+
+/**
+ * Color medio (RGB) del bloque 7×7 central de una captura:
+ * sirve para verificar el píxel de vista frontal (panel
+ * trasero vs. fondo del lienzo).
+ */
+async function centerPixel(page, png) {
+  return page.evaluate(async (base64) => {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = reject;
+      element.src = `data:image/png;base64,${base64}`;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext('2d', {
+      willReadFrequently: true,
+    });
+    context.drawImage(image, 0, 0);
+    const size = 7;
+    const x0 = Math.floor(canvas.width / 2 - size / 2);
+    const y0 = Math.floor(canvas.height / 2 - size / 2);
+    const block = context.getImageData(x0, y0, size, size).data;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    const pixels = size * size;
+    for (let index = 0; index < block.length; index += 4) {
+      r += block[index];
+      g += block[index + 1];
+      b += block[index + 2];
+    }
+    return {
+      r: Math.round(r / pixels),
+      g: Math.round(g / pixels),
+      b: Math.round(b / pixels),
+    };
+  }, png.toString('base64'));
+}
+
 async function launchBrowser() {
   // 1. Chromium del cache de Playwright.
   try {
@@ -215,6 +358,12 @@ try {
 
   const errors = [];
   page.on('pageerror', (error) => errors.push(String(error)));
+  const notFound = [];
+  page.on('response', (response) => {
+    if (response.status() === 404) {
+      notFound.push(response.url());
+    }
+  });
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.waitForSelector('canvas', { timeout: 15_000 });
@@ -561,6 +710,343 @@ try {
     text.includes('Barras de colgado (1)'),
   );
 
+  // --- 9. Fase 3A: interfaz profesional ----------------------------------
+  check(
+    'la cabecera indica la fase actual (Fase 3A)',
+    (await page.getByText('Fase 3A').count()) === 1,
+  );
+
+  const viewer = page.locator('.viewer-container');
+  check(
+    'el visor declara la vista inicial (data-view=isometric)',
+    (await viewer.getAttribute('data-view')) === 'isometric',
+  );
+  check(
+    'la barra de vistas expone 3 vistas + interruptor de puertas',
+    (await page.locator('.viewer-toolbar button').count()) === 4,
+  );
+
+  // 9a. Vistas predefinidas: encuadre medido sobre la
+  // silueta cromática (madera/puertas) del lienzo.
+  await page
+    .getByRole('button', { name: 'Isométrica', exact: true })
+    .click();
+  await page.waitForTimeout(400);
+  await shootCanvasStable(page, 'c-iso');
+  const isoBox = await chromaticBox(page, shots['c-iso']);
+  measure('isometrica', isoBox);
+  check(
+    'la isométrica encuadra el mueble (relleno 60–97% de alto)',
+    isoBox.heightFrac > 0.6 && isoBox.heightFrac < 0.97,
+    `${(isoBox.heightFrac * 100).toFixed(1)}% de alto`,
+  );
+  check(
+    'la isométrica centra el mueble (38–62% en X)',
+    isoBox.centerX > 0.38 && isoBox.centerX < 0.62,
+    `centro ${(isoBox.centerX * 100).toFixed(1)}%`,
+  );
+
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  check(
+    'el botón Frontal cambia la vista (data-view=front)',
+    (await viewer.getAttribute('data-view')) === 'front',
+  );
+  check(
+    'Frontal queda activo (aria-pressed=true)',
+    (await page
+      .getByRole('button', { name: 'Frontal', exact: true })
+      .getAttribute('aria-pressed')) === 'true',
+  );
+  await shootCanvasStable(page, 'c-front');
+  check(
+    'la vista frontal cambia la cámara (píxeles distintos)',
+    changed(shots['c-iso'], shots['c-front']),
+  );
+  const frontBox = await chromaticBox(page, shots['c-front']);
+  measure('frontal', frontBox);
+  check(
+    'la frontal encuadra el mueble (relleno 60–97% de alto)',
+    frontBox.heightFrac > 0.6 && frontBox.heightFrac < 0.97,
+    `${(frontBox.heightFrac * 100).toFixed(1)}% de alto`,
+  );
+  check(
+    'la frontal centra el mueble (40–60% en X)',
+    frontBox.centerX > 0.4 && frontBox.centerX < 0.6,
+    `centro ${(frontBox.centerX * 100).toFixed(1)}%`,
+  );
+
+  await page.getByRole('button', { name: 'Lateral', exact: true }).click();
+  await page.waitForTimeout(400);
+  check(
+    'el botón Lateral cambia la vista (data-view=side)',
+    (await viewer.getAttribute('data-view')) === 'side',
+  );
+  await shootCanvasStable(page, 'c-side');
+  check(
+    'la vista lateral cambia la cámara (píxeles distintos)',
+    changed(shots['c-front'], shots['c-side']),
+  );
+
+  await page
+    .getByRole('button', { name: 'Isométrica', exact: true })
+    .click();
+  await page.waitForTimeout(400);
+  await shootCanvasStable(page, 'c-iso-vuelve');
+  const isoReturnRatio = await pixelDiffRatio(
+    page,
+    shots['c-iso'],
+    shots['c-iso-vuelve'],
+  );
+  check(
+    'volver a Isométrica restaura el encuadre inicial',
+    isoReturnRatio < 0.01,
+    `${(isoReturnRatio * 100).toFixed(4)}% de píxeles distintos`,
+  );
+
+  // 9b. Reencuadre automático al cambiar dimensiones en
+  // vista predefinida: al enganchar el ancho (2400→2800 la
+  // anchura pasa a ser la restricción dominante), sin
+  // reencuadre la silueta se recortaría contra los bordes
+  // del lienzo (relleno de ancho = 100%); con reencuadre
+  // se conserva el margen (~89%).
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  await shootCanvasStable(page, 'c-front-ancho-2400');
+  const reframeBefore = await chromaticBox(page, shots['c-front-ancho-2400']);
+  await page.getByLabel('Ancho').fill('2800');
+  await page.waitForTimeout(400);
+  await shootCanvasStable(page, 'c-front-ancho-2800');
+  const reframeAfter = await chromaticBox(page, shots['c-front-ancho-2800']);
+  measure('reencuadre-ancho-2400', reframeBefore);
+  measure('reencuadre-ancho-2800', reframeAfter);
+  check(
+    'reencuadre automático: al enganchar el ancho el mueble sigue encuadrado',
+    reframeAfter.widthFrac > 0.6 && reframeAfter.widthFrac < 0.97,
+    `ancho ${(reframeBefore.widthFrac * 100).toFixed(1)}% → ${(reframeAfter.widthFrac * 100).toFixed(1)}% (sin reencuadre: recorte al 100%)`,
+  );
+  await page.getByLabel('Ancho').fill('2400');
+  await page.waitForTimeout(300);
+
+  // 9c. Interruptor "Puertas visibles" (presentación, no
+  // configuración): aria-pressed + data-doors-visible.
+  await page
+    .getByRole('button', { name: 'Isométrica', exact: true })
+    .click();
+  await page.waitForTimeout(400);
+  const doorsToggle = page.getByRole('button', {
+    name: 'Puertas visibles',
+    exact: true,
+  });
+  check(
+    'el interruptor de puertas inicia activo (aria-pressed=true)',
+    (await doorsToggle.getAttribute('aria-pressed')) === 'true',
+  );
+  await shootCanvasStable(page, 'c-doors-on');
+  await doorsToggle.click();
+  await page.waitForTimeout(300);
+  check(
+    'ocultar puertas actualiza data-doors-visible=false',
+    (await viewer.getAttribute('data-doors-visible')) === 'false',
+  );
+  check(
+    'con las puertas ocultas se oculta el slider de apertura',
+    (await page.locator('.viewer-controls').count()) === 0,
+  );
+  await shootCanvasStable(page, 'c-doors-off');
+  check(
+    'ocultar puertas cambia la escena (píxeles distintos)',
+    changed(shots['c-doors-on'], shots['c-doors-off']),
+  );
+  await doorsToggle.click();
+  await page.waitForTimeout(300);
+  check(
+    'mostrar puertas restaura data-doors-visible=true',
+    (await viewer.getAttribute('data-doors-visible')) === 'true',
+  );
+  await shootCanvasStable(page, 'c-doors-restore');
+  const doorsRestoreRatio = await pixelDiffRatio(
+    page,
+    shots['c-doors-on'],
+    shots['c-doors-restore'],
+  );
+  check(
+    'mostrar puertas restaura la escena (estabilidad)',
+    doorsRestoreRatio < 0.01,
+    `${(doorsRestoreRatio * 100).toFixed(4)}% de píxeles distintos`,
+  );
+
+  // 9d. Panel trasero visible en el frontal: píxel central
+  // = madera con panel, fondo del lienzo sin panel.
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  await doorsToggle.click(); // ocultar puertas
+  await page.waitForTimeout(300);
+  await shootCanvasStable(page, 'c-front-panel');
+  const withPanel = await centerPixel(page, shots['c-front-panel']);
+  measure('centro-con-panel', withPanel);
+  check(
+    'con panel trasero, el centro frontal muestra madera (cálido)',
+    withPanel.r - withPanel.b > 25,
+    `rgb(${withPanel.r}, ${withPanel.g}, ${withPanel.b})`,
+  );
+  await page.getByRole('button', { name: 'Sin panel', exact: true }).click();
+  await page.waitForTimeout(300);
+  await shootCanvasStable(page, 'c-front-sin-panel');
+  const withoutPanel = await centerPixel(page, shots['c-front-sin-panel']);
+  measure('centro-sin-panel', withoutPanel);
+  check(
+    'sin panel trasero, el centro frontal ve el fondo del lienzo',
+    Math.abs(withoutPanel.r - 231) < 14 &&
+      Math.abs(withoutPanel.g - 233) < 14 &&
+      Math.abs(withoutPanel.b - 237) < 14,
+    `rgb(${withoutPanel.r}, ${withoutPanel.g}, ${withoutPanel.b})`,
+  );
+  check(
+    'el panel trasero altera el píxel central (no solo el borde)',
+    Math.abs(withPanel.r - withoutPanel.r) > 25,
+    `ΔR=${Math.abs(withPanel.r - withoutPanel.r)}`,
+  );
+  await page.getByRole('button', { name: 'Con panel', exact: true }).click();
+  await page.waitForTimeout(200);
+  await doorsToggle.click(); // mostrar de nuevo
+  await page.waitForTimeout(300);
+
+  // 9e. Ángulos de apertura en el frontal: 45° y ~110°
+  // cambian la escena; cerrar restaura el estado.
+  const viewerSlider = page
+    .locator('.viewer-controls')
+    .getByLabel('Apertura de puertas');
+  await shootCanvasStable(page, 'c-front-cerradas');
+  await setSliderByClick(viewerSlider, 0.41); // ≈45°
+  await page.waitForTimeout(350);
+  await shootCanvasStable(page, 'c-front-45');
+  await setSliderByClick(viewerSlider, 0.995); // ≈110°
+  await page.waitForTimeout(350);
+  await shootCanvasStable(page, 'c-front-110');
+  check(
+    'abrir las puertas a ~45° cambia el frontal (píxeles distintos)',
+    changed(shots['c-front-cerradas'], shots['c-front-45']),
+  );
+  check(
+    'abrir a ~110° vuelve a cambiar el frontal (píxeles distintos)',
+    changed(shots['c-front-45'], shots['c-front-110']),
+  );
+  await setSliderByClick(viewerSlider, 0);
+  await page.waitForTimeout(350);
+  await shootCanvasStable(page, 'c-front-cerradas-otravez');
+  const angleRestoreRatio = await pixelDiffRatio(
+    page,
+    shots['c-front-cerradas'],
+    shots['c-front-cerradas-otravez'],
+  );
+  check(
+    'cerrar las puertas restaura el frontal (estabilidad)',
+    angleRestoreRatio < 0.01,
+    `${(angleRestoreRatio * 100).toFixed(4)}% de píxeles distintos`,
+  );
+
+  // 9f. Secciones colapsables del panel de configuración.
+  const sectionToggle = page.locator('.config-section-toggle').first();
+  check(
+    'las secciones del panel inician desplegadas (aria-expanded=true)',
+    (await sectionToggle.getAttribute('aria-expanded')) === 'true',
+  );
+  await sectionToggle.click();
+  check(
+    'colapsar una sección pone aria-expanded=false',
+    (await sectionToggle.getAttribute('aria-expanded')) === 'false',
+  );
+  check(
+    'el contenido de la sección colapsada queda oculto',
+    !(await page.getByLabel('Ancho').isVisible()),
+  );
+  await sectionToggle.click();
+  check(
+    'reabrir la sección restaura aria-expanded y el contenido',
+    (await sectionToggle.getAttribute('aria-expanded')) === 'true' &&
+      (await page.getByLabel('Ancho').isVisible()),
+  );
+
+  check(
+    'sin respuestas 404 durante la sesión (favicon resuelto)',
+    notFound.length === 0,
+    notFound[0] ?? '',
+  );
+
+  // --- Evidencia visual de Fase 3A --------------------------------------
+  // Estado: dimensiones por defecto con puertas (2 hojas),
+  // panel trasero y profundidad 600.
+  await page.getByLabel('Profundidad').fill('600');
+  await page.waitForTimeout(300);
+
+  // E1: vista frontal, puertas cerradas visibles.
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-01-frontal');
+
+  // E2: vista isométrica.
+  await page
+    .getByRole('button', { name: 'Isométrica', exact: true })
+    .click();
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-02-isometrica');
+
+  // E3: puertas abiertas ~90° (isométrica).
+  await setSliderByClick(viewerSlider, 0.82);
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-03-puertas-abiertas');
+
+  // E4: puertas cerradas (isométrica).
+  await setSliderByClick(viewerSlider, 0);
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-04-puertas-cerradas');
+
+  // E5: cajonera con 5 cajones y puertas ocultas.
+  await page.locator('.module-card').nth(2).locator('input').fill('5');
+  await page.waitForTimeout(300);
+  await doorsToggle.click();
+  await page.waitForTimeout(300);
+  await shootStable(page, 'evidencia-05-cajoneras');
+  await page.locator('.module-card').nth(2).locator('input').fill('3');
+  await doorsToggle.click();
+  await page.waitForTimeout(300);
+
+  // E6: versión móvil (390×844).
+  const mobile = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+  });
+  const mobileErrors = [];
+  mobile.on('pageerror', (error) => mobileErrors.push(String(error)));
+  await mobile.goto(baseUrl, { waitUntil: 'networkidle' });
+  await mobile.waitForSelector('canvas', { timeout: 15_000 });
+  await mobile.waitForTimeout(1200);
+  const noHorizontalScroll = await mobile.evaluate(
+    () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+  );
+  check('móvil: sin desplazamiento horizontal', noHorizontalScroll);
+  check(
+    'móvil: la barra de vistas es visible',
+    await mobile.locator('.viewer-toolbar').isVisible(),
+  );
+  const mobileCanvas = await mobile.locator('canvas').boundingBox();
+  check(
+    'móvil: el lienzo conserva altura suficiente (≥ 280 px)',
+    mobileCanvas !== null && mobileCanvas.height >= 280,
+    mobileCanvas ? `${Math.round(mobileCanvas.height)} px` : 'sin lienzo',
+  );
+  check(
+    'móvil: sin errores de página',
+    mobileErrors.length === 0,
+    mobileErrors[0] ?? '',
+  );
+  // Evidencia: el visor está bajo el panel en el flujo móvil;
+  // se desplaza para capturar visor + barra de vistas.
+  await mobile.locator('.viewer').scrollIntoViewIfNeeded();
+  await mobile.waitForTimeout(300);
+  saveShot('evidencia-06-movil', await mobile.screenshot());
+  await mobile.close();
+
   // Errores de página (crashes de React/WebGL)
   check('sin errores de página durante la sesión', errors.length === 0, errors[0] ?? '');
 
@@ -568,6 +1054,18 @@ try {
   for (const [name, buffer] of Object.entries(shots)) {
     writeFileSync(join(outDir, `${name}.png`), buffer);
   }
+  writeFileSync(
+    join(outDir, 'inspeccion.json'),
+    JSON.stringify(
+      {
+        fecha: new Date().toISOString(),
+        verificaciones: results,
+        mediciones: measurements,
+      },
+      null,
+      2,
+    ),
+  );
   console.log(`\nCapturas guardadas en ${outDir}`);
 
   await browser.close();

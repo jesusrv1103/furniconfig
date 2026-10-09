@@ -27,14 +27,24 @@ const PRESET_COLORS: Readonly<Record<string, string>> = {
   negro: '#2b2b2b',
 };
 
+/**
+ * Rugosidades por acabado. Con el entorno IBL de la escena,
+ * un mate algo más bajo (0.78) recoge un sheen suave en vez
+ * de un plano muerto, y el brillo refleja el entorno.
+ */
 const PRESET_ROUGHNESS: Readonly<Record<string, number>> = {
-  mate: 0.85,
-  brillo: 0.25,
-  texturado: 0.95,
+  mate: 0.78,
+  brillo: 0.2,
+  texturado: 0.9,
 };
 
 const DEFAULT_ROUGHNESS = 0.7;
-const DEFAULT_METALNESS = 0.05;
+/**
+ * Los tableros (madera, lacado) no son metálicos: metalness
+ * 0 para que la luz difusa y el entorno se comporten como
+ * en un material dieléctrico real.
+ */
+const DEFAULT_METALNESS = 0;
 
 function colorFromName(name: string): string {
   const preset = PRESET_COLORS[name.trim().toLowerCase()];

@@ -177,6 +177,55 @@
       dimensión con puertas y trasero activos,
       material de puerta; 48/48 verificaciones.
 
+## Fase 3A — Interfaz profesional de taller ✅
+
+- [x] Auditoría visual (Paso 1): cámara en frontal
+      por defecto, panel trasero visible, metales
+      iluminados con IBL y sombras proyectadas con
+      suelo receptor.
+- [x] Módulo de cámara puro `lib/camera-views.ts`
+      (`VIEW_DIRECTIONS`, `fitDistance`,
+      `viewPosition`, `reframe`, `boxCenter`) con
+      pruebas unitarias (cierre analítico,
+      monotonía, pureza, casos degenerados).
+- [x] Escena: `CameraRig` (isométrica al montar,
+      vistas predefinidas Isométrica/Frontal/
+      Lateral y reencuadre automático al cambiar
+      dimensiones, `useLayoutEffect` sin fotograma
+      desencadrado), luces clave+relleno,
+      sombras 2048 con bias, `RoomEnvironment`
+      (procedural, de three; sin dependencias
+      nuevas), fondo `#e7e9ed` y rejilla.
+- [x] Verificación de puertas con evidencia (SAT +
+      recorte Sutherland–Hodgman): **defecto
+      corregido** — el eje de bisagra estaba en el
+      plano frontal (`z = 0`) y las hojas de módulos
+      adyacentes se interpenetraban desde ~44°; el
+      eje pasa al plano medio del canto
+      (`−espesor/2`). Documentado en `doors.ts` y
+      `door.ts`; contrato actualizado con evidencia.
+- [x] Zona de bloqueo mutuo entre módulos vecinos
+      (~88–92°) acotada en tests; el límite común
+      ≤90° queda **PROVISIONAL** (carpintería).
+- [x] UI: secciones colapsables del panel
+      (`aria-expanded`/`aria-controls`), etiqueta
+      de fase, favicon sin 404, barra de vistas +
+      interruptor "Puertas visibles" (estado de
+      presentación que no muta `WardrobeConfig`)
+      y slider de apertura en el visor.
+- [x] Corrección CSS del contenedor del visor
+      (caja absoluta): antes la cadena
+      `height:100%` no resolvía contra
+      `min-height` y el lienzo quedaba en su tamaño
+      intrínseco 2:1 (359 de 648 px en escritorio;
+      182 de 506 px en móvil).
+- [x] Pruebas: unitarias de `camera-views` y
+      `materials` (presets, rugosidades, hash
+      determinista); suite Playwright ampliada con
+      encuadre medido, panel trasero por píxel
+      central, secciones, ángulos y móvil;
+      83/83 verificaciones visuales.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.
@@ -208,4 +257,6 @@
   `docs/product-rules.md` §6. Bloquea cotizaciones reales.
 - Playwright: verificaciones visuales reales desde Fase 2A
   (rotación, zoom, apertura de puertas, estabilidad de escena);
+  Fase 3A añade encuadre de vistas medido, panel trasero en
+  frontal, secciones colapsables y móvil (83/83);
   la suite end-to-end completa llega en Fase 4.

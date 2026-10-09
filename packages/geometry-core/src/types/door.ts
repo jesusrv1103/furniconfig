@@ -109,11 +109,19 @@ export interface DoorHandle {
  * eje de bisagra SIN alterar la geometría
  * original (la presentación aplica la
  * rotación sobre estos datos).
+ *
+ * El eje es vertical, en el borde de la
+ * bisagra y en el plano MEDIO del espesor
+ * de la hoja (no en el plano frontal: con
+ * el eje en z = 0 las hojas de módulos
+ * adyacentes se cortaban desde ~44°,
+ * verificado con pruebas SAT sobre las
+ * huellas rotadas).
  */
 export interface DoorOpeningTransform {
   /** Posición del eje de bisagra (mm; eje vertical). */
   hingeXmm: number;
-  /** Profundidad del eje (mm; plano frontal del mueble). */
+  /** Profundidad del eje (mm; plano medio del espesor). */
   hingeZmm: number;
   /** Desplazamiento del centro de la hoja respecto del eje (mm). */
   centerOffsetMm: { x: number; z: number };

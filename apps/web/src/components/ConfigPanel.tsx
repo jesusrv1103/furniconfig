@@ -1,4 +1,5 @@
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, ReactNode } from 'react';
+import { useState } from 'react';
 import {
   BOARD_THICKNESSES_MM,
   DEFAULT_ROD_DIAMETER_MM,
@@ -60,6 +61,73 @@ interface ConfigPanelProps {
   onReset: () => void;
 }
 
+type SectionId =
+  | 'dimensions'
+  | 'modules'
+  | 'doors'
+  | 'backPanel'
+  | 'rod'
+  | 'materials';
+
+const SECTION_IDS: readonly SectionId[] = [
+  'dimensions',
+  'modules',
+  'doors',
+  'backPanel',
+  'rod',
+  'materials',
+];
+
+/**
+ * Sección colapsable del panel. El encabezado es un botón
+ * con `aria-expanded`/`aria-controls`; el contenido conserva
+ * un `fieldset` con `legend` oculto para el agrupamiento
+ * accesible del formulario. Abierta por defecto: la
+ * jerarquía mejora la navegación sin esconder controles.
+ */
+function ConfigSection({
+  id,
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  id: SectionId;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="config-section">
+      <h3 className="config-section-heading">
+        <button
+          type="button"
+          className="config-section-toggle"
+          aria-expanded={open}
+          aria-controls={`section-${id}`}
+          onClick={onToggle}
+        >
+          <span>{title}</span>
+          <span className="config-section-chevron" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+      </h3>
+      <div
+        id={`section-${id}`}
+        className="config-section-body"
+        hidden={!open}
+      >
+        <fieldset className="config-section-fieldset">
+          <legend className="visually-hidden">{title}</legend>
+          {children}
+        </fieldset>
+      </div>
+    </section>
+  );
+}
+
 export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
   // Capturas locales: el narrowing de `config.doors`
@@ -71,6 +139,20 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
   const hasHangingModules = modules.some(
     (module) => module.kind === 'hanging',
   );
+  const [openSections, setOpenSections] = useState<
+    Record<SectionId, boolean>
+  >(() =>
+    SECTION_IDS.reduce(
+      (accumulator, id) => ({ ...accumulator, [id]: true }),
+      {} as Record<SectionId, boolean>,
+    ),
+  );
+  const toggleSection = (id: SectionId) => {
+    setOpenSections((previous) => ({
+      ...previous,
+      [id]: !previous[id],
+    }));
+  };
   const hangingRodDiameterMm =
     config.hangingRod?.diameterMm ?? DEFAULT_ROD_DIAMETER_MM;
   const hangingRodName =
@@ -135,8 +217,12 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
     <form className="config-panel" onSubmit={(event) => event.preventDefault()}>
       <h2>Configuración</h2>
 
-      <fieldset>
-        <legend>Dimensiones (mm)</legend>
+      <ConfigSection
+        id="dimensions"
+        title="Dimensiones (mm)"
+        open={openSections.dimensions}
+        onToggle={() => toggleSection('dimensions')}
+      >
         {(
           [
             ['widthMm', widthMm],
@@ -161,10 +247,14 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
             </small>
           </label>
         ))}
-      </fieldset>
+      </ConfigSection>
 
-      <fieldset>
-        <legend>Módulos ({modules.length})</legend>
+      <ConfigSection
+        id="modules"
+        title={`Módulos (${modules.length})`}
+        open={openSections.modules}
+        onToggle={() => toggleSection('modules')}
+      >
         <div className="module-count" role="group" aria-label="Número de módulos">
           {[1, 2, 3, 4].map((count) => (
             <button
@@ -230,10 +320,14 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
             )}
           </fieldset>
         ))}
-      </fieldset>
+      </ConfigSection>
 
-      <fieldset>
-        <legend>Puertas abatibles</legend>
+      <ConfigSection
+        id="doors"
+        title="Puertas abatibles"
+        open={openSections.doors}
+        onToggle={() => toggleSection('doors')}
+      >
         <p className="provisional-note">
           Reglas provisionales: 1–2 hojas por módulo,
           holgura 0–10 mm, montaje sobre el frente.
@@ -355,10 +449,14 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
             </label>
           </>
         )}
-      </fieldset>
+      </ConfigSection>
 
-      <fieldset>
-        <legend>Panel trasero</legend>
+      <ConfigSection
+        id="backPanel"
+        title="Panel trasero"
+        open={openSections.backPanel}
+        onToggle={() => toggleSection('backPanel')}
+      >
         <p className="provisional-note">
           Montaje por encaje PROVISIONAL: el panel ocupa el
           plano posterior y entrepaños, divisiones, cajones
@@ -417,11 +515,15 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
             </select>
           </label>
         )}
-      </fieldset>
+      </ConfigSection>
 
       {hasHangingModules && (
-        <fieldset>
-          <legend>Barra de colgado</legend>
+        <ConfigSection
+          id="rod"
+          title="Barra de colgado"
+          open={openSections.rod}
+          onToggle={() => toggleSection('rod')}
+        >
           <p className="provisional-note">
             Reglas provisionales: diámetro {rodDiameterLimits.min}–
             {rodDiameterLimits.max} mm, montaje a{' '}
@@ -495,11 +597,15 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
           >
             Usar valores por defecto del motor
           </button>
-        </fieldset>
+        </ConfigSection>
       )}
 
-      <fieldset>
-        <legend>Materiales y acabados</legend>
+      <ConfigSection
+        id="materials"
+        title="Materiales y acabados"
+        open={openSections.materials}
+        onToggle={() => toggleSection('materials')}
+      >
         {(
           [
             'structure',
@@ -568,7 +674,7 @@ export function ConfigPanel({ config, onUpdate, onReset }: ConfigPanelProps) {
             </fieldset>
           );
         })}
-      </fieldset>
+      </ConfigSection>
 
       <button type="button" className="reset-button" onClick={onReset}>
         Restablecer configuración

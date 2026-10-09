@@ -212,6 +212,19 @@ export function buildDoors(wardrobe: Wardrobe): DoorsResult {
  * original (la presentación aplica la
  * rotación sobre estos datos).
  *
+ * El eje de bisagra es vertical, en el borde
+ * de la bisagra (`hingeXmm`) y en el plano
+ * MEDIO del espesor de la hoja (`hingeZmm`).
+ * El plano medio es un refinamiento con
+ * evidencia de defecto: con el eje en el
+ * plano frontal (z = 0), las hojas de
+ * módulos adyacentes se interpenetraban
+ * desde ~44° (los cantos traseros cruzaban
+ * el divisor); a mitad de espesor, hojas
+ * vecinas nunca se cortan (despeje de
+ * 7 mm a 90°) y la mordedura en el cuerpo
+ * a >90° se reduce a la mitad.
+ *
  * El ángulo se firma según el lado de la
  * bisagra: con bisagra izquierda la hoja
  * gira en sentido positivo (`rotation.y`
@@ -244,7 +257,7 @@ export function doorOpeningTransform(
     door.hingeSide === 'left'
       ? door.positionMm.x
       : door.positionMm.x + door.widthMm;
-  const hingeZmm = 0;
+  const hingeZmm = -door.thicknessMm / 2;
   const centerXmm = door.positionMm.x + door.widthMm / 2;
   const centerZmm =
     door.positionMm.z + door.thicknessMm / 2;

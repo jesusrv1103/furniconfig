@@ -8,17 +8,22 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 2C — Puertas abatibles y panel trasero** (completada).
+**Fase 3A — Interfaz profesional de taller** (completada).
 Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
 (Fase 2A), cajoneras (Fase 2B) y puertas abatibles
 con tiradores (Fase 2C: hojas de 1–2 por módulo,
 montadas sobre el frente, con apertura pura de
-presentación 0–110°); panel trasero opcional por
-encaje; visualizador 3D (`apps/web`, React +
-Three.js) con control de apertura de puertas.
-No hay backend, autenticación, pagos ni cotizaciones
-todavía (Fases 3–4).
+presentación 0–110° y eje de bisagra en el plano medio
+del canto — corrección con evidencia de la Fase 3A);
+panel trasero opcional por encaje; visualizador 3D
+(`apps/web`, React + Three.js) con vistas
+predefinidas y reencuadre automático, iluminación
+IBL con sombras, interruptor de visibilidad de puertas,
+slider de apertura en el visor y panel de
+configuración colapsable. No hay backend,
+autenticación, pagos ni cotizaciones todavía
+(Fases 3–4).
 
 ## Stack
 

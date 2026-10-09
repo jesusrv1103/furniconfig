@@ -294,8 +294,10 @@ describe('deriveGeometryState — puertas', () => {
     }
     const left = doorOpeningTransform(door, 90);
     expect(left.hingeXmm).toBe(21);
-    expect(left.hingeZmm).toBe(0);
-    expect(left.centerOffsetMm).toEqual({ x: 385, z: -9 });
+    // Eje a mitad de espesor (refinamiento Fase 3A: evita
+    // que hojas adyacentes se corten desde ~44°).
+    expect(left.hingeZmm).toBe(-9);
+    expect(left.centerOffsetMm).toEqual({ x: 385, z: 0 });
     expect(left.signedAngleRad).toBeCloseTo(Math.PI / 2);
 
     const rightConfig: WardrobeConfig = {
@@ -309,7 +311,8 @@ describe('deriveGeometryState — puertas', () => {
     }
     const right = doorOpeningTransform(rightDoor, 90);
     expect(right.hingeXmm).toBe(791);
-    expect(right.centerOffsetMm).toEqual({ x: -385, z: -9 });
+    expect(right.hingeZmm).toBe(-9);
+    expect(right.centerOffsetMm).toEqual({ x: -385, z: 0 });
     expect(right.signedAngleRad).toBeCloseTo(-Math.PI / 2);
   });
 });

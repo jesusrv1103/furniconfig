@@ -6,6 +6,10 @@ import {
   doorOpeningTransform,
 } from '../src/engine/doors.js';
 import { GeometryError } from '../src/errors.js';
+import type {
+  Door,
+  DoorHandle,
+} from '../src/types/door.js';
 import type { Module } from '../src/types/module.js';
 import type { Wardrobe } from '../src/types/wardrobe.js';
 
@@ -318,8 +322,10 @@ describe('doorOpeningTransform', () => {
     expect(door).toBeDefined();
     const transform = doorOpeningTransform(door!, 90);
     expect(transform.hingeXmm).toBe(21);
-    expect(transform.hingeZmm).toBe(0);
-    expect(transform.centerOffsetMm).toEqual({ x: 385, z: -9 });
+    // Plano medio del espesor (18 / 2): refinamiento de la
+    // Fase 3A con evidencia de intersección a ≥ ~44°.
+    expect(transform.hingeZmm).toBe(-9);
+    expect(transform.centerOffsetMm).toEqual({ x: 385, z: 0 });
     expect(transform.signedAngleRad).toBeCloseTo(Math.PI / 2);
   });
 
@@ -335,7 +341,8 @@ describe('doorOpeningTransform', () => {
     expect(rightDoor).toBeDefined();
     const transform = doorOpeningTransform(rightDoor!, 90);
     expect(transform.hingeXmm).toBe(21 + 770); // 791
-    expect(transform.centerOffsetMm).toEqual({ x: -385, z: -9 });
+    expect(transform.hingeZmm).toBe(-9);
+    expect(transform.centerOffsetMm).toEqual({ x: -385, z: 0 });
     expect(transform.signedAngleRad).toBeCloseTo(-Math.PI / 2);
   });
 
@@ -408,5 +415,525 @@ describe('buildDoors — validación defensiva', () => {
     const { doors, handles } = buildDoors(noDoorMaterial);
     expect(doors).toHaveLength(0);
     expect(handles).toHaveLength(0);
+  });
+});
+
+/**
+ * Huellas rotadas de hojas y tiradores (plano XZ).
+ *
+ * Verifican el contrato de presentación de la Fase 2C: la
+ * apertura es una rotación rígida alrededor del eje de
+ * bisagra (vertical, en el plano medio del espesor de la
+ * hoja) con la convención de three.js (`rotation.y = θ`):
+ *
+ *   x' = hingeX + dx·cosθ + dz·sinθ
+ *   z' = hingeZ − dx·sinθ + dz·cosθ
+ *
+ * con (dx, dz) = esquina cerrada − eje de bisagra.
+ */
+describe('doorOpeningTransform — sin intersecciones (huellas rotadas)', () => {
+  /**
+   * Rango limpio: todas las hojas del visor se abren con el
+   * mismo ángulo y en [0°, 85°] no se corta ningún par.
+   */
+  const CLEAN_ANGLES = [0, 5, 15, 30, 45, 60, 75, 85];
+  /**
+   * Rango de bloqueo mutuo físico: más allá de ~90°, las
+   * hojas interiores adyacentes no pueden coexistir (en la
+   * realidad se bloquean). El modelo admite el rango
+   * PROVISIONAL de 110° con solapes acotados y confinados.
+   */
+  const BLOCK_ANGLES = [90, 92, 95, 100, 105, 110];
+
+  type Point2 = { x: number; z: number };
+
+  /** Esquinas de la hoja CERRADA en el plano XZ. */
+  function closedCorners(door: Door): Point2[] {
+    const { x, z } = door.positionMm;
+    const { widthMm, thicknessMm } = door;
+    return [
+      { x, z },
+      { x: x + widthMm, z },
+      { x: x + widthMm, z: z + thicknessMm },
+      { x, z: z + thicknessMm },
+    ];
+  }
+
+  /** Huella XZ de una hoja tras rotar `angleDeg` grados. */
+  function rotatedFootprint(
+    door: Door,
+    angleDeg: number,
+  ): Point2[] {
+    const { hingeXmm, hingeZmm, signedAngleRad } =
+      doorOpeningTransform(door, angleDeg);
+    const cos = Math.cos(signedAngleRad);
+    const sin = Math.sin(signedAngleRad);
+    return closedCorners(door).map((corner) => {
+      const dx = corner.x - hingeXmm;
+      const dz = corner.z - hingeZmm;
+      return {
+        x: hingeXmm + dx * cos + dz * sin,
+        z: hingeZmm - dx * sin + dz * cos,
+      };
+    });
+  }
+
+  /**
+   * Huella XZ del tirador (cilindro a lo ancho: su caja
+   * en el plano mide lengthMm × diameterMm) rotada con la
+   * transformación de su puerta.
+   */
+  function rotatedHandleFootprint(
+    handle: DoorHandle,
+    door: Door,
+    angleDeg: number,
+  ): Point2[] {
+    const { hingeXmm, hingeZmm, signedAngleRad } =
+      doorOpeningTransform(door, angleDeg);
+    const cos = Math.cos(signedAngleRad);
+    const sin = Math.sin(signedAngleRad);
+    const { x, z } = handle.positionMm;
+    const corners: Point2[] = [
+      { x, z },
+      { x: x + handle.lengthMm, z },
+      {
+        x: x + handle.lengthMm,
+        z: z + handle.diameterMm,
+      },
+      { x, z: z + handle.diameterMm },
+    ];
+    return corners.map((corner) => {
+      const dx = corner.x - hingeXmm;
+      const dz = corner.z - hingeZmm;
+      return {
+        x: hingeXmm + dx * cos + dz * sin,
+        z: hingeZmm - dx * sin + dz * cos,
+      };
+    });
+  }
+
+  /** Solapamiento 2D de polígonos convexos (SAT). */
+  function footprintsOverlap(
+    a: Point2[],
+    b: Point2[],
+  ): boolean {
+    for (const polygon of [a, b]) {
+      for (let i = 0; i < polygon.length; i++) {
+        const p1 = polygon[i]!;
+        const p2 = polygon[(i + 1) % polygon.length]!;
+        const axis = {
+          x: -(p2.z - p1.z),
+          z: p2.x - p1.x,
+        };
+        const project = (poly: Point2[]) =>
+          poly.reduce(
+            (ext, point) => ({
+              min: Math.min(
+                ext.min,
+                point.x * axis.x + point.z * axis.z,
+              ),
+              max: Math.max(
+                ext.max,
+                point.x * axis.x + point.z * axis.z,
+              ),
+            }),
+            { min: Infinity, max: -Infinity },
+          );
+        const pa = project(a);
+        const pb = project(b);
+        if (pa.max < pb.min || pb.max < pa.min) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /** Intersección A ∩ B de polígonos convexos (Sutherland–Hodgman). */
+  function clipPolygons(a: Point2[], b: Point2[]): Point2[] {
+    const intersect = (
+      p1: Point2,
+      p2: Point2,
+      c1: Point2,
+      c2: Point2,
+    ): Point2 => {
+      const r = { x: p2.x - p1.x, z: p2.z - p1.z };
+      const s = { x: c2.x - c1.x, z: c2.z - c1.z };
+      const denominator = r.x * s.z - r.z * s.x;
+      const t =
+        ((c1.x - p1.x) * s.z - (c1.z - p1.z) * s.x) /
+        denominator;
+      return {
+        x: p1.x + t * r.x,
+        z: p1.z + t * r.z,
+      };
+    };
+    let output = a;
+    for (let i = 0; i < b.length; i++) {
+      const c1 = b[i]!;
+      const c2 = b[(i + 1) % b.length]!;
+      const inside = (point: Point2): boolean =>
+        (c2.x - c1.x) * (point.z - c1.z) -
+          (c2.z - c1.z) * (point.x - c1.x) >=
+        0;
+      const input = output;
+      output = [];
+      for (let j = 0; j < input.length; j++) {
+        const current = input[j]!;
+        const previous =
+          input[(j + input.length - 1) % input.length]!;
+        if (inside(current)) {
+          if (!inside(previous)) {
+            output.push(
+              intersect(previous, current, c1, c2),
+            );
+          }
+          output.push(current);
+        } else if (inside(previous)) {
+          output.push(intersect(previous, current, c1, c2));
+        }
+      }
+      if (output.length === 0) {
+        return [];
+      }
+    }
+    return output;
+  }
+
+  /** Área (mm²) de un polígono convexo por la fórmula del zapatero. */
+  function polygonArea(polygon: Point2[]): number {
+    let area = 0;
+    for (let i = 0; i < polygon.length; i++) {
+      const p1 = polygon[i]!;
+      const p2 = polygon[(i + 1) % polygon.length]!;
+      area += p1.x * p2.z - p2.x * p1.z;
+    }
+    return Math.abs(area) / 2;
+  }
+
+  it('las dos hojas de un módulo no se cruzan en ningún ángulo (0–110°)', () => {
+    const wardrobe = makeWardrobe({
+      doorsConfig: {
+        leaves: 2,
+        hingeSide: 'left',
+        clearanceMm: 3,
+      },
+    });
+    const { doors } = buildDoors(wardrobe);
+    expect(doors).toHaveLength(2);
+    const [left, right] = [doors[0]!, doors[1]!];
+    for (const angle of [
+      ...CLEAN_ANGLES,
+      ...BLOCK_ANGLES,
+    ]) {
+      expect(
+        footprintsOverlap(
+          rotatedFootprint(left, angle),
+          rotatedFootprint(right, angle),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it('hojas de módulos distintos no se cruzan en [0°, 85°]', () => {
+    const result = calculateGeometry({
+      ...baseConfig,
+      doors: { leaves: 2 },
+    });
+    expect(result.doors).toHaveLength(6);
+    for (const angle of CLEAN_ANGLES) {
+      const footprints = result.doors.map((door) => ({
+        door,
+        footprint: rotatedFootprint(door, angle),
+      }));
+      for (let i = 0; i < footprints.length; i++) {
+        for (let j = i + 1; j < footprints.length; j++) {
+          const pairI = footprints[i]!;
+          const pairJ = footprints[j]!;
+          if (pairI.door.moduleId === pairJ.door.moduleId) {
+            continue; // cubierto por la prueba anterior
+          }
+          expect(
+            footprintsOverlap(
+              pairI.footprint,
+              pairJ.footprint,
+            ),
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('en [90°, 110°] el solape queda confinado al bloqueo mutuo de hojas interiores adyacentes (≤ 3000 mm², columna del divisor)', () => {
+    // Límite físico real: dos hojas interiores adyacentes
+    // abiertas SIMULTÁNEAMENTE más allá de ~90° no pueden
+    // coexistir (en carpintería real se bloquean entre sí).
+    // El modelo lo representa como un solape fino confinado
+    // a la columna del divisor (x del divisor ± 1 mm) con
+    // área ≤ 3000 mm² (máx. medido: 2746 mm² a 92°). Ningún
+    // otro par se solapa; si carpintería fija un ángulo
+    // común ≤ 90°, este rango desaparece.
+    const result = calculateGeometry({
+      ...baseConfig,
+      doors: { leaves: 2 },
+    });
+    const moduleIndex = new Map(
+      result.wardrobe.modules.map((module, index) => [
+        module.id,
+        index,
+      ]),
+    );
+    const areAdjacentInnerLeaves = (a: Door, b: Door) => {
+      const indexA = moduleIndex.get(a.moduleId)!;
+      const indexB = moduleIndex.get(b.moduleId)!;
+      if (Math.abs(indexA - indexB) !== 1) return false;
+      const [left, right] =
+        indexA < indexB ? [a, b] : [b, a];
+      return (
+        left.hingeSide === 'right' &&
+        right.hingeSide === 'left'
+      );
+    };
+    for (const angle of BLOCK_ANGLES) {
+      const footprints = result.doors.map((door) => ({
+        door,
+        footprint: rotatedFootprint(door, angle),
+      }));
+      for (let i = 0; i < footprints.length; i++) {
+        for (let j = i + 1; j < footprints.length; j++) {
+          const pairI = footprints[i]!;
+          const pairJ = footprints[j]!;
+          if (
+            !footprintsOverlap(
+              pairI.footprint,
+              pairJ.footprint,
+            )
+          ) {
+            continue;
+          }
+          expect(
+            areAdjacentInnerLeaves(
+              pairI.door,
+              pairJ.door,
+            ),
+          ).toBe(true);
+          const clipped = clipPolygons(
+            pairI.footprint,
+            pairJ.footprint,
+          );
+          expect(polygonArea(clipped)).toBeLessThan(3000);
+          // Confinado a la columna del divisor: los módulos
+          // de 776 mm con divisor de 18 mm delimitan el
+          // solape a ≤ 20 mm de ancho.
+          const xs = clipped.map((point) => point.x);
+          expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(20);
+        }
+      }
+    }
+  });
+
+  it('los tiradores no chocan con ninguna hoja ni entre sí en [0°, 85°]', () => {
+    const result = calculateGeometry({
+      ...baseConfig,
+      doors: { leaves: 2 },
+    });
+    const doorById = new Map(
+      result.doors.map((door) => [door.id, door]),
+    );
+    for (const angle of CLEAN_ANGLES) {
+      const leaves = result.doors.map((door) =>
+        rotatedFootprint(door, angle),
+      );
+      for (const handle of result.handles) {
+        const owner = doorById.get(handle.doorId);
+        expect(owner).toBeDefined();
+        const handlePrint = rotatedHandleFootprint(
+          handle,
+          owner!,
+          angle,
+        );
+        // Su hoja propia: montado contra su cara frontal
+        // (contacto de montaje, no intersección).
+        result.doors.forEach((door, index) => {
+          if (door.id === handle.doorId) {
+            return;
+          }
+          expect(
+            footprintsOverlap(handlePrint, leaves[index]!),
+          ).toBe(false);
+        });
+      }
+      // Tirador contra tirador (todos los pares).
+      const handlePrints = result.handles.map(
+        (handle) => ({
+          handle,
+          footprint: rotatedHandleFootprint(
+            handle,
+            doorById.get(handle.doorId)!,
+            angle,
+          ),
+        }),
+      );
+      for (let i = 0; i < handlePrints.length; i++) {
+        for (let j = i + 1; j < handlePrints.length; j++) {
+          expect(
+            footprintsOverlap(
+              handlePrints[i]!.footprint,
+              handlePrints[j]!.footprint,
+            ),
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('en [90°, 110°] un tirador solo puede solaparse con la hoja interior adyacente o su tirador (≤ 2500 mm²)', () => {
+    // Mismo bloqueo mutuo físico anterior: en la banda
+    // ~88–91° los tiradores de las hojas interiores
+    // adyacentes (y estos contra la hoja vecina) se solapan
+    // unos milímetros en la columna del divisor (máx.
+    // medido: 2016 mm² entre tiradores a 89°; 1320 mm²
+    // tirador-hoja a 90°). Fuera de esa banda, limpio.
+    const result = calculateGeometry({
+      ...baseConfig,
+      doors: { leaves: 2 },
+    });
+    const doorById = new Map(
+      result.doors.map((door) => [door.id, door]),
+    );
+    const moduleIndex = new Map(
+      result.wardrobe.modules.map((module, index) => [
+        module.id,
+        index,
+      ]),
+    );
+    const isAdjacentOppositeInner = (
+      owner: Door,
+      other: Door,
+    ): boolean => {
+      const ownerIndex = moduleIndex.get(owner.moduleId)!;
+      const otherIndex = moduleIndex.get(other.moduleId)!;
+      return (
+        Math.abs(ownerIndex - otherIndex) === 1 &&
+        owner.hingeSide !== other.hingeSide
+      );
+    };
+    for (const angle of BLOCK_ANGLES) {
+      const leaves = result.doors.map((door) =>
+        rotatedFootprint(door, angle),
+      );
+      for (const handle of result.handles) {
+        const owner = doorById.get(handle.doorId)!;
+        const handlePrint = rotatedHandleFootprint(
+          handle,
+          owner,
+          angle,
+        );
+        result.doors.forEach((door, index) => {
+          if (door.id === handle.doorId) {
+            return;
+          }
+          if (
+            !footprintsOverlap(handlePrint, leaves[index]!)
+          ) {
+            return;
+          }
+          expect(
+            isAdjacentOppositeInner(owner, door),
+          ).toBe(true);
+          const clipped = clipPolygons(
+            handlePrint,
+            leaves[index]!,
+          );
+          expect(polygonArea(clipped)).toBeLessThan(1500);
+          const xs = clipped.map((point) => point.x);
+          expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(15);
+        });
+      }
+      // Tirador contra tirador: solo el par interior
+      // adyacente, con los mismos límites de confinamiento.
+      const handlePrints = result.handles.map(
+        (handle) => ({
+          handle,
+          owner: doorById.get(handle.doorId)!,
+          footprint: rotatedHandleFootprint(
+            handle,
+            doorById.get(handle.doorId)!,
+            angle,
+          ),
+        }),
+      );
+      for (let i = 0; i < handlePrints.length; i++) {
+        for (let j = i + 1; j < handlePrints.length; j++) {
+          const pairI = handlePrints[i]!;
+          const pairJ = handlePrints[j]!;
+          if (
+            !footprintsOverlap(
+              pairI.footprint,
+              pairJ.footprint,
+            )
+          ) {
+            continue;
+          }
+          expect(
+            isAdjacentOppositeInner(pairI.owner, pairJ.owner),
+          ).toBe(true);
+          const clipped = clipPolygons(
+            pairI.footprint,
+            pairJ.footprint,
+          );
+          expect(polygonArea(clipped)).toBeLessThan(2500);
+          const xs = clipped.map((point) => point.x);
+          expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(20);
+        }
+      }
+    }
+  });
+
+  it('la rotación es rígida y el canto de bisagra gira sobre el eje', () => {
+    const door = buildDoors(makeWardrobe()).doors[0]!;
+    for (const angle of [30, 75, 110]) {
+      const transform = doorOpeningTransform(door, angle);
+      const footprint = rotatedFootprint(door, angle);
+      const edge = (i: number): number => {
+        const p1 = footprint[i]!;
+        const p2 = footprint[(i + 1) % 4]!;
+        return Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      };
+      expect(edge(0)).toBeCloseTo(door.widthMm, 6);
+      expect(edge(1)).toBeCloseTo(door.thicknessMm, 6);
+      expect(edge(2)).toBeCloseTo(door.widthMm, 6);
+      expect(edge(3)).toBeCloseTo(door.thicknessMm, 6);
+      // Bisagra izquierda: el punto medio del canto de la
+      // bisagra (esquinas 0 y 3) ES el eje y no se mueve.
+      const [hingeCornerA, hingeCornerB] = [
+        footprint[0]!,
+        footprint[3]!,
+      ];
+      const midpoint = {
+        x: (hingeCornerA.x + hingeCornerB.x) / 2,
+        z: (hingeCornerA.z + hingeCornerB.z) / 2,
+      };
+      expect(midpoint.x).toBeCloseTo(transform.hingeXmm, 6);
+      expect(midpoint.z).toBeCloseTo(transform.hingeZmm, 6);
+    }
+  });
+
+  it('la hoja permanece en el semiespacio frontal (z ≤ 0) en todo el rango [0°, 110°]', () => {
+    // Con el eje a mitad de espesor, el canto trasero se
+    // acerca al plano frontal pero nunca lo rebasa
+    // (z máx = −(espesor/2)·(1 − |cos α|); −5.9 mm a 110°
+    // con 18 mm). La hoja jamás entra en el cuerpo del
+    // mueble (que vive en z ≥ 0): sin mordeduras ni
+    // artefactos en ningún ángulo.
+    const door = buildDoors(makeWardrobe()).doors[0]!;
+    for (const angle of [
+      ...CLEAN_ANGLES,
+      ...BLOCK_ANGLES,
+    ]) {
+      for (const corner of rotatedFootprint(door, angle)) {
+        expect(corner.z).toBeLessThanOrEqual(1e-9);
+      }
+    }
   });
 });
