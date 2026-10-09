@@ -264,12 +264,54 @@
       puertas y panel trasero sobreviven el ciclo
       guardar/reabrir.
 
+## Fase 3C — FurniConfig Studio ✅
+
+- [x] Disposición Studio (ADR-024): barra superior (nombre
+      del proyecto, nuevo diseño, guardar, deshacer/
+      rehacer, estado de guardado, acceso a proyectos),
+      panel izquierdo (estructura + diseños), visor 3D
+      central, panel derecho contextual y barra inferior
+      (dimensiones, módulos, validación, guardado).
+- [x] Selección directa de módulos: clic en el modelo (con
+      umbral anti-drag y deselección en el vacío) y desde
+      la lista del panel izquierdo; resaltado con copias
+      emisivas auxiliares de material; ids deterministas
+      del motor (`module-N`), estables entre recálculos y
+      limpieza automática si el módulo desaparece.
+- [x] Panel contextual editable: tipo de módulo, repisas,
+      cajones y diámetro de barra (compartido), con
+      dimensiones resueltas en solo lectura; el resumen y
+      los errores siguen visibles sin selección.
+- [x] Deshacer/rehacer: historial acotado (50 pasos) solo
+      de configuraciones, integrado con el guardado
+      automático de la Fase 3B, reiniciado al cambiar de
+      proyecto, con atajos Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z y
+      Ctrl/Cmd+Y.
+- [x] Vistas: isométrica/frontal/lateral + "Ajustar"
+      (encuadre a pantalla) + "Encuadrar módulo"
+      (cámara al módulo seleccionado).
+- [x] Paneles laterales colapsables (en ≤760 px arrancan
+      contraídos) y modo sencillo (predeterminado) /
+      avanzado como organización de herramientas reales.
+- [x] Persistencia 3B íntegra: CRUD, autosave, sesión e
+      import/export sin cambios de formato.
+- [x] Pruebas: 36 unitarias nuevas (historial, selección,
+      paneles del Studio) + escenario Playwright con ~30
+      verificaciones nuevas y 10 capturas de evidencia.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.
 - Refactor: motor genérico + "perfiles" por familia (reglas propias de
   paneles, restricciones y validadores).
 - Guardar el contrato por familia con su propio `schemaVersion`.
+- **Estrategia incremental preparada por la Fase 3C**: cada
+  familia nueva aportará (1) su contrato de configuración
+  versionado, (2) su función de derivación pura equivalente a
+  `deriveGeometryState` y (3) su mapeo de selección
+  pieza → elemento editable (equivalente a `lib/studio/selection.ts`);
+  el historial del Studio, las barras y la capa de presentación
+  son agnósticos a la familia y no se tocan.
 - Cajoneras: **completado en Fase 2B** (quedan las
   guías comerciales y la validación con carpintería).
 - Puertas corredizas y herrajes comerciales:

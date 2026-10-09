@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import {
   MAX_DOOR_OPEN_ANGLE_DEG,
@@ -34,29 +34,71 @@ const VIEW_BUTTONS: readonly { view: CameraView; label: string }[] = [
 ];
 
 /**
- * Lienzo 3D del visualizador.
- *
- * Recibe el GeometryResult ya calculado por el motor y lo renderiza
- * en metros. La interacción es con OrbitControls (Drei).
- *
- * El ángulo de apertura de puertas y la visibilidad de las
- * hojas son estado de presentación (no de configuración):
- * se aplican como rotación pura sobre la geometría cerrada
- * del motor, o bien omitiendo su render, sin tocar
- * `geometry.doors`.
+ * Distancia máxima (px) entre pulsación y levantación para
+ * que un gesto cuente como CLIC y no como órbita
+ * (selección sin conflicto con OrbitControls).
  */
-export function WardrobeViewer({ geometry }: { geometry: GeometryResult }) {
+const CLICK_DRIFT_PX = 5;
+
+/**
+ * Lienzo 3D del visualizador (Studio, Fase 3C).
+ *
+ * Recibe el GeometryResult ya calculado por el motor y lo
+ * renderiza en metros. Además de la órbita (Drei):
+ *
+ * - selección de módulos por clic (con umbral anti-drag y
+ *   deselección al pulsar el vacío),
+ * - encuadre a pantalla completa y encuadre al módulo
+ *   seleccionado,
+ * - estado de presentación de puertas (visibilidad y
+ *   ángulo) sin tocar `geometry.doors`.
+ */
+export function WardrobeViewer({
+  geometry,
+  selectedModuleId = null,
+  onSelectModule,
+}: {
+  geometry: GeometryResult;
+  /** Id del módulo seleccionado (resaltado en escena). */
+  selectedModuleId?: string | null;
+  /** Cambia la selección; `null` deselecciona. */
+  onSelectModule?: (moduleId: string | null) => void;
+}) {
   const hasDoors = geometry.doors.length > 0;
 
   const [doorOpenAngleDeg, setDoorOpenAngleDeg] = useState(0);
   const [doorsVisible, setDoorsVisible] = useState(true);
   const [viewRequest, setViewRequest] = useState<ViewRequest | null>(null);
+  const [focusNonce, setFocusNonce] = useState(0);
 
   const requestView = useCallback((view: CameraView) => {
     setViewRequest((previous) => ({
       view,
       nonce: (previous?.nonce ?? 0) + 1,
     }));
+  }, []);
+
+  /** "Ajustar modelo a pantalla": re-aplica la vista actual. */
+  const fitToScreen = useCallback(() => {
+    setViewRequest((previous) => ({
+      view: previous?.view ?? 'isometric',
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
+  }, []);
+
+  const focusModule = useCallback(() => {
+    setFocusNonce((nonce) => nonce + 1);
+  }, []);
+
+  // Guarda anti-drag: registra la pulsación y descarta como
+  // clic los gestos que se movieron (órbita con OrbitControls).
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const clickGuard = useCallback((native: { clientX: number; clientY: number }) => {
+    const down = pointerDownRef.current;
+    if (down === null) {
+      return true;
+    }
+    return Math.hypot(native.clientX - down.x, native.clientY - down.y) <= CLICK_DRIFT_PX;
   }, []);
 
   const showDoors = hasDoors && doorsVisible;
@@ -66,13 +108,29 @@ export function WardrobeViewer({ geometry }: { geometry: GeometryResult }) {
       className="viewer-container"
       data-view={viewRequest?.view ?? 'isometric'}
       data-doors-visible={showDoors ? 'true' : 'false'}
+      data-selected-module={selectedModuleId ?? undefined}
+      onPointerDown={(event) => {
+        pointerDownRef.current = { x: event.clientX, y: event.clientY };
+      }}
     >
-      <Canvas shadows="soft" camera={VIEWER_CAMERA}>
+      <Canvas
+        shadows="soft"
+        camera={VIEWER_CAMERA}
+        onPointerMissed={(event) => {
+          if (clickGuard(event) && onSelectModule) {
+            onSelectModule(null);
+          }
+        }}
+      >
         <WardrobeScene
           geometry={geometry}
           doorOpenAngleDeg={doorOpenAngleDeg}
           doorsVisible={showDoors}
           viewRequest={viewRequest}
+          selectedModuleId={selectedModuleId}
+          focusNonce={focusNonce}
+          clickGuard={clickGuard}
+          onModulePicked={onSelectModule}
         />
       </Canvas>
 
@@ -92,6 +150,23 @@ export function WardrobeViewer({ geometry }: { geometry: GeometryResult }) {
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          className="viewer-view-button"
+          onClick={fitToScreen}
+          title="Ajustar el mueble a la pantalla"
+        >
+          Ajustar
+        </button>
+        <button
+          type="button"
+          className="viewer-view-button"
+          onClick={focusModule}
+          disabled={selectedModuleId === null}
+          title="Encuadrar la cámara en el módulo seleccionado"
+        >
+          Encuadrar módulo
+        </button>
         {hasDoors && (
           <button
             type="button"

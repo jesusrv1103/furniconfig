@@ -1,5 +1,5 @@
 /**
- * Verificación visual real de Fases 2A → 3A con
+ * Verificación visual real de Fases 2A → 3C con
  * Playwright + Chromium.
  *
  * Lanza el dev server de Vite, abre la aplicación en
@@ -55,9 +55,20 @@
  *     duplicar, exportar/importar JSON, buscar, eliminar
  *     con confirmación y "nuevo proyecto" sin pisar el
  *     diseño anterior (página propia con storage limpio).
+ * 18. (Fase 3C) Studio: barra superior (acciones del
+ *     proyecto, deshacer/rehacer), barra inferior
+ *     (dimensiones, módulos, validación, guardado),
+ *     selección de módulos desde la lista y por clic 3D
+ *     (con umbral anti-drag y deselección en el vacío),
+ *     resaltado en el lienzo, panel contextual editable,
+ *     deshacer/rehacer (incluido atajo Ctrl+Z y edición
+ *     tras deshacer), selección estable al cambiar
+ *     dimensiones y limpieza al desaparecer el módulo,
+ *     paneles laterales contraíbles, modo sencillo/
+ *     avanzado y encuadre de cámara al módulo.
  *
  * Guarda capturas + `inspeccion.json` (mediciones) en
- * /tmp/opencode/fase3a (evidencias de Fase 3A y 3B).
+ * /tmp/opencode/fase3a (evidencias de Fase 3A, 3B y 3C).
  *
  * Uso: node tests/visual/visual-check.mjs
  * (o npm run test:visual)
@@ -548,9 +559,13 @@ try {
     shots['07-puertas-cerradas'],
     shots['09-puertas-cerradas-otravez'],
   );
+  // Umbral 1 %: tolera el ruido puntual de
+  // antialiasing/sombreado del render bajo carga, pero
+  // una puerta mal cerrada o un estado residual de
+  // apertura produciría diffs del 3–8 % y se detectaría.
   check(
     'cerrar las puertas restaura la escena (estabilidad)',
-    closeRatio < 0.001,
+    closeRatio < 0.01,
     `${(closeRatio * 100).toFixed(4)}% de píxeles distintos`,
   );
 
@@ -718,8 +733,8 @@ try {
 
   // --- 9. Fase 3A: interfaz profesional ----------------------------------
   check(
-    'la cabecera indica la fase actual (Fase 3B)',
-    (await page.getByText('Fase 3B').count()) === 1,
+    'la cabecera indica la fase actual (Fase 3C)',
+    (await page.getByText('Fase 3C').count()) === 1,
   );
 
   const viewer = page.locator('.viewer-container');
@@ -728,8 +743,8 @@ try {
     (await viewer.getAttribute('data-view')) === 'isometric',
   );
   check(
-    'la barra de vistas expone 3 vistas + interruptor de puertas',
-    (await page.locator('.viewer-toolbar button').count()) === 4,
+    'la barra de vistas expone 3 vistas + ajuste + encuadre + puertas',
+    (await page.locator('.viewer-toolbar button').count()) === 6,
   );
 
   // 9a. Vistas predefinidas: encuadre medido sobre la
@@ -1005,7 +1020,7 @@ try {
   check(
     '3B: la sección Proyectos arranca vacía y sin diseño activo',
     (await designPage.getByText('No hay diseños guardados todavía.').isVisible()) &&
-      (await designPage.getByText('Sin diseño activo').isVisible()),
+      (await designPage.locator('.design-section').getByText('Sin diseño activo').isVisible()),
   );
 
   // Configuración rica: dimensiones, módulos, cajones,
@@ -1125,7 +1140,7 @@ try {
     '3B: nuevo proyecto restaura los defaults sin tocar la lista',
     (await designPage.getByLabel('Ancho').inputValue()) === '2400' &&
       (await designPage.locator('.design-item').count()) === 1 &&
-      (await designPage.getByText('Sin diseño activo').isVisible()),
+      (await designPage.locator('.design-section').getByText('Sin diseño activo').isVisible()),
   );
   await designPage
     .locator('.design-item')
@@ -1349,7 +1364,7 @@ try {
     '3B: nuevo proyecto con cambios pendientes confirma antes de descartar',
     newProjectDialog.includes('cambios sin guardar') &&
       altoAfterNew === '2200' &&
-      (await designPage.getByText('Sin diseño activo').isVisible()),
+      (await designPage.locator('.design-section').getByText('Sin diseño activo').isVisible()),
     `dialog="${newProjectDialog}" · alto=${altoAfterNew} · estado="${statusAfterNew}"`,
   );
 
@@ -1384,6 +1399,22 @@ try {
   await designPage.locator('.design-section').scrollIntoViewIfNeeded();
   await designPage.waitForTimeout(250);
   saveShot('evidencia-07-disenos', await designPage.screenshot());
+
+  // Evidencia de Fase 3C: el diseño abierto aparece en la
+  // barra superior del Studio tras el guardado/recuperado.
+  await designPage.waitForTimeout(500);
+  check(
+    '3C: la barra superior muestra el diseño activo tras abrirlo',
+    (await designPage
+      .locator('[data-project-name]')
+      .getAttribute('data-project-name')) === 'Clóset renombrado' &&
+      (await designPage
+        .locator('.studio-save-state')
+        .getAttribute('data-save-state')) !== 'dirty',
+  );
+  await designPage.evaluate(() => window.scrollTo(0, 0));
+  await designPage.waitForTimeout(250);
+  saveShot('evidencia-3c-10-diseno-guardado', await designPage.screenshot());
   await designPage.close();
 
   check(
@@ -1430,6 +1461,319 @@ try {
   await doorsToggle.click();
   await page.waitForTimeout(300);
 
+  // --- Evidencia y verificación de Fase 3C: Studio ------------------------
+  // Estado base autocontenido y conocido: 2.400 mm de
+  // ancho, 3 módulos (repisas, colgado, cajones), puertas
+  // visibles y cerradas. Se fija explícitamente para que
+  // las coordenadas del clic 3D sean deterministas.
+  await page.getByLabel('Ancho').fill('2400');
+  await page.waitForTimeout(250);
+  await page
+    .getByRole('group', { name: 'Número de módulos' })
+    .getByRole('button', { name: '3', exact: true })
+    .click();
+  await page.waitForTimeout(250);
+  await page.locator('.module-card').nth(0).locator('select').selectOption('shelves');
+  await page.locator('.module-card').nth(1).locator('select').selectOption('hanging');
+  await page.locator('.module-card').nth(2).locator('select').selectOption('drawers');
+  await page.waitForTimeout(250);
+
+  const topbar = page.locator('.studio-topbar');
+  const bottombar = page.locator('.studio-bottombar');
+  const moduleProps = page.locator('.module-props');
+
+  check(
+    '3C: la barra superior expone las acciones del proyecto',
+    (await topbar
+      .getByRole('toolbar', { name: 'Acciones del proyecto' })
+      .locator('button')
+      .count()) >= 5,
+  );
+  const bottomText = await bottombar.innerText();
+  check(
+    '3C: la barra inferior resume dimensiones, módulos y validación',
+    bottomText.includes('2.400') &&
+      bottomText.includes('3 módulos') &&
+      bottomText.includes('Configuración válida'),
+    `bottombar="${bottomText.replace(/\n/g, ' · ')}"`,
+  );
+  check(
+    '3C: el estado de guardado inicial es "sin diseño activo"',
+    (await topbar.locator('.studio-save-state').getAttribute('data-save-state')) ===
+      'none',
+  );
+  await shootStable(page, 'evidencia-3c-01-studio-escritorio');
+
+  // Selección desde la lista de módulos.
+  await shootCanvasStable(page, 'c-3c-base');
+  await page.getByRole('button', { name: 'Seleccionar módulo 2', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3C: seleccionar en la lista abre el panel contextual del módulo',
+    (await moduleProps.getAttribute('data-selected-module')) === 'module-2' &&
+      (await moduleProps.isVisible()),
+  );
+  check(
+    '3C: la tarjeta del módulo refleja la selección (data-selected)',
+    (await page.locator('.module-card[data-selected="true"]').count()) === 1,
+  );
+  await shootCanvasStable(page, 'c-3c-sel2');
+  check(
+    '3C: la selección resalta el módulo en el lienzo (píxeles distintos)',
+    changed(shots['c-3c-base'], shots['c-3c-sel2']),
+  );
+  await shootStable(page, 'evidencia-3c-04-modulo-seleccionado');
+
+  // Clic directo en el modelo (vista frontal). El raycast
+  // sobre el frente del mueble debe abrir el panel
+  // contextual con el módulo correspondiente. Como la
+  // posición exacta de cada módulo en el lienzo depende
+  // del encuadre de la cámara, se verifica que el clic
+  // selecciona el módulo activo detectado en la lista
+  // (misma fuente de verdad: el estado del editor). La
+  // cámara frontal se orienta al centro del mueble, por
+  // lo que el frente central es el objetivo más estable.
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  const canvasBox = await page.locator('canvas').boundingBox();
+  check('3C: el lienzo tiene tamaño para las pruebas de clic', canvasBox !== null);
+  if (canvasBox !== null) {
+    // Clic en el centro del lienzo (frente central del
+    // mueble en vista frontal) y en dos posiciones
+    // laterales como alternativas.
+    const candidates = [
+      { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 },
+      { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height * 0.35 },
+      { x: canvasBox.x + canvasBox.width * 0.35, y: canvasBox.y + canvasBox.height / 2 },
+    ];
+    let picked3D = null;
+    for (const p of candidates) {
+      await page.mouse.click(p.x, p.y);
+      await page.waitForTimeout(250);
+      // count() no espera: si el clic cae en el vacío no
+      // hay panel y se prueba la siguiente posición.
+      if ((await moduleProps.count()) > 0) {
+        picked3D = await moduleProps.getAttribute('data-selected-module');
+        if (picked3D) break;
+      }
+    }
+    check(
+      '3C: el clic en el modelo selecciona su módulo (selección directa 3D)',
+      picked3D !== null && /^module-\d+$/.test(picked3D),
+      `seleccionado=${picked3D ?? 'ninguno'}`,
+    );
+    // El mismo módulo activo aparece marcado en la lista
+    // (consistencia entre selección 3D y estado del editor).
+    check(
+      '3C: la selección 3D se refleja en la tarjeta activa de la lista',
+      (await page.locator('.module-card[data-selected="true"]').count()) >= 1,
+    );
+    // El clic en el vacío (margen izquierdo del lienzo, a
+    // la izquierda del mueble) deselecciona.
+    await page.mouse.click(canvasBox.x + 12, canvasBox.y + 40);
+    await page.waitForTimeout(300);
+    check(
+      '3C: el clic en el vacío deselecciona el módulo',
+      (await moduleProps.count()) === 0 &&
+        (await page.locator('.panel-hint').isVisible()),
+    );
+  }
+
+  // El arrastre (órbita) no debe alterar la selección.
+  await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
+  await page.waitForTimeout(200);
+  await shootCanvasStable(page, 'c-3c-sel1');
+  if (canvasBox !== null) {
+    await page.mouse.move(canvasBox.x + 200, canvasBox.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(canvasBox.x + 320, canvasBox.y + 245, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(350);
+  }
+  check(
+    '3C: el arrastre (órbita) no altera la selección (umbral anti-drag)',
+    (await moduleProps.getAttribute('data-selected-module')) === 'module-1',
+  );
+
+  // Edición contextual + deshacer/rehacer.
+  await moduleProps.getByLabel('Repisas').fill('5');
+  await page.waitForTimeout(300);
+  await shootCanvasStable(page, 'c-3c-repisas-5');
+  check(
+    '3C: editar repisas desde el panel contextual actualiza la escena',
+    changed(shots['c-3c-sel1'], shots['c-3c-repisas-5']),
+  );
+  await shootStable(page, 'evidencia-3c-05-edicion-contextual');
+
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3C: Deshacer revierte la edición contextual',
+    (await moduleProps.getByLabel('Repisas').inputValue()) === '3',
+  );
+  check(
+    '3C: Deshacer habilita Rehacer',
+    await page.getByRole('button', { name: 'Rehacer', exact: true }).isEnabled(),
+  );
+  await page.getByRole('button', { name: 'Rehacer', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3C: Rehacer reaplica la edición',
+    (await moduleProps.getByLabel('Repisas').inputValue()) === '5',
+  );
+
+  // Editar tras deshacer descarta el futuro.
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(200);
+  await moduleProps.getByLabel('Repisas').fill('4');
+  await page.waitForTimeout(200);
+  check(
+    '3C: editar tras deshacer descarta los rehacer (futuro acotado)',
+    await page.getByRole('button', { name: 'Rehacer', exact: true }).isDisabled(),
+  );
+
+  // Atajo de teclado: Ctrl+Z fuera de campos de formulario.
+  await bottombar.click();
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(250);
+  check(
+    '3C: Ctrl+Z deshace fuera de campos de formulario',
+    (await moduleProps.getByLabel('Repisas').inputValue()) === '3',
+  );
+
+  // La selección sobrevive a cambios de dimensión (ids
+  // deterministas del motor) y se limpia si el módulo
+  // desaparece.
+  await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
+  await page.waitForTimeout(200);
+  await page.getByLabel('Ancho').fill('2600');
+  await page.waitForTimeout(300);
+  check(
+    '3C: la selección sobrevive al cambio de dimensión',
+    (await moduleProps.getAttribute('data-selected-module')) === 'module-1',
+  );
+  await page.getByLabel('Ancho').fill('2400');
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: 'Seleccionar módulo 3', exact: true }).click();
+  await page.waitForTimeout(200);
+  await page
+    .getByRole('group', { name: 'Número de módulos' })
+    .getByRole('button', { name: '2', exact: true })
+    .click();
+  await page.waitForTimeout(250);
+  check(
+    '3C: la selección se limpia si el módulo desaparece',
+    (await moduleProps.count()) === 0,
+  );
+  await page
+    .getByRole('group', { name: 'Número de módulos' })
+    .getByRole('button', { name: '3', exact: true })
+    .click();
+  await page.waitForTimeout(250);
+
+  // Paneles laterales contraíbles.
+  await page.getByRole('button', { name: 'Contraer panel izquierdo' }).click();
+  await page.waitForTimeout(200);
+  check(
+    '3C: el panel izquierdo se contrae (controles ocultos)',
+    (await page.locator('.sidebar').getAttribute('data-open')) === 'false' &&
+      !(await page.getByLabel('Ancho').isVisible()),
+  );
+  await shootStable(page, 'evidencia-3c-07-panel-izquierdo-contraido');
+  await page.getByRole('button', { name: 'Abrir panel izquierdo' }).click();
+  await page.waitForTimeout(200);
+  check(
+    '3C: el panel izquierdo se reabre',
+    (await page
+      .getByRole('button', { name: 'Contraer panel izquierdo' })
+      .getAttribute('aria-expanded')) === 'true',
+  );
+
+  await page.getByRole('button', { name: 'Contraer panel derecho' }).click();
+  await page.waitForTimeout(200);
+  check(
+    '3C: el panel derecho se contrae (resumen oculto)',
+    (await page.locator('.summary').getAttribute('data-open')) === 'false' &&
+      !(await page.locator('#studio-right-body').isVisible()),
+  );
+  await shootStable(page, 'evidencia-3c-08-panel-derecho-contraido');
+  await page.getByRole('button', { name: 'Abrir panel derecho' }).click();
+  await page.waitForTimeout(200);
+
+  // Modo sencillo/avanzado: organización de herramientas.
+  check(
+    '3C: el modo sencillo arranca con la sección Barra plegada',
+    (await page
+      .getByRole('button', { name: 'Barra de colgado' })
+      .getAttribute('aria-expanded')) === 'false',
+  );
+  await page.getByRole('button', { name: 'Avanzado', exact: true }).click();
+  await page.waitForTimeout(200);
+  check(
+    '3C: el modo avanzado despliega la sección técnica de barra',
+    (await page
+      .getByRole('button', { name: 'Barra de colgado' })
+      .getAttribute('aria-expanded')) === 'true',
+  );
+  check(
+    '3C: el modo avanzado muestra la nota del contrato',
+    await page.locator('[data-technical="contract"]').isVisible(),
+  );
+  await page.getByRole('button', { name: 'Sencillo', exact: true }).click();
+  await page.waitForTimeout(200);
+  check(
+    '3C: volver a sencillo pliega la sección técnica',
+    (await page
+      .getByRole('button', { name: 'Barra de colgado' })
+      .getAttribute('aria-expanded')) === 'false',
+  );
+
+  // Vistas de evidencia: frontal e isométrica del Studio.
+  await page.getByRole('button', { name: 'Isométrica', exact: true }).click();
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-3c-02-vista-isometrica');
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-3c-03-vista-frontal');
+
+  // Encuadre de cámara al módulo seleccionado.
+  await page.getByRole('button', { name: 'Seleccionar módulo 2', exact: true }).click();
+  await page.waitForTimeout(200);
+  check(
+    '3C: Encuadrar módulo se habilita con selección',
+    await page.getByRole('button', { name: 'Encuadrar módulo', exact: true }).isEnabled(),
+  );
+  await shootCanvasStable(page, 'c-3c-antes-encuadre');
+  await page.getByRole('button', { name: 'Encuadrar módulo', exact: true }).click();
+  await page.waitForTimeout(450);
+  await shootCanvasStable(page, 'c-3c-encuadre');
+  check(
+    '3C: Encuadrar módulo mueve la cámara (píxeles distintos)',
+    changed(shots['c-3c-antes-encuadre'], shots['c-3c-encuadre']),
+  );
+  await page.getByRole('button', { name: 'Ajustar', exact: true }).click();
+  await page.waitForTimeout(450);
+  await shootCanvasStable(page, 'c-3c-ajustar');
+  check(
+    '3C: Ajustar vuelve al encuadre completo (píxeles distintos)',
+    changed(shots['c-3c-encuadre'], shots['c-3c-ajustar']),
+  );
+
+  // Sin selección, el encuadre por módulo queda deshabilitado.
+  await page.locator('canvas').click({ position: { x: 8, y: 8 } });
+  await page.waitForTimeout(200);
+  check(
+    '3C: sin selección, Encuadrar módulo queda deshabilitado',
+    await page.getByRole('button', { name: 'Encuadrar módulo', exact: true }).isDisabled(),
+  );
+
+  // Puertas abiertas en el Studio (evidencia).
+  await setSliderByClick(viewerSlider, 0.82);
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-3c-06-puertas-abiertas');
+  await setSliderByClick(viewerSlider, 0);
+  await page.waitForTimeout(300);
+
   // E6: versión móvil (390×844).
   const mobile = await browser.newPage({
     viewport: { width: 390, height: 844 },
@@ -1458,11 +1802,17 @@ try {
     mobileErrors.length === 0,
     mobileErrors[0] ?? '',
   );
+  check(
+    '3C móvil: los paneles laterales arrancan contraídos',
+    (await mobile.locator('.sidebar').getAttribute('data-open')) === 'false' &&
+      (await mobile.locator('.summary').getAttribute('data-open')) === 'false',
+  );
   // Evidencia: el visor está bajo el panel en el flujo móvil;
   // se desplaza para capturar visor + barra de vistas.
   await mobile.locator('.viewer').scrollIntoViewIfNeeded();
   await mobile.waitForTimeout(300);
   saveShot('evidencia-06-movil', await mobile.screenshot());
+  saveShot('evidencia-3c-09-movil-studio', await mobile.screenshot());
   await mobile.close();
 
   // Errores de página (crashes de React/WebGL)

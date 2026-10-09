@@ -8,7 +8,7 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 3B — Persistencia local y gestión de diseños** (completada).
+**Fase 3C — FurniConfig Studio** (completada).
 Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
 (Fase 2A), cajoneras (Fase 2B) y puertas abatibles
@@ -16,14 +16,19 @@ con tiradores (Fase 2C: hojas de 1–2 por módulo,
 montadas sobre el frente, con apertura pura de
 presentación 0–110° y eje de bisagra en el plano medio
 del canto — corrección con evidencia de la Fase 3A);
-panel trasero opcional por encaje; visualizador 3D
-(`apps/web`, React + Three.js) con vistas
-predefinidas y reencuadre automático, iluminación
-IBL con sombras, interruptor de visibilidad de puertas,
-slider de apertura en el visor y panel de
-configuración colapsable. Sección "Proyectos":
-guardado local de diseños (`localStorage` vía
-contrato `DesignRepository`) con guardado automático,
+panel trasero opcional por encaje. La interfaz es un
+**estudio de diseño 3D** (`apps/web`, React + Three.js):
+visor central grande con selección directa de módulos
+por clic (resaltado y umbral anti-drag), vistas
+predefinidas, "Ajustar" y "Encuadrar módulo", barra
+superior con deshacer/rehacer (historial acotado de
+configuraciones), panel izquierdo con estructura y
+diseños, panel derecho contextual editable (tipo,
+repisas, cajones, barra), barra inferior de estado,
+paneles laterales colapsables y modo sencillo/
+avanzado. Sección "Proyectos": guardado local de
+diseños (`localStorage` vía contrato
+`DesignRepository`) con guardado automático,
 recuperación de sesión tras recargar, CRUD con
 confirmaciones y export/importación de JSON validado.
 No hay backend, autenticación, pagos ni cotizaciones
@@ -77,13 +82,16 @@ furniconfig/
 │       │   └── types/        # Wardrobe, Module, Panel, HangingRod, DrawerAssembly, Door, GeometryResult
 │       └── tests/            # pruebas unitarias (Vitest)
 └── apps/
-    └── web/                  # visualizador 3D (React + Vite + React Three Fiber)
+    └── web/                  # FurniConfig Studio (React + Vite + React Three Fiber)
         ├── src/
         │   ├── components/   # ConfigPanel, SummaryPanel, DesignSection, WardrobeScene…
-        │   ├── hooks/        # use-design-session (sesión y guardado de diseños)
-        │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config, derive, camera-views, designs/
-        │   └── App.tsx       # estado + validación derivada
-        ├── tests/            # unidades, diseño de persistencia, render + visual/ (Playwright)
+        │   │   └── studio/   # TopBar, BottomBar, PanelToolbar, ModulePropertiesPanel
+        │   ├── hooks/        # use-editor-history (deshacer/rehacer), use-design-session (diseños)
+        │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config, derive, camera-views
+        │   │   ├── designs/  # persistencia 3B (repositorio, biblioteca, storage)
+        │   │   └── studio/   # capa pura del editor (history, selection)
+        │   └── App.tsx       # estado del Studio + validación derivada
+        ├── tests/            # unidades, persistencia, render + visual/ (Playwright)
         └── index.html
 ```
 

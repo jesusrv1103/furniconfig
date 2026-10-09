@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import {
   BoxGeometry,
   CylinderGeometry,
+  Color,
   MeshStandardMaterial,
   Object3D,
   PMREMGenerator,
@@ -32,6 +33,7 @@ import {
   type CameraView,
   type ViewRequest,
 } from '../lib/camera-views.js';
+import { moduleBoundsMm } from '../lib/studio/selection.js';
 import { mmToM } from '../lib/units.js';
 
 /**
@@ -61,6 +63,10 @@ import { mmToM } from '../lib/units.js';
  *   metales.
  * - No se inventa geometría: solo existen los paneles,
  *   barras, puertas y tiradores que genera el motor.
+ * - Selección (Fase 3C): cada pieza es clicable y notifica
+ *   el `moduleId` estable del motor; el módulo seleccionado
+ *   se resalta con copias emisivas auxiliares de material
+ *   (los materiales permanentes no cambian).
  */
 
 /** Estado del rig de cámara entre renders. */
@@ -102,6 +108,10 @@ export function WardrobeScene({
   doorOpenAngleDeg = 0,
   doorsVisible = true,
   viewRequest = null,
+  selectedModuleId = null,
+  focusNonce = 0,
+  clickGuard,
+  onModulePicked,
 }: {
   geometry: GeometryResult;
   /**
@@ -119,6 +129,22 @@ export function WardrobeScene({
   doorsVisible?: boolean;
   /** Vista predefinida solicitada desde la interfaz. */
   viewRequest?: ViewRequest | null;
+  /**
+   * Módulo seleccionado: sus piezas se resaltan con
+   * materiales emisivos AUXILIARES (los materiales
+   * permanentes del motor no se modifican).
+   */
+  selectedModuleId?: string | null;
+  /**
+   * Nonce del "encuadrar módulo": al cambiar, la cámara
+   * se ajusta a la envolvente del módulo seleccionado
+   * manteniendo la dirección de vista actual.
+   */
+  focusNonce?: number;
+  /** Descarta gestos que empezaron como órbita (umbral de clic). */
+  clickGuard?: (native: { clientX: number; clientY: number }) => boolean;
+  /** Un clic sobre una pieza eligió un módulo (`null`: pieza global). */
+  onModulePicked?: (moduleId: string | null) => void;
 }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -381,6 +407,93 @@ export function WardrobeScene({
     return cache;
   }, [materials]);
 
+  // --- Resaltado de selección (Fase 3C) ----------------------------
+  // Copias AUXILIARES con emisivo azul: el clic solo
+  // resalta la pieza en pantalla; los materiales
+  // permanentes del motor (threeMaterials) no se tocan.
+  const highlightMaterials = useMemo(() => {
+    const cache = new Map<string, MeshStandardMaterial>();
+    if (selectedModuleId === null) {
+      return cache;
+    }
+    for (const [materialId, base] of threeMaterials) {
+      const highlight = base.clone();
+      highlight.emissive = new Color('#2f6feb');
+      highlight.emissiveIntensity = 0.5;
+      cache.set(materialId, highlight);
+    }
+    return cache;
+  }, [threeMaterials, selectedModuleId]);
+
+  useEffect(() => {
+    return () => {
+      for (const material of highlightMaterials.values()) {
+        material.dispose();
+      }
+    };
+  }, [highlightMaterials]);
+
+  /** Material de una pieza: resaltado si pertenece al módulo. */
+  const materialFor = useCallback(
+    (materialId: string, moduleId: string | null): MeshStandardMaterial | undefined => {
+      const base = threeMaterials.get(materialId);
+      if (base === undefined) {
+        return undefined;
+      }
+      if (selectedModuleId !== null && moduleId === selectedModuleId) {
+        return highlightMaterials.get(materialId) ?? base;
+      }
+      return base;
+    },
+    [threeMaterials, highlightMaterials, selectedModuleId],
+  );
+
+  // Selección por clic: identificador estable del motor
+  // (`moduleId` de la pieza) → la UI no calcula geometría.
+  const handlePick = useCallback(
+    (event: ThreeEvent<MouseEvent>, moduleId: string | null) => {
+      if (clickGuard && !clickGuard(event.nativeEvent)) {
+        return; // gesto de órbita, no de selección
+      }
+      event.stopPropagation();
+      onModulePicked?.(moduleId);
+    },
+    [clickGuard, onModulePicked],
+  );
+
+  // Envolvente del módulo seleccionado (mm → m) para el
+  // encuadre de cámara pedido por "Encuadrar módulo".
+  const focusBounds = useMemo<Aabb | null>(() => {
+    const boundsMm = moduleBoundsMm(geometry, selectedModuleId);
+    if (boundsMm === null) {
+      return null;
+    }
+    return {
+      min: [
+        mmToM(boundsMm.min[0]),
+        mmToM(boundsMm.min[1]),
+        mmToM(boundsMm.min[2]),
+      ],
+      max: [
+        mmToM(boundsMm.max[0]),
+        mmToM(boundsMm.max[1]),
+        mmToM(boundsMm.max[2]),
+      ],
+    };
+  }, [geometry, selectedModuleId]);
+
+  // El pedido de encuadre solo cambia identidad cuando el
+  // usuario lo pide (nonce): un recálculo posterior no
+  // reencuadra por su cuenta.
+  const focusBoundsRef = useRef(focusBounds);
+  focusBoundsRef.current = focusBounds;
+  const focusRequest = useMemo<{ bounds: Aabb; nonce: number } | null>(() => {
+    if (focusNonce <= 0 || focusBoundsRef.current === null) {
+      return null;
+    }
+    return { bounds: focusBoundsRef.current, nonce: focusNonce };
+  }, [focusNonce]);
+
   // Libera recursos de Three.js al cambiar o desmontar.
   useEffect(() => {
     return () => {
@@ -432,7 +545,7 @@ export function WardrobeScene({
       <group>
         {panels.map((panel) => {
           const boxGeometry = boxGeometries.get(panel.sizeM.join('|'));
-          const material = threeMaterials.get(panel.materialId);
+          const material = materialFor(panel.materialId, panel.moduleId);
           if (!boxGeometry || !material) {
             return null;
           }
@@ -444,6 +557,7 @@ export function WardrobeScene({
               position={panel.centerM}
               castShadow
               receiveShadow
+              onClick={(event) => handlePick(event, panel.moduleId)}
             />
           );
         })}
@@ -451,7 +565,7 @@ export function WardrobeScene({
           const cylinderGeometry = cylinderGeometries.get(
             cylinderKey(rod.axis, rod.lengthM, rod.diameterM),
           );
-          const material = threeMaterials.get(rod.materialId);
+          const material = materialFor(rod.materialId, rod.moduleId);
           if (!cylinderGeometry || !material) {
             return null;
           }
@@ -464,6 +578,7 @@ export function WardrobeScene({
               rotation={rotationForAxis(rod.axis)}
               castShadow
               receiveShadow
+              onClick={(event) => handlePick(event, rod.moduleId)}
             />
           );
         })}
@@ -475,7 +590,7 @@ export function WardrobeScene({
               mmToM(door.thicknessMm),
             ].join('|');
             const boxGeometry = boxGeometries.get(doorSizeKey);
-            const doorMaterial = threeMaterials.get(door.materialId);
+            const doorMaterial = materialFor(door.materialId, door.moduleId);
             if (!boxGeometry || !doorMaterial) {
               return null;
             }
@@ -493,7 +608,7 @@ export function WardrobeScene({
             const handleMaterial =
               handle === undefined
                 ? undefined
-                : threeMaterials.get(handle.materialId);
+                : materialFor(handle.materialId, door.moduleId);
             // Eje de bisagra (mm → m): el group gira
             // alrededor de este eje vertical.
             const hingeXM = mmToM(transform.hingeXmm);
@@ -528,6 +643,7 @@ export function WardrobeScene({
                   position={doorCenterM}
                   castShadow
                   receiveShadow
+                  onClick={(event) => handlePick(event, door.moduleId)}
                 />
                 {handle && handleGeometry && handleMaterial && handleCenterM && (
                   <mesh
@@ -537,6 +653,7 @@ export function WardrobeScene({
                     rotation={rotationForAxis(handle.axis)}
                     castShadow
                     receiveShadow
+                    onClick={(event) => handlePick(event, door.moduleId)}
                   />
                 )}
               </group>
@@ -579,6 +696,7 @@ export function WardrobeScene({
       <CameraRig
         bounds={bounds}
         viewRequest={viewRequest}
+        focusRequest={focusRequest}
         rigState={cameraRigState}
       />
     </>
@@ -609,10 +727,13 @@ interface RigControls {
 function CameraRig({
   bounds,
   viewRequest,
+  focusRequest,
   rigState,
 }: {
   bounds: Aabb;
   viewRequest: ViewRequest | null;
+  /** Encuadre de módulo solicitado por la interfaz (null: sin pedido). */
+  focusRequest: { bounds: Aabb; nonce: number } | null;
   rigState: { current: CameraRigState };
 }) {
   const camera = useThree((state) => state.camera);
@@ -693,6 +814,49 @@ function CameraRig({
       camera.lookAt(center[0], center[1], center[2]);
     }
   }, [viewRequest, bounds, center, aspect, camera, controls, rigState]);
+
+  // "Encuadrar módulo" (Fase 3C): encaja la cámara en la
+  // envolvente del módulo conservando la dirección de
+  // vista actual del usuario. Solo se ejecuta cuando
+  // cambia el pedido (nonce), nunca por recálculos.
+  useLayoutEffect(() => {
+    if (focusRequest === null) {
+      return;
+    }
+    const focusCenter = boxCenter(focusRequest.bounds);
+    let direction: [number, number, number] = [
+      camera.position.x - focusCenter[0],
+      camera.position.y - focusCenter[1],
+      camera.position.z - focusCenter[2],
+    ];
+    if (Math.hypot(direction[0], direction[1], direction[2]) < 1e-6) {
+      direction = VIEW_DIRECTIONS.isometric;
+    }
+    const distance = fitDistance(
+      focusRequest.bounds,
+      direction,
+      VIEWER_FOV_DEG,
+      aspect,
+    );
+    const position = viewPosition(focusCenter, direction, distance);
+    camera.position.set(position[0], position[1], position[2]);
+    const state = rigState.current;
+    // 'free': los reencuadres por cambio de dimensión
+    // parten del módulo enfocado y conservan el ángulo.
+    state.view = 'free';
+    state.center = focusCenter;
+    state.fit = distance;
+    if (controls !== null) {
+      controls.target.set(
+        focusCenter[0],
+        focusCenter[1],
+        focusCenter[2],
+      );
+      controls.update();
+    } else {
+      camera.lookAt(focusCenter[0], focusCenter[1], focusCenter[2]);
+    }
+  }, [focusRequest, aspect, camera, controls, rigState]);
 
   return null;
 }

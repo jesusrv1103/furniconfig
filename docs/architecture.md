@@ -480,6 +480,84 @@ por 37 pruebas unitarias y un escenario Playwright en
 Chromium real (crear, autosave, recarga, CRUD, import/
 export).
 
+### ADR-024 — FurniConfig Studio: selección, historial y modo de edición (Fase 3C)
+
+**Contexto:** la Fase 3C convierte la app en un espacio
+de trabajo de diseño 3D ("Studio"): selección directa de
+módulos, edición contextual, deshacer/rehacer y paneles
+laterales, sin duplicar cálculos del motor ni romper la
+persistencia de la Fase 3B.
+
+**Decisión — estado del editor:**
+- `useEditorHistory` (`hooks/use-editor-history.ts`): la
+  `WardrobeConfig` vigente es el `present` de un
+  `EditorHistory` (`lib/studio/history.ts`) con `past`/
+  `future` **solo de configuraciones** (nunca geometría,
+  cámara, selección ni recursos de Three.js). Límite 50
+  pasos; editar desde un estado intermedio descarta el
+  futuro; un commit sin cambio real no registra paso.
+- Dos puertas de entrada: `update` (edición del usuario,
+  registra paso) y `resetTo` (cambios EXTERNOS de
+  proyecto desde la sesión 3B: hidratación, abrir,
+  nuevo proyecto — historial nuevo, sin mezclar diseños).
+- El guardado automático de la Fase 3B observa
+  `history.present`: deshacer/rehacer también se guardan.
+- Atajos Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z y Ctrl/Cmd+Y fuera
+  de campos de formulario (dentro actúa el deshacer
+  nativo del navegador).
+
+**Decisión — selección de módulos:**
+- La selección es el **id determinista del motor**
+  (`module-N`), resuelto contra la geometría vigente en
+  cada recálculo: se conserva si el módulo sigue
+  existiendo, se limpia si desaparece (p. ej. al reducir
+  el conteo) y se conserva de forma provisional si la
+  configuración queda inválida (no puede verificarse).
+- El mapeo clic → módulo usa los `moduleId` que el motor
+  ya asigna a paneles, barras, cajones y puertas: la UI no
+  deriva geometría por su cuenta. Los paneles globales
+  (laterales, divisiones, superior, inferior, fondo) tienen
+  `moduleId = null` y deseleccionan al pulsarlos.
+- El clic se distingue de la órbita con un umbral de
+  5 px entre pulsación y levantación; pulsar el vacío
+  (`onPointerMissed`) deselecciona.
+- El resaltado usa **copias auxiliares** de los materiales
+  con emisivo azul: los materiales permanentes del motor
+  no se modifican.
+- "Encuadrar módulo" ajusta la cámara a la envolvente del
+  módulo (paneles + barra + hojas) conservando la dirección
+  de vista; solo se ejecuta cuando el usuario lo pide
+  (nonce), nunca por recálculos.
+
+**Decisión — panel contextual y modo:**
+- Panel derecho: con selección muestra
+  `ModulePropertiesPanel` (tipo, repisas, cajones, diámetro
+  de barra compartido y dimensiones resueltas en solo
+  lectura, editando con los helpers puros existentes); sin
+  selección muestra indicación + `SummaryPanel`. Los
+  errores de validación y el resumen permanecen visibles
+  en ambos estados (compatibilidad con Fase 3B).
+- Modo sencillo (predeterminado) / avanzado: es
+  **organización de herramientas reales** — avanzado
+  despliega la sección "Barra de colgado" y la nota del
+  contrato; sencillo las mantiene plegadas. No duplica la
+  aplicación ni el motor, ni inventa controles.
+- Paneles laterales colapsables (`aria-expanded`/
+  `aria-controls`); en pantallas ≤760 px arrancan
+  contraídos para que el mueble sea lo primero.
+
+**Consecuencias:** una futura familia de mueble
+(p. ej. cocinas, muebles de TV) aportaría su contrato de
+configuración, su función de derivación y su mapeo de
+selección por familia; el historial, las barras del Studio
+y la capa de presentación son agnósticos a la familia. Sin
+arrastrre libre, sin anchos individuales por módulo, sin
+edición de materiales por módulo y sin historial persistido
+(en memoria de la sesión). Cubierto por 36 pruebas
+unitarias nuevas (historial, selección, paneles) y un
+escenario Playwright con ~30 verificaciones y 10 capturas
+de evidencia.
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa
@@ -570,6 +648,29 @@ en `lib/camera-views.ts` (pura, sin three; Fase 3A) y el estado de
 presentación (visibilidad de puertas, ángulo de apertura, vista
 predefinida) es UI: tampoco toca `WardrobeConfig` ni
 `GeometryResult`.
+
+### Estructura del Studio (Fase 3C)
+
+```
+TopBar (acciones del proyecto, deshacer/rehacer, estado)
+┌──────────────┬──────────────────────────┬──────────────┐
+│ Panel        │ WardrobeViewer           │ Panel        │
+│ izquierdo    │ (selección, resaltado,   │ derecho      │
+│ ConfigPanel  │  vistas, encuadre)       │ contexto +   │
+│ + diseños    │                          │ resumen      │
+└──────────────┴──────────────────────────┴──────────────┘
+BottomBar (dimensiones, módulos, validación, guardado)
+```
+
+Estado del editor en `App.tsx`: `useEditorHistory`
+(historial de configuraciones) + selección por id
+resuelto contra la geometría + modo sencillo/avanzado +
+paneles colapsables. La capa pura del Studio vive en
+`lib/studio/` (`history.ts`, `selection.ts`); los
+componentes en `components/studio/`. La selección solo
+existe mientras hay geometría calculada por el motor: si
+la configuración es inválida, el visor muestra el estado
+controlado y el panel derecho concentra los errores.
 
 ## 7. No-go explícitos de esta fase
 

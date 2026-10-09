@@ -1,5 +1,5 @@
 import type { ChangeEvent, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BOARD_THICKNESSES_MM,
   DEFAULT_ROD_DIAMETER_MM,
@@ -40,6 +40,7 @@ import {
   type DimensionKey,
   type MaterialRole,
 } from '../lib/config.js';
+import { MODULE_KIND_FRIENDLY } from '../lib/studio/selection.js';
 
 const MATERIAL_ROLE_LABELS: Readonly<Record<MaterialRole, string>> = {
   structure: 'Estructura (laterales, superior, inferior, divisiones)',
@@ -61,6 +62,12 @@ interface ConfigPanelProps {
   onReset: () => void;
   /** Contenido de la sección de proyectos (diseños guardados). */
   designSection?: ReactNode;
+  /** Índice del módulo seleccionado en el visor (null: sin selección). */
+  selectedModuleIndex?: number | null;
+  /** Selecciona un módulo desde la lista (índice en `config.modules`). */
+  onSelectModule?: (index: number) => void;
+  /** Modo del editor: organiza las herramientas técnicas. */
+  editorMode?: 'simple' | 'advanced';
 }
 
 type SectionId =
@@ -137,6 +144,9 @@ export function ConfigPanel({
   onUpdate,
   onReset,
   designSection,
+  selectedModuleIndex = null,
+  onSelectModule,
+  editorMode = 'simple',
 }: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
   // Capturas locales: el narrowing de `config.doors`
@@ -152,10 +162,24 @@ export function ConfigPanel({
     Record<SectionId, boolean>
   >(() =>
     SECTION_IDS.reduce(
-      (accumulator, id) => ({ ...accumulator, [id]: true }),
+      (accumulator, id) => ({
+        ...accumulator,
+        [id]: id === 'rod' ? editorMode === 'advanced' : true,
+      }),
       {} as Record<SectionId, boolean>,
     ),
   );
+  // El modo "avanzado" despliega la sección técnica de la
+  // barra; "sencillo" la mantiene plegada. Es organización
+  // de herramientas existentes, no controles nuevos.
+  useEffect(() => {
+    setOpenSections((previous) => {
+      const rodOpen = editorMode === 'advanced';
+      return previous.rod === rodOpen
+        ? previous
+        : { ...previous, rod: rodOpen };
+    });
+  }, [editorMode]);
   const toggleSection = (id: SectionId) => {
     setOpenSections((previous) => ({
       ...previous,
@@ -278,8 +302,29 @@ export function ConfigPanel({
           ))}
         </div>
         {modules.map((module, index) => (
-          <fieldset key={index} className="module-card">
+          <fieldset
+            key={index}
+            className="module-card"
+            data-module-index={index}
+            data-selected={selectedModuleIndex === index ? 'true' : undefined}
+          >
             <legend>Módulo {index + 1}</legend>
+            <div className="module-card-header">
+              <span className="module-kind-friendly">
+                {MODULE_KIND_FRIENDLY[module.kind]}
+              </span>
+              <button
+                type="button"
+                className="module-select"
+                aria-pressed={selectedModuleIndex === index}
+                aria-label={`Seleccionar módulo ${index + 1}`}
+                onClick={() => onSelectModule?.(index)}
+              >
+                {selectedModuleIndex === index
+                  ? '✓ Seleccionado'
+                  : 'Seleccionar'}
+              </button>
+            </div>
             <label className="field">
               <span>Tipo</span>
               <select
@@ -699,10 +744,12 @@ export function ConfigPanel({
       <button type="button" className="reset-button" onClick={onReset}>
         Restablecer configuración
       </button>
-      <p className="contract-note">
-        Contrato de configuración v{WARDROBE_CONFIG_SCHEMA_VERSION} · unidad:
-        milímetros
-      </p>
+      {editorMode === 'advanced' && (
+        <p className="contract-note" data-technical="contract">
+          Contrato de configuración v{WARDROBE_CONFIG_SCHEMA_VERSION} · unidad:
+          milímetros
+        </p>
+      )}
     </form>
   );
 }
