@@ -49,7 +49,12 @@ import {
   LAYOUT_TEMPLATES,
   applyLayoutTemplate,
 } from '../lib/studio/templates.js';
+import {
+  CONFIG_TAB_HINTS,
+  type ConfigTabId,
+} from '../lib/studio/tabs.js';
 import { formatMm } from '../lib/units.js';
+import { ConfigTabList } from './studio/PanelTabs.js';
 
 const MATERIAL_ROLE_LABELS: Readonly<Record<MaterialRole, string>> = {
   structure: 'Estructura (laterales, superior, inferior, divisiones)',
@@ -77,6 +82,10 @@ interface ConfigPanelProps {
   onSelectModule?: (index: number) => void;
   /** Modo del editor: organiza las herramientas técnicas. */
   editorMode?: 'simple' | 'advanced';
+  /** Pestaña activa del panel (Fase 3E; controlada por App). */
+  activeTab?: ConfigTabId;
+  /** Cambia la pestaña activa. */
+  onTabChange?: (tab: ConfigTabId) => void;
   /**
    * Ancho interior resuelto por el motor de cada módulo
    * (Fase 3D, opcional): si no llega (configuración
@@ -88,6 +97,7 @@ interface ConfigPanelProps {
 type SectionId =
   | 'dimensions'
   | 'modules'
+  | 'moduleCards'
   | 'distribution'
   | 'templates'
   | 'doors'
@@ -99,6 +109,7 @@ type SectionId =
 const SECTION_IDS: readonly SectionId[] = [
   'dimensions',
   'modules',
+  'moduleCards',
   'distribution',
   'templates',
   'doors',
@@ -158,6 +169,23 @@ function ConfigSection({
   );
 }
 
+/**
+ * Panel de configuración del Studio (Fase 3C,
+ * reorganizado en la Fase 3E).
+ *
+ * Las herramientas se agrupan en CUATRO categorías
+ * (pestañas accesibles): Medidas (dimensiones, número de
+ * módulos, distribución de anchos y plantillas), Interior
+ * (contenido de cada módulo y barra de colgado),
+ * Apariencia (puertas, panel trasero y materiales) y Mis
+ * diseños (proyectos guardados). Todos los paneles quedan
+ * montados en el DOM (los inactivos con `hidden`): no se
+ * duplica ningún estado ni se pierde funcionalidad.
+ *
+ * El "Restablecer" y la nota del contrato viven en el
+ * pie del panel (fuera de las pestañas) para seguir
+ * siendo accesibles desde cualquier categoría.
+ */
 export function ConfigPanel({
   config,
   onUpdate,
@@ -166,6 +194,8 @@ export function ConfigPanel({
   selectedModuleIndex = null,
   onSelectModule,
   editorMode = 'simple',
+  activeTab = 'medidas',
+  onTabChange,
   moduleWidthsMm,
 }: ConfigPanelProps) {
   const { dimensions, modules, materials } = config;
@@ -364,6 +394,20 @@ export function ConfigPanel({
     <form className="config-panel" onSubmit={(event) => event.preventDefault()}>
       <h2>Configuración</h2>
 
+      <ConfigTabList
+        active={activeTab}
+        onChange={onTabChange ?? (() => {})}
+      />
+      <p className="config-tab-hint">{CONFIG_TAB_HINTS[activeTab]}</p>
+
+      <div
+        role="tabpanel"
+        id="config-panel-medidas"
+        aria-labelledby="config-tab-medidas"
+        className="config-tabpanel"
+        hidden={activeTab !== 'medidas'}
+        tabIndex={0}
+      >
       <ConfigSection
         id="dimensions"
         title="Dimensiones (mm)"
@@ -399,7 +443,7 @@ export function ConfigPanel({
 
       <ConfigSection
         id="modules"
-        title={`Módulos (${modules.length})`}
+        title="Número de módulos"
         open={openSections.modules}
         onToggle={() => toggleSection('modules')}
       >
@@ -416,6 +460,94 @@ export function ConfigPanel({
             </button>
           ))}
         </div>
+      </ConfigSection>
+
+      <ConfigSection
+        id="distribution"
+        title="Distribución de anchos"
+        open={openSections.distribution}
+        onToggle={() => toggleSection('distribution')}
+      >
+        <p className="distribution-status" data-width-status>
+          {distributionStatus}
+        </p>
+        <div
+          className="distribution-actions"
+          role="group"
+          aria-label="Herramientas de distribución"
+        >
+          <button
+            type="button"
+            data-action="equalize-widths"
+            disabled={!hasFixedWidths}
+            title={
+              hasFixedWidths
+                ? 'Libera todos los anchos fijados y reparte por igual.'
+                : 'Los anchos ya se reparten por igual.'
+            }
+            onClick={() => onUpdate(equalizeModuleWidths)}
+          >
+            Igualar anchos
+          </button>
+          <button
+            type="button"
+            data-action="redistribute-rest"
+            disabled={!canRedistributeRest}
+            title={redistributeTitle}
+            onClick={handleRedistributeRest}
+          >
+            Repartir espacio restante
+          </button>
+        </div>
+        <p className="field-hint">
+          «Igualar anchos» devuelve el reparto uniforme. «Repartir espacio
+          restante» conserva el ancho del módulo seleccionado y reparte el
+          resto por igual. Para fijar un ancho con precisión, edita el
+          módulo desde el panel derecho.
+        </p>
+      </ConfigSection>
+
+      <ConfigSection
+        id="templates"
+        title="Plantillas de distribución"
+        open={openSections.templates}
+        onToggle={() => toggleSection('templates')}
+      >
+        <p className="field-hint">
+          Aplican una distribución prediseñada: cambian dimensiones y
+          módulos, y conservan tus materiales y opciones. Se puede deshacer.
+        </p>
+        {LAYOUT_TEMPLATES.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            className="template-button"
+            data-template-id={template.id}
+            onClick={() =>
+              onUpdate((current) => applyLayoutTemplate(current, template))
+            }
+          >
+            <strong>{template.name}</strong>
+            <small>{template.description}</small>
+          </button>
+        ))}
+      </ConfigSection>
+      </div>
+
+      <div
+        role="tabpanel"
+        id="config-panel-interior"
+        aria-labelledby="config-tab-interior"
+        className="config-tabpanel"
+        hidden={activeTab !== 'interior'}
+        tabIndex={0}
+      >
+      <ConfigSection
+        id="moduleCards"
+        title="Contenido de los módulos"
+        open={openSections.moduleCards}
+        onToggle={() => toggleSection('moduleCards')}
+      >
         {modules.map((module, index) => (
           <fieldset
             key={index}
@@ -492,77 +624,98 @@ export function ConfigPanel({
         ))}
       </ConfigSection>
 
-      <ConfigSection
-        id="distribution"
-        title="Distribución de anchos"
-        open={openSections.distribution}
-        onToggle={() => toggleSection('distribution')}
-      >
-        <p className="distribution-status" data-width-status>
-          {distributionStatus}
-        </p>
-        <div
-          className="distribution-actions"
-          role="group"
-          aria-label="Herramientas de distribución"
+      {hasHangingModules && (
+        <ConfigSection
+          id="rod"
+          title="Barra de colgado"
+          open={openSections.rod}
+          onToggle={() => toggleSection('rod')}
         >
+          <p className="provisional-note">
+            Reglas provisionales: diámetro {rodDiameterLimits.min}–
+            {rodDiameterLimits.max} mm, montaje a{' '}
+            {WARDROBE_LIMITS.hangingRod.mountDistanceMm} mm del
+            superior. Validar con carpintería.
+          </p>
+          <label className="field">
+            <span>Diámetro</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              step={1}
+              min={rodDiameterLimits.min}
+              max={rodDiameterLimits.max}
+              value={hangingRodDiameterMm}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setHangingRodDiameter(
+                    current,
+                    Number(event.target.value),
+                  ),
+                )
+              }
+            />
+            <small>
+              Provisional: {rodDiameterLimits.min}–
+              {rodDiameterLimits.max} mm
+            </small>
+          </label>
+          <label className="field">
+            <span>Material</span>
+            <input
+              type="text"
+              value={hangingRodName}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setHangingRodMaterial(
+                    current,
+                    event.target.value,
+                    hangingRodFinish,
+                  ),
+                )
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Acabado</span>
+            <select
+              value={hangingRodFinish}
+              onChange={(event) =>
+                onUpdate((current) =>
+                  setHangingRodMaterial(
+                    current,
+                    hangingRodName,
+                    event.target.value,
+                  ),
+                )
+              }
+            >
+              {FINISH_OPTIONS.map((finish) => (
+                <option key={finish} value={finish}>
+                  {finish}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
-            data-action="equalize-widths"
-            disabled={!hasFixedWidths}
-            title={
-              hasFixedWidths
-                ? 'Libera todos los anchos fijados y reparte por igual.'
-                : 'Los anchos ya se reparten por igual.'
-            }
-            onClick={() => onUpdate(equalizeModuleWidths)}
+            className="link-button"
+            onClick={() => onUpdate(clearHangingRod)}
           >
-            Igualar anchos
+            Usar valores por defecto del motor
           </button>
-          <button
-            type="button"
-            data-action="redistribute-rest"
-            disabled={!canRedistributeRest}
-            title={redistributeTitle}
-            onClick={handleRedistributeRest}
-          >
-            Repartir espacio restante
-          </button>
-        </div>
-        <p className="field-hint">
-          «Igualar anchos» devuelve el reparto uniforme. «Repartir espacio
-          restante» conserva el ancho del módulo seleccionado y reparte el
-          resto por igual. Para fijar un ancho con precisión, edita el
-          módulo desde el panel derecho.
-        </p>
-      </ConfigSection>
+        </ConfigSection>
+      )}
+      </div>
 
-      <ConfigSection
-        id="templates"
-        title="Plantillas de distribución"
-        open={openSections.templates}
-        onToggle={() => toggleSection('templates')}
+      <div
+        role="tabpanel"
+        id="config-panel-apariencia"
+        aria-labelledby="config-tab-apariencia"
+        className="config-tabpanel"
+        hidden={activeTab !== 'apariencia'}
+        tabIndex={0}
       >
-        <p className="field-hint">
-          Aplican una distribución prediseñada: cambian dimensiones y
-          módulos, y conservan tus materiales y opciones. Se puede deshacer.
-        </p>
-        {LAYOUT_TEMPLATES.map((template) => (
-          <button
-            key={template.id}
-            type="button"
-            className="template-button"
-            data-template-id={template.id}
-            onClick={() =>
-              onUpdate((current) => applyLayoutTemplate(current, template))
-            }
-          >
-            <strong>{template.name}</strong>
-            <small>{template.description}</small>
-          </button>
-        ))}
-      </ConfigSection>
-
       <ConfigSection
         id="doors"
         title="Puertas abatibles"
@@ -758,89 +911,6 @@ export function ConfigPanel({
         )}
       </ConfigSection>
 
-      {hasHangingModules && (
-        <ConfigSection
-          id="rod"
-          title="Barra de colgado"
-          open={openSections.rod}
-          onToggle={() => toggleSection('rod')}
-        >
-          <p className="provisional-note">
-            Reglas provisionales: diámetro {rodDiameterLimits.min}–
-            {rodDiameterLimits.max} mm, montaje a{' '}
-            {WARDROBE_LIMITS.hangingRod.mountDistanceMm} mm del
-            superior. Validar con carpintería.
-          </p>
-          <label className="field">
-            <span>Diámetro</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              step={1}
-              min={rodDiameterLimits.min}
-              max={rodDiameterLimits.max}
-              value={hangingRodDiameterMm}
-              onChange={(event) =>
-                onUpdate((current) =>
-                  setHangingRodDiameter(
-                    current,
-                    Number(event.target.value),
-                  ),
-                )
-              }
-            />
-            <small>
-              Provisional: {rodDiameterLimits.min}–
-              {rodDiameterLimits.max} mm
-            </small>
-          </label>
-          <label className="field">
-            <span>Material</span>
-            <input
-              type="text"
-              value={hangingRodName}
-              onChange={(event) =>
-                onUpdate((current) =>
-                  setHangingRodMaterial(
-                    current,
-                    event.target.value,
-                    hangingRodFinish,
-                  ),
-                )
-              }
-            />
-          </label>
-          <label className="field">
-            <span>Acabado</span>
-            <select
-              value={hangingRodFinish}
-              onChange={(event) =>
-                onUpdate((current) =>
-                  setHangingRodMaterial(
-                    current,
-                    hangingRodName,
-                    event.target.value,
-                  ),
-                )
-              }
-            >
-              {FINISH_OPTIONS.map((finish) => (
-                <option key={finish} value={finish}>
-                  {finish}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => onUpdate(clearHangingRod)}
-          >
-            Usar valores por defecto del motor
-          </button>
-        </ConfigSection>
-      )}
-
       <ConfigSection
         id="materials"
         title="Materiales y acabados"
@@ -916,7 +986,16 @@ export function ConfigPanel({
           );
         })}
       </ConfigSection>
+      </div>
 
+      <div
+        role="tabpanel"
+        id="config-panel-disenos"
+        aria-labelledby="config-tab-disenos"
+        className="config-tabpanel"
+        hidden={activeTab !== 'disenos'}
+        tabIndex={0}
+      >
       {designSection ? (
         <ConfigSection
           id="designs"
@@ -927,6 +1006,7 @@ export function ConfigPanel({
           {designSection}
         </ConfigSection>
       ) : null}
+      </div>
 
       <button type="button" className="reset-button" onClick={onReset}>
         Restablecer configuración

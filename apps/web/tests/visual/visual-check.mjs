@@ -1,5 +1,5 @@
 /**
- * Verificación visual real de Fases 2A → 3C con
+ * Verificación visual real de Fases 2A → 3E con
  * Playwright + Chromium.
  *
  * Lanza el dev server de Vite, abre la aplicación en
@@ -329,6 +329,19 @@ async function centerPixel(page, png) {
   }, png.toString('base64'));
 }
 
+/**
+ * Activa una categoría del panel de configuración
+ * (Fase 3E): las herramientas viven en pestañas y las
+ * interacciones deben abrir la categoría correspondiente.
+ */
+async function openTab(page, name) {
+  const tab = page.locator(`[data-config-tab="${name}"]`);
+  if ((await tab.getAttribute('aria-selected')) !== 'true') {
+    await tab.click();
+    await page.waitForTimeout(120);
+  }
+}
+
 async function launchBrowser() {
   // 1. Chromium del cache de Playwright.
   try {
@@ -476,6 +489,7 @@ try {
   // 3b. Cambiar la cantidad de cajones del módulo 3:
   // 3 → 5 (con 4 módulos, el módulo 3 es el único
   // "drawers" de la configuración por defecto)
+  await openTab(page, 'interior');
   const drawerModuleCard = page.locator('.module-card').nth(2);
   check(
     'el módulo de cajones expone el control de cantidad',
@@ -505,6 +519,7 @@ try {
   // A este punto del flujo hay 4 módulos.
   // Baseline sin puertas con scroll normalizado.
   await shootStable(page, '06b-sin-puertas');
+  await openTab(page, 'apariencia');
   await page
     .getByRole('button', { name: 'Con puertas', exact: true })
     .click();
@@ -579,6 +594,7 @@ try {
 
   // 3f. Dos hojas por módulo (bisagras en los
   // extremos exteriores): 4 módulos → 8 puertas.
+  await openTab(page, 'apariencia');
   await page
     .getByRole('group', { name: 'Hojas por módulo' })
     .getByRole('button', { name: '2', exact: true })
@@ -603,6 +619,7 @@ try {
   );
 
   // 3g. Panel trasero (montaje por encaje)
+  await openTab(page, 'apariencia');
   await page
     .getByRole('button', { name: 'Con panel', exact: true })
     .click();
@@ -627,6 +644,7 @@ try {
 
   // 3h. Cambio de dimensión con puertas y panel
   // trasero activos: todo recalcula.
+  await openTab(page, 'medidas');
   await page.getByLabel('Profundidad').fill('500');
   await page.waitForTimeout(200);
   text = await summary.innerText();
@@ -641,6 +659,7 @@ try {
   );
 
   // 3i. Material de puerta editable: Roble → Nogal.
+  await openTab(page, 'apariencia');
   const doorMaterialCard = page.locator('.material-card').nth(3);
   await doorMaterialCard
     .locator('input[type=text]')
@@ -688,6 +707,7 @@ try {
   // 6. Las barras desaparecen si los módulos colgados
   // pasan a cajones (con 4 módulos hay 2 barras:
   // módulos 2 y 4)
+  await openTab(page, 'interior');
   await page
     .locator('.module-card')
     .nth(1)
@@ -719,6 +739,7 @@ try {
   saveShot('06b-sin-barra', await page.screenshot());
 
   // 7. Estado de error controlado (ancho fuera de rango)
+  await openTab(page, 'medidas');
   await page.locator('[data-dimension-input="widthMm"]').fill('100');
   await page.waitForTimeout(200);
   const invalidVisible = await page.locator('.viewer-invalid').isVisible();
@@ -727,8 +748,11 @@ try {
   check('la lista de errores de validación es visible', errorPanelVisible);
 
   // 8. Restaurar configuración válida
+  await openTab(page, 'medidas');
   await page.locator('[data-dimension-input="widthMm"]').fill('2400');
+  await openTab(page, 'interior');
   await page.locator('.module-card').nth(1).locator('select').selectOption('hanging');
+  await openTab(page, 'medidas');
   await page.getByRole('button', { name: '3', exact: true }).click();
   await page.waitForTimeout(200);
   const restored = !(await page.locator('.viewer-invalid').isVisible());
@@ -739,10 +763,21 @@ try {
     text.includes('Barras de colgado (1)'),
   );
 
+  // 3E: el error de sesión de un guardado inválido transitorio
+  // se limpia al persistir con una configuración válida.
+  await openTab(page, 'disenos');
+  const designStatus = await page.locator('.design-status').innerText();
+  check(
+    '3E: el error de sesión inválida se limpia al restaurar validez',
+    !designStatus.includes('inválida'),
+    `estado="${designStatus}"`,
+  );
+  await openTab(page, 'medidas');
+
   // --- 9. Fase 3A: interfaz profesional ----------------------------------
   check(
-    'la cabecera indica la fase actual (Fase 3C)',
-    (await page.getByText('Fase 3C').count()) === 1,
+    'la cabecera indica la fase actual (Fase 3E)',
+    (await page.getByText('Fase 3E').count()) === 1,
   );
 
   const viewer = page.locator('.viewer-container');
@@ -919,6 +954,7 @@ try {
     withPanel.r - withPanel.b > 25,
     `rgb(${withPanel.r}, ${withPanel.g}, ${withPanel.b})`,
   );
+  await openTab(page, 'apariencia');
   await page.getByRole('button', { name: 'Sin panel', exact: true }).click();
   await page.waitForTimeout(300);
   await shootCanvasStable(page, 'c-front-sin-panel');
@@ -976,6 +1012,7 @@ try {
   );
 
   // 9f. Secciones colapsables del panel de configuración.
+  await openTab(page, 'medidas');
   const sectionToggle = page.locator('.config-section-toggle').first();
   check(
     'las secciones del panel inician desplegadas (aria-expanded=true)',
@@ -1021,6 +1058,7 @@ try {
 
   await designPage.goto(baseUrl, { waitUntil: 'networkidle' });
   await designPage.waitForSelector('canvas', { timeout: 15_000 });
+  await openTab(designPage, 'disenos');
   await designPage
     .locator('.design-section[data-hydrated="true"]')
     .waitFor({ timeout: 10_000 });
@@ -1033,6 +1071,7 @@ try {
 
   // Configuración rica: dimensiones, módulos, cajones,
   // material, puertas (2 hojas) y panel trasero.
+  await openTab(designPage, 'medidas');
   await designPage.locator('[data-dimension-input="widthMm"]').fill('2800');
   await designPage.waitForTimeout(150);
   await designPage
@@ -1040,7 +1079,9 @@ try {
     .getByRole('button', { name: '4', exact: true })
     .click();
   await designPage.waitForTimeout(150);
+  await openTab(designPage, 'interior');
   await designPage.locator('.module-card').nth(2).locator('input').fill('5');
+  await openTab(designPage, 'apariencia');
   await designPage
     .locator('.material-card')
     .first()
@@ -1062,6 +1103,7 @@ try {
   await designPage.waitForTimeout(250);
 
   // Crear el diseño con esa configuración.
+  await openTab(designPage, 'disenos');
   await designPage
     .getByLabel('Nombre del nuevo diseño')
     .fill('Clóset de prueba');
@@ -1075,6 +1117,7 @@ try {
   );
 
   // Cambio posterior → cambios sin guardar → guardado automático.
+  await openTab(designPage, 'medidas');
   await designPage.getByLabel('Alto').fill('2100');
   await designPage.waitForFunction(
     () => {
@@ -1104,6 +1147,7 @@ try {
   // Recuperación de sesión tras recargar.
   await designPage.reload({ waitUntil: 'networkidle' });
   await designPage.waitForSelector('canvas', { timeout: 15_000 });
+  await openTab(designPage, 'disenos');
   await designPage
     .locator('.design-section[data-hydrated="true"]')
     .waitFor({ timeout: 10_000 });
@@ -1121,6 +1165,7 @@ try {
       summaryReload.includes('Módulo 4') &&
       summaryReload.includes('Cajones (5)'),
   );
+  await openTab(designPage, 'apariencia');
   check(
     '3B: la recarga conserva barras, puertas y panel trasero',
     summaryReload.includes('Barras de colgado') &&
@@ -1133,6 +1178,7 @@ try {
         .getByRole('button', { name: 'Con panel' })
         .getAttribute('aria-pressed')) === 'true',
   );
+  await openTab(designPage, 'disenos');
   check(
     '3B: la recarga restaura el diseño activo sin cambios pendientes',
     (await designPage.locator('.design-active').getAttribute('data-dirty')) ===
@@ -1142,6 +1188,7 @@ try {
   );
 
   // Nuevo proyecto + reabrir: el REGISTRO persiste la config.
+  await openTab(designPage, 'disenos');
   await designPage.getByRole('button', { name: 'Nuevo proyecto' }).click();
   await designPage.waitForTimeout(300);
   check(
@@ -1164,6 +1211,7 @@ try {
 
   // Renombrar con prompt nativo.
   dialogPlan = { accept: true, value: 'Clóset renombrado', seen: null };
+  await openTab(designPage, 'disenos');
   await designPage
     .locator('.design-item')
     .first()
@@ -1180,6 +1228,7 @@ try {
   );
 
   // Duplicar.
+  await openTab(designPage, 'disenos');
   await designPage
     .locator('.design-item')
     .first()
@@ -1198,6 +1247,7 @@ try {
   );
 
   // Exportar a JSON (descarga real del navegador).
+  await openTab(designPage, 'disenos');
   const downloadPromise = designPage.waitForEvent('download');
   await designPage
     .locator('.design-item')
@@ -1295,6 +1345,7 @@ try {
   );
 
   // Búsqueda por nombre.
+  await openTab(designPage, 'disenos');
   await designPage.getByLabel('Buscar diseños').fill('copia');
   await designPage.waitForTimeout(250);
   const filteredCount = await designPage.locator('.design-item').count();
@@ -1306,6 +1357,7 @@ try {
   );
 
   // Eliminar con confirmación: cancelar conserva, aceptar borra.
+  await openTab(designPage, 'disenos');
   const copyRow = designPage
     .locator('.design-item')
     .filter({ hasText: 'Clóset renombrado (copia)' });
@@ -1338,7 +1390,9 @@ try {
       return window.__origSetItem.call(this, key, value);
     };
   });
+  await openTab(designPage, 'medidas');
   await designPage.getByLabel('Alto').fill('2050');
+  await openTab(designPage, 'disenos');
   await designPage
     .waitForFunction(
       () =>
@@ -1382,6 +1436,7 @@ try {
   });
 
   // El diseño anterior NO se sobrescribió.
+  await openTab(designPage, 'disenos');
   await designPage
     .locator('.design-item')
     .filter({ hasText: 'Clóset renombrado' })
@@ -1460,6 +1515,7 @@ try {
   await shootStable(page, 'evidencia-04-puertas-cerradas');
 
   // E5: cajonera con 5 cajones y puertas ocultas.
+  await openTab(page, 'interior');
   await page.locator('.module-card').nth(2).locator('input').fill('5');
   await page.waitForTimeout(300);
   await doorsToggle.click();
@@ -1474,6 +1530,7 @@ try {
   // ancho, 3 módulos (repisas, colgado, cajones), puertas
   // visibles y cerradas. Se fija explícitamente para que
   // las coordenadas del clic 3D sean deterministas.
+  await openTab(page, 'medidas');
   await page.locator('[data-dimension-input="widthMm"]').fill('2400');
   await page.waitForTimeout(250);
   await page
@@ -1481,6 +1538,7 @@ try {
     .getByRole('button', { name: '3', exact: true })
     .click();
   await page.waitForTimeout(250);
+  await openTab(page, 'interior');
   await page.locator('.module-card').nth(0).locator('select').selectOption('shelves');
   await page.locator('.module-card').nth(1).locator('select').selectOption('hanging');
   await page.locator('.module-card').nth(2).locator('select').selectOption('drawers');
@@ -1513,6 +1571,7 @@ try {
   await shootStable(page, 'evidencia-3c-01-studio-escritorio');
 
   // Selección desde la lista de módulos.
+  await openTab(page, 'interior');
   await shootCanvasStable(page, 'c-3c-base');
   await page.getByRole('button', { name: 'Seleccionar módulo 2', exact: true }).click();
   await page.waitForTimeout(250);
@@ -1588,6 +1647,7 @@ try {
   }
 
   // El arrastre (órbita) no debe alterar la selección.
+  await openTab(page, 'interior');
   await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
   await page.waitForTimeout(200);
   await shootCanvasStable(page, 'c-3c-sel1');
@@ -1652,8 +1712,10 @@ try {
   // La selección sobrevive a cambios de dimensión (ids
   // deterministas del motor) y se limpia si el módulo
   // desaparece.
+  await openTab(page, 'interior');
   await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
   await page.waitForTimeout(200);
+  await openTab(page, 'medidas');
   await page.locator('[data-dimension-input="widthMm"]').fill('2600');
   await page.waitForTimeout(300);
   check(
@@ -1662,8 +1724,10 @@ try {
   );
   await page.locator('[data-dimension-input="widthMm"]').fill('2400');
   await page.waitForTimeout(250);
+  await openTab(page, 'interior');
   await page.getByRole('button', { name: 'Seleccionar módulo 3', exact: true }).click();
   await page.waitForTimeout(200);
+  await openTab(page, 'medidas');
   await page
     .getByRole('group', { name: 'Número de módulos' })
     .getByRole('button', { name: '2', exact: true })
@@ -1673,6 +1737,7 @@ try {
     '3C: la selección se limpia si el módulo desaparece',
     (await moduleProps.count()) === 0,
   );
+  await openTab(page, 'medidas');
   await page
     .getByRole('group', { name: 'Número de módulos' })
     .getByRole('button', { name: '3', exact: true })
@@ -1709,6 +1774,7 @@ try {
   await page.waitForTimeout(200);
 
   // Modo sencillo/avanzado: organización de herramientas.
+  await openTab(page, 'interior');
   check(
     '3C: el modo sencillo arranca con la sección Barra plegada',
     (await page
@@ -1745,6 +1811,7 @@ try {
   await shootStable(page, 'evidencia-3c-03-vista-frontal');
 
   // Encuadre de cámara al módulo seleccionado.
+  await openTab(page, 'interior');
   await page.getByRole('button', { name: 'Seleccionar módulo 2', exact: true }).click();
   await page.waitForTimeout(200);
   check(
@@ -1783,11 +1850,13 @@ try {
   await page.waitForTimeout(300);
 
   // ── Fase 3D: distribución flexible de anchos ─────────
+  await openTab(page, 'medidas');
   const widthStatus = page.locator('[data-width-status]');
   check(
     '3D: la sección de distribución arranca en reparto uniforme',
     (await widthStatus.innerText()).includes('Reparto uniforme'),
   );
+  await openTab(page, 'interior');
   check(
     '3D: las tarjetas muestran el ancho resuelto de cada módulo',
     (await page.locator('.module-card-width').count()) === 3 &&
@@ -1795,6 +1864,7 @@ try {
         '776 mm',
       ),
   );
+  await openTab(page, 'medidas');
   check(
     '3D: Igualar anchos está deshabilitado sin fijados',
     await page.getByRole('button', { name: 'Igualar anchos' }).isDisabled(),
@@ -1802,6 +1872,7 @@ try {
   await shootStable(page, 'evidencia-3d-01-distribucion-uniforme');
 
   // Edición numérica de ancho desde el panel contextual.
+  await openTab(page, 'interior');
   await page.getByRole('button', { name: 'Seleccionar módulo 2', exact: true }).click();
   await page.waitForTimeout(250);
   const widthInput = moduleProps.getByLabel('Ancho del módulo 2 en milímetros');
@@ -1892,6 +1963,7 @@ try {
   );
 
   // Igualar anchos (restablecer distribución uniforme).
+  await openTab(page, 'medidas');
   await page.getByRole('button', { name: 'Igualar anchos' }).click();
   await page.waitForTimeout(250);
   check(
@@ -1910,11 +1982,13 @@ try {
   );
 
   // Repartir espacio restante desde la selección.
+  await openTab(page, 'interior');
   await page.getByRole('button', { name: 'Seleccionar módulo 1', exact: true }).click();
   await page.waitForTimeout(200);
   const redistribute = page.getByRole('button', {
     name: 'Repartir espacio restante',
   });
+  await openTab(page, 'medidas');
   check(
     '3D: Repartir espacio restante se habilita con selección válida',
     await redistribute.isEnabled(),
@@ -1936,6 +2010,7 @@ try {
   );
 
   // Plantillas de distribución locales.
+  await openTab(page, 'medidas');
   await page.locator('[data-template-id="mixto"]').click();
   await page.waitForTimeout(400);
   const afterTemplateText = await bottombar.innerText();
@@ -1962,6 +2037,158 @@ try {
     '3D: Deshacer revierte la plantilla completa (3 módulos)',
     (await bottombar.innerText()).includes('3 módulos'),
   );
+
+  // ── Fase 3E: experiencia simplificada ─────────────────
+  // Navegación por categorías (accesible por teclado).
+  const tabs = page.locator('[role="tab"]');
+  check('3E: el panel expone cuatro categorías', (await tabs.count()) === 4);
+  check(
+    '3E: Medidas es la categoría inicial',
+    (await tabs.nth(0).getAttribute('aria-selected')) === 'true',
+  );
+  check(
+    '3E: la ayuda de la categoría describe Medidas',
+    (await page.locator('.config-tab-hint').innerText()).includes(
+      'Tamaño del mueble',
+    ),
+  );
+  await tabs.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  check(
+    '3E: flecha derecha activa Interior',
+    (await tabs.nth(1).getAttribute('aria-selected')) === 'true',
+  );
+  check(
+    '3E: el panel Interior queda visible',
+    await page.locator('#config-panel-interior').isVisible(),
+  );
+  check(
+    '3E: el panel Medidas queda oculto',
+    !(await page.locator('#config-panel-medidas').isVisible()),
+  );
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  check(
+    '3E: ArrowLeft circula hasta Mis diseños',
+    (await tabs.nth(3).getAttribute('aria-selected')) === 'true',
+  );
+  await page.keyboard.press('Home');
+  check(
+    '3E: Home vuelve a Medidas',
+    (await tabs.nth(0).getAttribute('aria-selected')) === 'true',
+  );
+  await tabs.nth(2).click();
+  check(
+    '3E: el clic en Apariencia la activa',
+    (await tabs.nth(2).getAttribute('aria-selected')) === 'true',
+  );
+  await openTab(page, 'medidas');
+
+  // Conservación de estado al cambiar de categoría.
+  await page.locator('[data-dimension-input="widthMm"]').fill('2600');
+  await page.waitForTimeout(200);
+  await openTab(page, 'apariencia');
+  await openTab(page, 'interior');
+  await openTab(page, 'medidas');
+  check(
+    '3E: cambiar de categoría conserva el ancho editado',
+    (await page.locator('[data-dimension-input="widthMm"]').inputValue()) ===
+      '2600',
+  );
+  await page.locator('[data-dimension-input="widthMm"]').fill('2400');
+  await page.waitForTimeout(200);
+
+  // El visor central permanece estable al navegar.
+  const viewer3e = page.locator('.viewer-container');
+  const canvasBefore = await page.locator('canvas').boundingBox();
+  const viewBefore = await viewer3e.getAttribute('data-view');
+  await shootCanvasStable(page, 'c-3e-base');
+  await openTab(page, 'apariencia');
+  await openTab(page, 'interior');
+  await openTab(page, 'disenos');
+  await openTab(page, 'medidas');
+  const canvasAfter = await page.locator('canvas').boundingBox();
+  check(
+    '3E: el visor mantiene tamaño al navegar',
+    canvasBefore !== null &&
+      canvasAfter !== null &&
+      Math.abs(canvasBefore.width - canvasAfter.width) < 2 &&
+      Math.abs(canvasBefore.height - canvasAfter.height) < 2,
+  );
+  check(
+    '3E: navegar no cambia la cámara',
+    (await viewer3e.getAttribute('data-view')) === viewBefore,
+  );
+  await shootCanvasStable(page, 'c-3e-tras-navegar');
+  const navRatio = await pixelDiffRatio(
+    page,
+    shots['c-3e-base'],
+    shots['c-3e-tras-navegar'],
+  );
+  check(
+    '3E: la escena 3D queda estable al navegar',
+    navRatio < 0.001,
+    `${(navRatio * 100).toFixed(4)}% de píxeles distintos`,
+  );
+
+  // Scroll interno del panel: el visor no se mueve.
+  await openTab(page, 'apariencia');
+  const leftBody = page.locator('#studio-left-body');
+  const panelScrollable = await leftBody.evaluate(
+    (element) => element.scrollHeight > element.clientHeight + 8,
+  );
+  check(
+    '3E: el panel tiene scroll interno (contenido más alto)',
+    panelScrollable,
+  );
+  const viewerYBefore = await page.locator('.viewer').boundingBox();
+  await leftBody.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.waitForTimeout(150);
+  const scrolled = await leftBody.evaluate((element) => element.scrollTop);
+  const viewerYAfter = await page.locator('.viewer').boundingBox();
+  check('3E: el scroll interno desplaza el contenido', scrolled > 0);
+  check(
+    '3E: el visor no se desplaza con el panel',
+    viewerYBefore !== null &&
+      viewerYAfter !== null &&
+      Math.abs(viewerYBefore.y - viewerYAfter.y) < 2,
+  );
+
+  // Evidencias de Fase 3E (escritorio).
+  await openTab(page, 'medidas');
+  await shootStable(page, 'evidencia-3e-01-editor-escritorio');
+  await leftBody.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.waitForTimeout(200);
+  await shootStable(page, 'evidencia-3e-02-medidas');
+  await leftBody.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await openTab(page, 'interior');
+  await shootStable(page, 'evidencia-3e-03-interior');
+  await openTab(page, 'apariencia');
+  await shootStable(page, 'evidencia-3e-04-apariencia');
+  await openTab(page, 'disenos');
+  await shootStable(page, 'evidencia-3e-05-mis-disenos');
+  await openTab(page, 'interior');
+  await page
+    .getByRole('button', { name: 'Seleccionar módulo 2', exact: true })
+    .click();
+  await page.waitForTimeout(250);
+  await shootStable(page, 'evidencia-3e-06-modulo-seleccionado');
+  await page.getByRole('button', { name: 'Avanzado', exact: true }).click();
+  await page.waitForTimeout(200);
+  await shootStable(page, 'evidencia-3e-07-modo-avanzado');
+  await page.getByRole('button', { name: 'Sencillo', exact: true }).click();
+  // Puertas abiertas (siguen activadas del flujo 3C).
+  await setSliderByClick(page.getByLabel('Apertura de puertas'), 0.82);
+  await page.waitForTimeout(400);
+  await shootStable(page, 'evidencia-3e-09-puertas-abiertas');
+  await setSliderByClick(page.getByLabel('Apertura de puertas'), 0);
+  await page.waitForTimeout(300);
 
   // E6: versión móvil (390×844).
   const mobile = await browser.newPage({
@@ -2002,7 +2229,33 @@ try {
   await mobile.waitForTimeout(300);
   saveShot('evidencia-06-movil', await mobile.screenshot());
   saveShot('evidencia-3c-09-movil-studio', await mobile.screenshot());
+  saveShot('evidencia-3e-08-movil', await mobile.screenshot());
   await mobile.close();
+
+  // Evidencia 10: diseño recuperado en la página principal.
+  await openTab(page, 'disenos');
+  await page.getByLabel('Nombre del nuevo diseño').fill('Evidencia 3E');
+  await page.getByRole('button', { name: 'Crear diseño' }).click();
+  await page.waitForTimeout(300);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('canvas', { timeout: 15_000 });
+  await openTab(page, 'disenos');
+  await page
+    .locator('.design-section[data-hydrated="true"]')
+    .waitFor({ timeout: 10_000 });
+  await openTab(page, 'disenos');
+  await page
+    .locator('.design-item')
+    .first()
+    .getByRole('button', { name: 'Abrir' })
+    .click();
+  await page.waitForTimeout(300);
+  check(
+    '3E: el diseño recuperado aparece en la barra superior',
+    (await page.locator('[data-project-name]').getAttribute('data-project-name')) ===
+      'Evidencia 3E',
+  );
+  await shootStable(page, 'evidencia-3e-10-diseno-recuperado');
 
   // Errores de página (crashes de React/WebGL)
   check('sin errores de página durante la sesión', errors.length === 0, errors[0] ?? '');
