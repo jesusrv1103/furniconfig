@@ -8,7 +8,7 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 3D — Diseño paramétrico flexible** (completada).
+**Fase 3E — Experiencia de diseño simplificada** (completada).
 Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
 (Fase 2A), cajoneras (Fase 2B) y puertas abatibles
@@ -21,16 +21,19 @@ individuales por módulo** (Fase 3D: ancho interior libre
 en mm enteros, compatible con el reparto uniforme
 histórico, con suma exacta y códigos de error
 estables). La interfaz es un **estudio de diseño 3D**
-(`apps/web`, React + Three.js): visor central grande
-con selección directa de módulos por clic (resaltado y
-umbral anti-drag), vistas predefinidas, "Ajustar" y
-"Encuadrar módulo", barra superior con deshacer/rehacer
-(historial acotado de configuraciones), panel izquierdo
-con estructura (ancho por módulo, herramientas de
-distribución y plantillas locales) y diseños, panel
-derecho contextual editable (tipo, repisas, cajones,
-barra y ancho del módulo con previsualización de los
-módulos afectados), barra inferior de estado, paneles
+(`apps/web`, React + Three.js) organizado en **cuatro
+categorías** (Fase 3E, ADR-026): Medidas, Interior,
+Apariencia y Mis diseños, con pestañas accesibles
+WAI-ARIA (flechas/Home/End), visor central estable con
+scroll interno en los paneles (el visor nunca desplaza la
+página; en pantallas ≤1200 px el visor va primero),
+selección directa de módulos por clic (resaltado y umbral
+anti-drag), vistas predefinidas, "Ajustar" y "Encuadrar
+módulo", barra superior con deshacer/rehacer (historial
+acotado de configuraciones) y atajo a "Mis diseños",
+panel contextual editable a la derecha (tipo, repisas,
+cajones, barra y ancho del módulo con previsualización de
+los módulos afectados), barra inferior de estado, paneles
 laterales colapsables y modo sencillo/avanzado. Sección
 "Proyectos": guardado local de diseños (`localStorage`
 vía contrato `DesignRepository`) con guardado
@@ -96,7 +99,7 @@ furniconfig/
         │   ├── hooks/        # use-editor-history (deshacer/rehacer), use-design-session (diseños)
         │   ├── lib/          # units (mm→m), panels-to-mesh, materials, config, derive, camera-views
         │   │   ├── designs/  # persistencia 3B (repositorio, biblioteca, storage)
-        │   │   └── studio/   # capa pura del editor (history, selection)
+        │   │   └── studio/   # capa pura del editor (history, selection, tabs)
         │   └── App.tsx       # estado del Studio + validación derivada
         ├── tests/            # unidades, persistencia, render + visual/ (Playwright)
         └── index.html

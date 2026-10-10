@@ -249,6 +249,15 @@ export function useDesignSession({
         activeId: state.activeId,
         dirty: dirtyNow,
       })
+      .then(() => {
+        // Un error de guardado anterior (p. ej. una
+        // configuración inválida transitoria) no debe
+        // quedar permanente: al persistir con una
+        // configuración válida se limpia el estado.
+        setState((prev) =>
+          prev.status?.tone === 'error' ? { ...prev, status: null } : prev,
+        );
+      })
       .catch((error: unknown) => fail(error));
 
     if (state.activeId !== null && dirtyNow) {

@@ -44,7 +44,7 @@ export function TopBar({
     <header className="app-header studio-topbar">
       <div className="topbar-brand">
         <h1>FurniConfig Studio</h1>
-        <p>Visualizador de clósets modulares · Fase 3C</p>
+        <p>Visualizador de clósets modulares · Fase 3E</p>
       </div>
 
       <div className="topbar-project">

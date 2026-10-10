@@ -10,6 +10,11 @@
   --error: #b91c1c;
   --error-bg: #fef2f2;
   --radius: 10px;
+  --radius-sm: 6px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
 }
 
 * {
@@ -28,10 +33,13 @@ body {
   color: var(--text);
 }
 
+/* Altura de ventana completa: cabecera y pie fijos, fila
+   central flexible con paneles de scroll interno y visor
+   estable que nunca desplaza la página (Fase 3E). */
 .app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .app-header {
@@ -65,14 +73,15 @@ body {
 }
 
 .layout {
-  flex: 1;
+  min-height: 0;
   display: grid;
   /* Paneles laterales con ancho propio (auto): se ajustan
      al contraer/abrir; el visor toma el resto. */
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 16px;
   padding: 16px 24px;
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .sidebar,
@@ -84,7 +93,7 @@ body {
 }
 
 .viewer {
-  min-height: 72vh;
+  min-height: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -202,7 +211,7 @@ body {
   justify-content: center;
   gap: 8px;
   height: 100%;
-  min-height: 72vh;
+  min-height: 0;
   color: var(--muted);
   text-align: center;
   padding: 24px;
@@ -346,6 +355,7 @@ body {
 .count-button:focus-visible,
 .viewer-view-button:focus-visible,
 .config-section-toggle:focus-visible,
+.config-tabs [role='tab']:focus-visible,
 .reset-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -587,6 +597,11 @@ body {
   width: 320px;
   max-width: 100%;
   padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .studio-panel.is-collapsed {
@@ -645,10 +660,75 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* Scroll interno del panel (Fase 3E): el contenido largo
+     se desplaza aquí sin mover el visor ni la página. */
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 /* `hidden` debe ganar al display:flex anterior. */
 .panel-body[hidden] {
+  display: none;
+}
+
+/* Categorías de edición (Fase 3E): barra de pestañas con
+   estado activo consistente y foco visible accesible. */
+.config-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: #eef1f5;
+}
+
+.config-tabs [role='tab'] {
+  padding: 8px var(--space-1);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.config-tabs [role='tab']:hover {
+  color: var(--text);
+}
+
+.config-tabs [role='tab'][aria-selected='true'] {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+}
+
+.config-tabs [role='tab']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.config-tab-hint {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.config-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+/* `hidden` debe ganar al display:flex de .config-tabpanel. */
+.config-tabpanel[hidden] {
   display: none;
 }
 
@@ -887,33 +967,55 @@ body {
   white-space: normal;
 }
 
+/* ≤1200 px: flujo apilado — el mueble primero, los paneles
+   debajo; la página scrollea y los paneles no crecen. */
 @media (max-width: 1200px) {
+  .app {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
   .layout {
-    grid-template-columns: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    padding: 16px;
+  }
+
+  .viewer {
+    order: -1;
+    min-height: 58vh;
+  }
+
+  .viewer-fallback,
+  .viewer-invalid {
+    min-height: 58vh;
   }
 
   .studio-panel {
     width: 100%;
+    max-height: none;
+    overflow: visible;
   }
 
-  .summary {
-    grid-column: 1 / -1;
+  .panel-body {
+    overflow: visible;
   }
 }
 
 @media (max-width: 760px) {
   .layout {
-    grid-template-columns: 1fr;
     padding: 12px;
   }
 
   .viewer {
-    min-height: 60vh;
+    min-height: 55vh;
   }
 
   .viewer-fallback,
   .viewer-invalid {
-    min-height: 60vh;
+    min-height: 55vh;
   }
 
   .viewer-toolbar {

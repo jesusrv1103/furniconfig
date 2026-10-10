@@ -342,6 +342,32 @@
       panel contextual) y 21 verificaciones visuales nuevas
       con 3 capturas de evidencia.
 
+## Fase 3E — Experiencia de diseño simplificada ✅
+
+- [x] Navegación por cuatro categorías (ADR-026): Medidas,
+      Interior, Apariencia y Mis diseños, con pestañas
+      accesibles WAI-ARIA (flechas/Home/End, roving tabindex)
+      y lógica pura en `lib/studio/tabs.ts`. Todas las
+      herramientas existentes se conservan; los paneles
+      inactivos quedan montados con `hidden` (sin duplicar
+      estado).
+- [x] Visor central estable: altura de ventana completa,
+      scroll interno en los paneles, visor que nunca
+      desplaza la página; en ≤1200 px el visor va primero.
+      Cámara, selección 3D, resaltado y reencuadre intactos
+      (verificado con píxeles).
+- [x] Lenguaje sencillo: textos de ayuda por categoría;
+      notas provisionales visibles pero de-emphasizadas;
+      modo avanzado conservado.
+- [x] Pruebas: 15 unitarias nuevas (lógica de pestañas +
+      estructura SSR) y 17 verificaciones visuales nuevas
+      con 10 capturas de evidencia (editor, medidas,
+      interior, apariencia, mis diseños, módulo
+      seleccionado, modo avanzado, móvil, puertas abiertas
+      y diseño recuperado).
+- [x] Iluminación verificada con evidencia: sin defectos
+      que corregir (interior legible, sin sobreexposiciones).
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.

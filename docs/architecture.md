@@ -658,6 +658,68 @@ control numérico). Cobertura: 27 pruebas nuevas en el motor,
 y panel contextual) y 21 verificaciones visuales nuevas con
 3 capturas de evidencia.
 
+### ADR-026 — Experiencia de diseño simplificada: categorías y visor estable (Fase 3E)
+
+**Problema:** el panel izquierdo era un formulario único de
+9 secciones mezcladas (dimensiones, módulos, distribución,
+plantillas, puertas, panel trasero, barra, materiales y
+proyectos). Para llegar a "Proyectos" había que hacer scroll
+(el propio `App.tsx` hacía `scrollIntoView`); las medidas
+convivían con la apariencia y la gestión de archivos; el
+visor quedaba reducido entre dos paneles y la página entera
+se desplazaba al hacer scroll en el panel.
+
+**Decisión — cuatro categorías (pestañas accesibles):**
+- El panel se organiza en **Medidas** (dimensiones, número
+  de módulos, distribución de anchos, plantillas), **Interior**
+  (contenido de cada módulo y barra de colgado), **Apariencia**
+  (puertas, panel trasero, materiales) y **Mis diseños**
+  (proyectos). Todas las herramientas existentes se
+  conservan: es organización, no recorte.
+- Pestañas con patrón WAI-ARIA (`role=tablist/tab/tabpanel`,
+  `aria-selected`, `aria-controls/labelledby`, roving
+  `tabIndex`, flechas/Home/End). Lógica pura y determinista
+  en `lib/studio/tabs.ts` (`nextTabOnArrowKey`), testable sin
+  navegador.
+- Los cuatro paneles permanecen montados en el DOM (los
+  inactivos con `hidden`): no se duplica estado ni se pierde
+  funcionalidad al cambiar de categoría; el estado de
+  secciones colapsadas y la configuración se conservan.
+- El estado de la pestaña activa se eleva a `App.tsx` y se
+  pasa controlado a `ConfigPanel` (una sola fuente de
+  verdad). "Proyectos" de la barra superior abre la
+  categoría "Mis diseños" (sin `scrollIntoView`: el panel
+  tiene scroll interno).
+
+**Decisión — visor central estable:**
+- `.app` pasa a altura de ventana completa
+  (`100dvh`, filas `auto / 1fr / auto`): cabecera y pie
+  fijos, fila central flexible. Los paneles laterales
+  tienen **scroll interno** (`.panel-body { overflow-y:
+  auto }`) y el visor llena el espacio restante sin
+  desplazar la página.
+- En ≤1200 px el flujo se apila con el **visor primero**
+  (`order: -1`) y los paneles debajo; la página scrollea
+  de forma natural.
+- Se conservan controles de cámara, selección directa 3D,
+  resaltado de módulos y reencuadre automático (sin cambios
+  de cámara al navegar, verificado con píxeles).
+
+**Decisión — lenguaje y ayuda:**
+- Textos de ayuda breves bajo la barra de pestañas (uno por
+  categoría). Notas provisionales y parámetros técnicos
+  (holgura, diámetro de barra, esespesores) se mantienen
+  visibles pero de-emphasizados; el modo avanzado los
+  despliega.
+
+**Consecuencias:** ninguna funcionalidad perdida; todos los
+`data-*`, etiquetas y roles que usan las pruebas se
+conservan. La iluminación se verificó con evidencia (10
+capturas nuevas) y no presentaba defectos que corregir.
+Cobertura: 15 pruebas unitarias nuevas (lógica de pestañas +
+estructura SSR) y 17 verificaciones visuales nuevas con 10
+capturas de evidencia.
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa

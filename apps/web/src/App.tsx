@@ -11,6 +11,7 @@ import { TopBar, type SaveState } from './components/studio/TopBar.js';
 import { DEFAULT_CONFIG, resetConfig } from './lib/config.js';
 import { deriveGeometryState } from './lib/derive.js';
 import { moduleContext, resolveSelection } from './lib/studio/selection.js';
+import { type ConfigTabId } from './lib/studio/tabs.js';
 import { useDesignSession } from './hooks/use-design-session.js';
 import { useEditorHistory } from './hooks/use-editor-history.js';
 
@@ -28,7 +29,7 @@ interface AppProps {
 }
 
 /**
- * FurniConfig Studio (Fase 3C).
+ * FurniConfig Studio (Fases 3C–3E).
  *
  * Estado del editor:
  *
@@ -45,6 +46,10 @@ interface AppProps {
  *   del motor (`deriveGeometryState`).
  * - Modo sencillo/avanzado: organiza las herramientas
  *   existentes; no duplica la aplicación ni el motor.
+ * - Categorías del panel (Fase 3E): el estado de la
+ *   pestaña activa vive aquí y se pasa controlado a
+ *   ConfigPanel; "Proyectos" (barra superior) abre la
+ *   categoría "Mis diseños".
  */
 export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
   // Historial del editor: `editor.config` es el estado presente.
@@ -61,6 +66,10 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
     !window.matchMedia('(max-width: 760px)').matches;
   const [leftOpen, setLeftOpen] = useState<boolean>(defaultPanelOpen);
   const [rightOpen, setRightOpen] = useState<boolean>(defaultPanelOpen);
+  // Pestaña activa del panel de configuración (Fase 3E):
+  // único estado de navegación; las herramientas viven en
+  // ConfigPanel, que es controlado desde aquí.
+  const [activeTab, setActiveTab] = useState<ConfigTabId>('medidas');
 
   // Cambios EXTERNOS de proyecto desde la sesión 3B: nuevo
   // historial y selección limpia (nunca se mezclan dos
@@ -150,12 +159,9 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
 
   const handleOpenProjects = (): void => {
     setLeftOpen(true);
-    // Tras el repintado, enfoca la sección de proyectos.
-    requestAnimationFrame(() => {
-      document
-        .querySelector('.design-section')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    // Categoría "Mis diseños": el panel hace scroll
+    // interno, no hace falta desplazar la página.
+    setActiveTab('disenos');
   };
 
   return (
@@ -215,6 +221,8 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
               selectedModuleIndex={selectedModuleIndex}
               onSelectModule={selectModuleByIndex}
               editorMode={editorMode}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
               moduleWidthsMm={
                 derived.geometry?.wardrobe.modules.map(
                   (module) => module.widthMm,
