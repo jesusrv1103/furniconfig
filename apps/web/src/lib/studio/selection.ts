@@ -116,11 +116,22 @@ function includeBox(
  * inferior, fondo) tienen `moduleId = null` y quedan fuera:
  * el encuadre se centra en las piezas del propio módulo.
  * Devuelve null si el módulo no existe o no aporta piezas.
+ *
+ * `options.includeDoors` (por defecto `true`) permite
+ * excluir las hojas de puerta para medir solo la huella
+ * interior del módulo (cotas, Fase 3F.1): la hoja es más
+ * ancha que la apertura porque monta sobre el frente.
  */
+export interface ModuleBoundsOptions {
+  includeDoors?: boolean;
+}
+
 export function moduleBoundsMm(
   geometry: GeometryResult | null,
   selectedId: string | null,
+  options: ModuleBoundsOptions = {},
 ): MmBounds | null {
+  const { includeDoors = true } = options;
   if (geometry === null || selectedId === null) {
     return null;
   }
@@ -151,14 +162,16 @@ export function moduleBoundsMm(
     includeBox(bounds, rod.positionMm, sizeMm);
     found = true;
   }
-  for (const door of geometry.doors) {
-    if (door.moduleId === selectedId) {
-      includeBox(bounds, door.positionMm, {
-        x: door.widthMm,
-        y: door.heightMm,
-        z: door.thicknessMm,
-      });
-      found = true;
+  if (includeDoors) {
+    for (const door of geometry.doors) {
+      if (door.moduleId === selectedId) {
+        includeBox(bounds, door.positionMm, {
+          x: door.widthMm,
+          y: door.heightMm,
+          z: door.thicknessMm,
+        });
+        found = true;
+      }
     }
   }
 

@@ -203,6 +203,56 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Selector de unidades de las cotas (Fase 3F.1). */
+.viewer-units {
+  display: inline-flex;
+  align-items: center;
+}
+
+.viewer-units select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.viewer-units select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Etiqueta de cota: valor sobre la línea, sin capturar
+   clics (pointer-events: none en el contenedor Html).
+   Colores neutros (croma ≤ 25) para no contaminar la
+   máscara cromática de la suite visual. */
+.dimension-label {
+  padding: 2px 8px;
+  border: 1px solid #9ca3af;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.92);
+  color: #1f2937;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+  transform: translateZ(0);
+}
+
+/* Capa de etiquetas de cotas sobre el lienzo (portal
+   estable de drei Html; sin capturar clics). */
+.dimensions-portal {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .viewer-fallback,
 .viewer-invalid {
   display: flex;
