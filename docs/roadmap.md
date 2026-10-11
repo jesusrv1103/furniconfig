@@ -368,6 +368,28 @@
 - [x] Iluminación verificada con evidencia: sin defectos
       que corregir (interior legible, sin sobreexposiciones).
 
+## Fase 3F.1 — Cotas y medición 3D ✅
+
+- [x] Motor de cotas puro (`lib/studio/dimensions.ts`,
+      ADR-027): cotas generales (ancho, alto y profundidad
+      total) y contextuales del módulo seleccionado (ancho y
+      alto), derivadas de la geometría resuelta por el motor
+      sin duplicar reglas ni mutar valores.
+- [x] Representación visual CAD: líneas de cota con
+      extensiones y flechas, etiquetas numéricas legibles en
+      frontal, lateral e isométrica; `raycast` nulo y
+      `pointer-events: none` (la selección 3D por clic queda
+      intacta); portal DOM estable para las etiquetas (bug
+      React 19 + drei 10).
+- [x] Unidades mm/cm por presentación (geometry-core sigue
+      en milímetros enteros) y control "Cotas" (mostrar /
+      ocultar) en la barra del visor.
+- [x] Pruebas: 25 unitarias nuevas (exactitud, unidades,
+      posicionamiento, selección, cambios de dimensión y de
+      ancho fijado, estabilidad con puertas, no mutación,
+      determinismo) y 13 verificaciones visuales nuevas con
+      7 capturas de evidencia.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.

@@ -786,8 +786,8 @@ try {
     (await viewer.getAttribute('data-view')) === 'isometric',
   );
   check(
-    'la barra de vistas expone 3 vistas + ajuste + encuadre + puertas',
-    (await page.locator('.viewer-toolbar button').count()) === 6,
+    'la barra de vistas expone 3 vistas + ajuste + encuadre + puertas + cotas',
+    (await page.locator('.viewer-toolbar button').count()) === 7,
   );
 
   // 9a. Vistas predefinidas: encuadre medido sobre la
@@ -2223,6 +2223,15 @@ try {
     (await mobile.locator('.sidebar').getAttribute('data-open')) === 'false' &&
       (await mobile.locator('.summary').getAttribute('data-open')) === 'false',
   );
+  // 3F.1 móvil: control de cotas accesible y etiquetas legibles.
+  check(
+    '3F.1 móvil: el control de cotas es visible',
+    await mobile.getByRole('button', { name: 'Cotas', exact: true }).isVisible(),
+  );
+  check(
+    '3F.1 móvil: las cotas se muestran sobre el visor',
+    (await mobile.locator('.dimension-label').count()) === 3,
+  );
   // Evidencia: el visor está bajo el panel en el flujo móvil;
   // se desplaza para capturar visor + barra de vistas.
   await mobile.locator('.viewer').scrollIntoViewIfNeeded();
@@ -2230,6 +2239,7 @@ try {
   saveShot('evidencia-06-movil', await mobile.screenshot());
   saveShot('evidencia-3c-09-movil-studio', await mobile.screenshot());
   saveShot('evidencia-3e-08-movil', await mobile.screenshot());
+  saveShot('evidencia-3f1-07-movil-cotas', await mobile.screenshot());
   await mobile.close();
 
   // Evidencia 10: diseño recuperado en la página principal.
@@ -2256,6 +2266,187 @@ try {
       'Evidencia 3E',
   );
   await shootStable(page, 'evidencia-3e-10-diseno-recuperado');
+
+  // ── Fase 3F.1: cotas visibles ─────────────────────────
+  // Cotas generales visibles por defecto (sin selección).
+  // La página acaba de recargar: la vista por defecto es la
+  // isométrica.
+  const dimLabels = page.locator('.dimension-label');
+  check(
+    '3F.1: las cotas generales están visibles por defecto (isométrica)',
+    (await dimLabels.count()) === 3,
+  );
+  const dimTexts = await dimLabels.allInnerTexts();
+  check(
+    '3F.1: las cotas muestran ancho, alto y profundidad',
+    dimTexts.includes('2.400 mm') &&
+      dimTexts.includes('2.200 mm') &&
+      dimTexts.includes('600 mm'),
+    dimTexts.join(' | '),
+  );
+  await shootStable(page, 'evidencia-3f1-03-isometrica-cotas');
+
+  // Las cotas funcionan en las vistas frontal, lateral e
+  // isométrica (etiquetas presentes en todas).
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  check(
+    '3F.1: las cotas siguen visibles en frontal',
+    (await dimLabels.count()) === 3,
+  );
+  await shootStable(page, 'evidencia-3f1-01-frontal-cotas');
+  await page.getByRole('button', { name: 'Lateral', exact: true }).click();
+  await page.waitForTimeout(400);
+  check(
+    '3F.1: las cotas siguen visibles en lateral',
+    (await dimLabels.count()) === 3,
+  );
+  await shootStable(page, 'evidencia-3f1-02-lateral-cotas');
+
+  // Las cotas no capturan clics destinados a los módulos:
+  // con las cotas puestas, un clic 3D sigue seleccionando
+  // (mismos candidatos que la comprobación de Fase 3C).
+  await page.getByRole('button', { name: 'Frontal', exact: true }).click();
+  await page.waitForTimeout(400);
+  const dimCanvasBox = await page.locator('canvas').boundingBox();
+  if (dimCanvasBox !== null) {
+    const dimCandidates = [
+      {
+        x: dimCanvasBox.x + dimCanvasBox.width / 2,
+        y: dimCanvasBox.y + dimCanvasBox.height / 2,
+      },
+      {
+        x: dimCanvasBox.x + dimCanvasBox.width / 2,
+        y: dimCanvasBox.y + dimCanvasBox.height * 0.35,
+      },
+      {
+        x: dimCanvasBox.x + dimCanvasBox.width * 0.35,
+        y: dimCanvasBox.y + dimCanvasBox.height / 2,
+      },
+    ];
+    let dimPicked3D = null;
+    for (const point of dimCandidates) {
+      await page.mouse.click(point.x, point.y);
+      await page.waitForTimeout(250);
+      if ((await page.locator('.module-props').count()) > 0) {
+        dimPicked3D = await page
+          .locator('.module-props')
+          .getAttribute('data-selected-module');
+        if (dimPicked3D) break;
+      }
+    }
+    check(
+      '3F.1: con cotas puestas, el clic 3D sigue seleccionando módulos',
+      dimPicked3D !== null && /^module-\d+$/.test(dimPicked3D),
+      `seleccionado=${dimPicked3D ?? 'ninguno'}`,
+    );
+    // Clic en el vacío (margen izquierdo) para deseleccionar.
+    await page.mouse.click(dimCanvasBox.x + 12, dimCanvasBox.y + 40);
+    await page.waitForTimeout(300);
+  }
+
+  // Módulo seleccionado: cotas contextuales (ancho y alto
+  // del módulo), sustituyendo a las generales. El ancho
+  // esperado se lee del propio editor (misma fuente de
+  // verdad que la comprobación de clic 3D de Fase 3C): la
+  // cota debe coincidir con el campo del módulo.
+  await openTab(page, 'interior');
+  await page
+    .getByRole('button', { name: 'Seleccionar módulo 2', exact: true })
+    .click();
+  await page.waitForTimeout(300);
+  const expectedModuleWidth = await page
+    .locator('[data-module-width-input]')
+    .inputValue();
+  const moduleTexts = await dimLabels.allInnerTexts();
+  check(
+    `3F.1: con módulo seleccionado se muestran sus cotas (${expectedModuleWidth}/2.164)`,
+    (await dimLabels.count()) === 2 &&
+      moduleTexts.includes(`${expectedModuleWidth} mm`) &&
+      moduleTexts.includes('2.164 mm'),
+    moduleTexts.join(' | '),
+  );
+  // Las etiquetas deben caer dentro del encuadre (una cota
+  // mal posicionada en el espacio quedaría fuera de
+  // pantalla aunque su texto fuese correcto).
+  const moduleLabelBox = await dimLabels.first().boundingBox();
+  check(
+    '3F.1: la etiqueta contextual cae dentro del encuadre',
+    moduleLabelBox !== null &&
+      moduleLabelBox.x >= 0 &&
+      moduleLabelBox.y >= 0 &&
+      moduleLabelBox.x + moduleLabelBox.width <= 1440 &&
+      moduleLabelBox.y + moduleLabelBox.height <= 900,
+    moduleLabelBox !== null
+      ? `x=${Math.round(moduleLabelBox.x)} y=${Math.round(moduleLabelBox.y)}`
+      : 'sin caja',
+  );
+  await shootStable(page, 'evidencia-3f1-04-modulo-seleccionado');
+
+  // Al deseleccionar vuelven las cotas generales (margen
+  // izquierdo del lienzo, fuera del mueble).
+  const dimModuleBox = await page.locator('canvas').boundingBox();
+  if (dimModuleBox !== null) {
+    await page.mouse.click(dimModuleBox.x + 12, dimModuleBox.y + 40);
+  }
+  await page.waitForTimeout(300);
+  check(
+    '3F.1: al deseleccionar vuelven las cotas generales',
+    (await dimLabels.count()) === 3 &&
+      (await dimLabels.allInnerTexts()).includes('2.400 mm'),
+  );
+
+  // Unidades: milímetros → centímetros (solo presentación).
+  await page.locator('[data-unit-select]').selectOption('cm');
+  await page.waitForTimeout(500);
+  const cmTexts = await dimLabels.allInnerTexts();
+  check(
+    '3F.1: en centímetros las cotas muestran 240/220/60 cm',
+    cmTexts.includes('240 cm') &&
+      cmTexts.includes('220 cm') &&
+      cmTexts.includes('60 cm'),
+    cmTexts.join(' | '),
+  );
+  await page.locator('[data-unit-select]').selectOption('mm');
+  await page.waitForTimeout(200);
+
+  // Anchos personalizados: la cota del módulo refleja el ancho fijado.
+  await page
+    .getByRole('button', { name: 'Seleccionar módulo 1', exact: true })
+    .click();
+  await page.waitForTimeout(250);
+  const dimWidthInput = page.locator('[data-module-width-input]');
+  await dimWidthInput.fill('900');
+  await dimWidthInput.press('Enter');
+  await page.waitForTimeout(300);
+  check(
+    '3F.1: la cota del módulo refleja el ancho fijado (900 mm)',
+    (await dimLabels.allInnerTexts()).includes('900 mm'),
+  );
+  await shootStable(page, 'evidencia-3f1-06-anchos-personalizados');
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(250);
+  const dimUndoBox = await page.locator('canvas').boundingBox();
+  if (dimUndoBox !== null) {
+    await page.mouse.click(dimUndoBox.x + 12, dimUndoBox.y + 40);
+  }
+  await page.waitForTimeout(200);
+  await openTab(page, 'medidas');
+
+  // Ocultar y mostrar las cotas.
+  await page.getByRole('button', { name: 'Cotas', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3F.1: al ocultar Cotas no quedan etiquetas',
+    (await dimLabels.count()) === 0,
+  );
+  await shootStable(page, 'evidencia-3f1-05-cotas-ocultas');
+  await page.getByRole('button', { name: 'Cotas', exact: true }).click();
+  await page.waitForTimeout(250);
+  check(
+    '3F.1: al volver a Cotas se restauran las etiquetas',
+    (await dimLabels.count()) === 3,
+  );
 
   // Errores de página (crashes de React/WebGL)
   check('sin errores de página durante la sesión', errors.length === 0, errors[0] ?? '');

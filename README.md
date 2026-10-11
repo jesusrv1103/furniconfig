@@ -8,8 +8,9 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 3E — Experiencia de diseño simplificada** (completada).
-Motor paramétrico puro (`packages/geometry-core`) con
+**Fase 3F.1 — Cotas y medición 3D** (en desarrollo en la
+rama `feat/3f1-dimensions`); Fase 3E completada e
+integrada. Motor paramétrico puro (`packages/geometry-core`) con
 paneles estructurales, entrepaños, barras de colgado
 (Fase 2A), cajoneras (Fase 2B) y puertas abatibles
 con tiradores (Fase 2C: hojas de 1–2 por módulo,
@@ -29,7 +30,11 @@ scroll interno en los paneles (el visor nunca desplaza la
 página; en pantallas ≤1200 px el visor va primero),
 selección directa de módulos por clic (resaltado y umbral
 anti-drag), vistas predefinidas, "Ajustar" y "Encuadrar
-módulo", barra superior con deshacer/rehacer (historial
+módulo", **cotas visuales sobre el modelo** (Fase 3F.1,
+ADR-027: ancho/alto/profundidad totales y del módulo
+seleccionado, etiquetas en mm o cm de presentación y
+control para mostrar u ocultarlas), barra superior con
+deshacer/rehacer (historial
 acotado de configuraciones) y atajo a "Mis diseños",
 panel contextual editable a la derecha (tipo, repisas,
 cajones, barra y ancho del módulo con previsualización de

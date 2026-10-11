@@ -3,13 +3,12 @@
 ## Proyecto
 
 **FurniConfig**: SaaS B2B para diseño paramétrico de muebles a medida.
-Primer producto: clósets rectos modulares. Fase actual: **Fase 3E**
-(Experiencia de diseño simplificada: panel de configuración
-en cuatro categorías — Medidas, Interior, Apariencia y Mis
-diseños — con pestañas accesibles WAI-ARIA, visor central
-estable con scroll interno y lógica de pestañas pura en
-`lib/studio/tabs.ts`; completada en la rama
-`feat/3e-simplified-designer`, pendiente de commit/PR).
+Primer producto: clósets rectos modulares. Fase actual: **Fase 3F.1**
+(Cotas y medición 3D: motor de cotas puro en
+`lib/studio/dimensions.ts` — generales y contextuales del módulo
+seleccionado —, render CAD con líneas, flechas y etiquetas sobre el
+modelo, unidades mm/cm de presentación y control "Cotas" en el
+visor; en desarrollo en la rama `feat/3f1-dimensions`).
 La siguiente fase está pendiente de apertura.
 
 Antes de implementar cualquier cosa, lee `README.md`, `docs/architecture.md` y

@@ -1,6 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import {
+import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
+import { Canvas } from '@react-three/fiber';import {
   MAX_DOOR_OPEN_ANGLE_DEG,
   type GeometryResult,
 } from '@furniconfig/geometry-core';
@@ -9,6 +8,8 @@ import {
   type CameraView,
   type ViewRequest,
 } from '../lib/camera-views.js';
+import { computeDimensionSpecs, type MeasureUnit } from '../lib/studio/dimensions.js';
+import { WardrobeDimensions } from './WardrobeDimensions.js';
 import { WardrobeScene } from './WardrobeScene.js';
 
 /**
@@ -66,6 +67,20 @@ export function WardrobeViewer({
 }) {
   const hasDoors = geometry.doors.length > 0;
 
+  // Portal estable para las etiquetas de cotas (Fase 3F.1):
+  // sin él, drei Html recrea su root cuando events.connected
+  // cambia tras el montaje (React 19) y se pierde una etiqueta.
+  const dimensionsPortalRef = useRef<HTMLElement | null>(null);
+
+  // Cotas visuales (Fase 3F.1): generales sin selección,
+  // contextuales con módulo seleccionado. La conversión de
+  // unidades es solo de presentación (el motor sigue en mm).
+  const [dimensionsVisible, setDimensionsVisible] = useState(true);
+  const [measureUnit, setMeasureUnit] = useState<MeasureUnit>('mm');
+  const dimensionSpecs = useMemo(
+    () => computeDimensionSpecs(geometry, selectedModuleId, measureUnit),
+    [geometry, selectedModuleId, measureUnit],
+  );
   const [doorOpenAngleDeg, setDoorOpenAngleDeg] = useState(0);
   const [doorsVisible, setDoorsVisible] = useState(true);
   const [viewRequest, setViewRequest] = useState<ViewRequest | null>(null);
@@ -132,7 +147,20 @@ export function WardrobeViewer({
           clickGuard={clickGuard}
           onModulePicked={onSelectModule}
         />
+        {dimensionsVisible ? (
+          <WardrobeDimensions
+            specs={dimensionSpecs}
+            portal={dimensionsPortalRef as RefObject<HTMLElement>}
+          />
+        ) : null}
       </Canvas>
+      <div
+        ref={(element) => {
+          dimensionsPortalRef.current = element;
+        }}
+        className="dimensions-portal"
+        aria-hidden="true"
+      />
 
       <div
         className="viewer-toolbar"
@@ -176,6 +204,31 @@ export function WardrobeViewer({
           >
             Puertas visibles
           </button>
+        )}
+        <button
+          type="button"
+          className="viewer-view-button viewer-dimensions-toggle"
+          data-action="toggle-dimensions"
+          aria-pressed={dimensionsVisible}
+          onClick={() => setDimensionsVisible((visible) => !visible)}
+          title="Mostrar u ocultar las cotas del mueble"
+        >
+          Cotas
+        </button>
+        {dimensionsVisible && (
+          <label className="viewer-units">
+            <span className="visually-hidden">Unidades de medida</span>
+            <select
+              value={measureUnit}
+              data-unit-select
+              onChange={(event) =>
+                setMeasureUnit(event.target.value as MeasureUnit)
+              }
+            >
+              <option value="mm">mm</option>
+              <option value="cm">cm</option>
+            </select>
+          </label>
         )}
       </div>
 

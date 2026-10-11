@@ -720,6 +720,78 @@ Cobertura: 15 pruebas unitarias nuevas (lógica de pestañas +
 estructura SSR) y 17 verificaciones visuales nuevas con 10
 capturas de evidencia.
 
+### ADR-027 — Cotas y medición visual 3D (Fase 3F.1)
+
+**Problema:** el usuario no podía saber las dimensiones del
+mueble o de un módulo sin leer los campos del panel de
+configuración; no había medición directa sobre el modelo 3D,
+ni opción de ver las medidas en centímetros.
+
+**Decisión — motor de cotas puro (`lib/studio/dimensions.ts`):**
+- Módulo determinista de presentación que deriva las cotas
+  de la geometría ya resuelta por el motor: **sin duplicar
+  reglas de fabricación, sin mutar valores geométricos** y
+  con pruebas propias (exactitud, unidades, posicionamiento,
+  no mutación, estabilidad con puertas).
+- **Cotas generales** (sin selección): ancho total (línea
+  bajo el mueble), altura total (izquierda) y profundidad
+  total (derecha), derivadas de las dimensiones EXTERIORES
+  resueltas por el motor (`wardrobe.widthMm/heightMm/
+  depthMm`): **no cambian al mostrar u ocultar puertas**.
+- **Cotas contextuales** (módulo seleccionado): ancho y alto
+  de **su apertura** — el mismo valor que resuelve el motor
+  y muestra el panel de configuración (`module.widthMm` /
+  `module.heightMm`), centradas en la huella real de las
+  piezas del módulo, sustituyendo a las generales para no
+  saturar el visor. Las hojas de puerta quedan **excluidas**
+  de la huella (`moduleBoundsMm` acepta `includeDoors:
+  false`): la hoja es más ancha que la apertura (monta
+  sobre el frente) y no debe inflar la cota ni hacerla
+  variar según existan puertas (regresión con prueba
+  unitaria). Sin profundidad de módulo: es idéntica en todos
+  y depende de las puertas.
+- Las líneas se colocan **fuera** de la envolvente con
+  líneas de extensión al borde medido y flechas de extremo
+  (offset fijo 60 mm); funcionan en frontal, lateral e
+  isométrica.
+
+**Decisión — render e interacción (`WardrobeDimensions`):**
+- Líneas con drei `Line` (Line2) y etiquetas con drei
+  `Html` apuntando a un **portal DOM estable**
+  (`dimensions-portal`): sin portal, drei 10 recrea el root
+  React de cada etiqueta cuando `events.connected` cambia
+  tras el montaje y se pierde una etiqueta (bug conocido
+  React 19 + drei 10).
+- Presentación estilo CAD: `depthTest` desactivado (las
+  cotas se ven siempre, sin que las oculte el mueble),
+  **`raycast` nulo en líneas y flechas** y `pointer-events:
+  none` en etiquetas: la selección 3D por clic queda intacta
+  (verificada). Las etiquetas proyectan con **`calculatePosition`
+  propio con clamp al interior del lienzo**: si su ancla cae
+  fuera del encuadre (p. ej. la cota de altura en vista
+  frontal), se desplazan hacia dentro en lugar de quedar
+  cortadas por el borde.
+- Color **neutro** (`#4b5563`, croma ≤ 25) a propósito: la
+  suite visual mide la silueta del mueble con una máscara
+  de saturación (`chromaticBox`) y las cotas no deben
+  contaminar esa medición.
+
+**Decisión — unidades e integración:**
+- Selector **mm/cm** en la barra del visor junto al botón
+  "Cotas" (`aria-pressed`). La conversión es exclusivamente
+  de presentación: geometry-core sigue en milímetros
+  enteros (`formatMeasure` en la capa web).
+- Las cotas se muestran por defecto; el botón "Cotas" las
+  oculta/muestra sin tocar la geometría.
+
+**Consecuencias:** 25 pruebas unitarias nuevas (motor de
+cotas puro) y 13 verificaciones visuales nuevas (visibilidad
+por defecto, vistas frontal/lateral/isométrica, selección 3D
+con cotas puestas, cotas contextuales, conversión cm,
+anchos fijados, ocultar/mostrar y móvil) con 7 capturas de
+evidencia. La recuento de botones de la barra del visor
+pasa de 6 a 7.
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa
