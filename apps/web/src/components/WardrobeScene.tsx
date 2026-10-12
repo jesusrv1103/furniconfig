@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import CameraControls from 'camera-controls';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import * as THREE from 'three';
 import {
   BoxGeometry,
   CylinderGeometry,
@@ -166,6 +168,8 @@ export function WardrobeScene({
   onDividerDragMove?: (result: SeparatorDragResult) => void;
   /** Fin de arrastre. */
   onDividerDragEnd?: (result: SeparatorDragResult) => void;
+  /** Referencia a OrbitControls para control de arrastre. */
+  orbitControlsRef?: React.RefObject<CameraControls | null>;
 }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -235,6 +239,10 @@ export function WardrobeScene({
     center: [widthM / 2, heightM / 2, depthM / 2],
     fit: 0,
   });
+
+  // Estado de arrastre de separadores para control de OrbitControls
+  const [isDividerDragging, setIsDividerDragging] = useState(false);
+  const orbitControlsRef = useRef<CameraControls | null>(null);
 
   const handleControlsStart = useCallback(() => {
     cameraRigState.current.view = 'free';
@@ -685,11 +693,18 @@ export function WardrobeScene({
         <DividerDragHandle
           geometry={geometry}
           config={config}
-          onDragStart={onDividerDragStart ?? (() => {})}
+          onDragStart={(index) => {
+            setIsDividerDragging(true);
+            onDividerDragStart?.(index);
+          }}
           onDragMove={onDividerDragMove ?? (() => {})}
-          onDragEnd={onDividerDragEnd ?? (() => {})}
+          onDragEnd={(result) => {
+            setIsDividerDragging(false);
+            onDividerDragEnd?.(result);
+          }}
           dragMode={dividerDragMode}
           enabled={dividerDragEnabled}
+          orbitControlsRef={orbitControlsRef}
         />
       )}
       <gridHelper
@@ -713,6 +728,7 @@ export function WardrobeScene({
         <shadowMaterial opacity={0.3} color="#1f2430" />
       </mesh>
       <OrbitControls
+        ref={orbitControlsRef}
         makeDefault
         target={target}
         enableDamping
