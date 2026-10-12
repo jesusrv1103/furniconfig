@@ -225,6 +225,40 @@ body {
   outline-offset: 1px;
 }
 
+/* Botón de activación de arrastre de separadores (Fase 3F.2). */
+.viewer-divider-drag-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.viewer-divider-drag-toggle[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Selector de modo de arrastre (Fase 3F.2). */
+.viewer-divider-mode {
+  display: inline-flex;
+  align-items: center;
+}
+
+.viewer-divider-mode select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.viewer-divider-mode select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Etiqueta de cota: valor sobre la línea, sin capturar
    clics (pointer-events: none en el contenedor Html).
    Colores neutros (croma ≤ 25) para no contaminar la

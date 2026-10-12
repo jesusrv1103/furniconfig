@@ -390,6 +390,33 @@
       determinismo) y 13 verificaciones visuales nuevas con
       7 capturas de evidencia.
 
+## Fase 3F.2 — Arrastre visual de separadores ✅
+
+- [x] Motor de arrastre puro (`lib/studio/separators.ts`,
+      ADR-028): `computeDragResult` pura que recibe geometría,
+      config, separador, delta y modo; devuelve nueva config,
+      delta aplicado, límites y `clamped`. Solo los dos
+      módulos adyacentes cambian; suma de anchos conservada;
+      respeta mínimos/máximos y anchos fijados/automáticos.
+- [x] Cuantización configurable: paso 1 mm (`precise1`) o
+      10 mm (`step10`), redondeo *half away from zero*;
+      opción `clamp` para limitar a límites válidos.
+- [x] Interacción 3D (`DividerDragHandle`): indicador visual
+      por división (área invisible + línea con mangos),
+      `pointer capture`, raycasting plano Y=0, `Escape` para
+      cancelar, `raycast` nulo en indicadores (no interfiere
+      con selección 3D).
+- [x] Integración e historial: botón "Arrastre divisores"
+      (`aria-pressed`) + selector modo (1 mm / 10 mm) en
+      barra del visor; callbacks `onDividerDragMove/End`
+      generan una sola entrada en historial por arrastre
+      completo; `Escape`/`cancel` restauran estado inicial.
+- [x] Accesibilidad: `aria-pressed`, `Escape`, etiquetas
+      `visually-hidden`; edición numérica sigue disponible.
+- [x] Pruebas: 17 unitarias nuevas (límites, cuantización,
+      anchos fijados/automáticos/mixtos, no mutación,
+      determinismo) y 3 visuales nuevas con 3 capturas.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.

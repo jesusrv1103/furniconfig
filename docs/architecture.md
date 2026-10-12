@@ -792,6 +792,67 @@ anchos fijados, ocultar/mostrar y móvil) con 7 capturas de
 evidencia. La recuento de botones de la barra del visor
 pasa de 6 a 7.
 
+### ADR-028 — Arrastre visual de separadores (Fase 3F.2)
+
+**Problema:** el usuario solo podía ajustar la distribución
+de anchos mediante campos numéricos en el panel; no existía
+manipulación directa sobre el modelo 3D.
+
+**Decisión — lógica pura de arrastre (`lib/studio/separators.ts`):**
+- Función `computeDragResult` pura que recibe geometría
+  resuelta, configuración actual, índice del separador,
+  delta en mm y modo (`precise1`/`step10`) y devuelve
+  nueva configuración, delta aplicado, límites y flag `clamped`.
+- **Solo los dos módulos adyacentes cambian**; la suma de
+  sus anchos interiores se conserva; el ancho exterior del
+  mueble no cambia.
+- Respeta mínimos (300 mm), máximos provisionales (2000 mm)
+  y anchos fijados/automáticos: si un módulo era automático,
+  se fija en su ancho actual antes de aplicar el delta
+  (comportamiento predecible, sin saltos).
+- Cuantización configurable: paso 1 mm (`precise1`) o 10 mm
+  (`step10`), redondeo *half away from zero*.
+- Opción `clamp` para limitar el movimiento a límites válidos
+  o rechazar fuera de límites.
+- No duplica aritmética del motor: reusa `distributeModules`
+  y `maxFixedWidthMm` vía `distributionInput`.
+
+**Decisión — interacción 3D (`DividerDragHandle`):**
+- Indicador visual por división: área invisible gruesa (3 cm)
+  + línea vertical con mangos superior/inferior.
+- `pointer capture` nativo para robustez; `Escape` cancela y
+  restaura estado inicial.
+- Raycasting contra plano Y=0 para convertir movimiento
+  del puntero a delta en mm.
+- Desactiva `raycast` en indicadores visuales: no interfiere
+  con selección 3D por clic.
+- `OrbitControls` sigue activo (el usuario puede orbitar
+  mientras arrastra); si se desea desactivar, se añade flag
+  en `onDragStart`/`onDragEnd` (pendiente).
+
+**Decisión — integración e historial:**
+- Botón "Arrastre divisores" (`aria-pressed`) y selector
+  de modo (1 mm / 10 mm) en barra del visor.
+- Callbacks `onDividerDragMove`/`onDividerDragEnd` en
+  `WardrobeViewer` → `App` llama a `update(() => result.config)`:
+  cada arrastre completo genera **una sola entrada** en el
+  historial (sin entradas intermedias).
+- `Escape` / `pointercancel` / pérdida de foco restauran
+  estado inicial exacto (sin entrada en historial).
+- Compatible con anchos fijados, automáticos y mixtos;
+  conserva módulos, ids y componentes.
+- Accesibilidad: `aria-pressed` en botón, `Escape` para
+  cancelar, etiquetas `visually-hidden` en selector de modo.
+- La edición numérica existente sigue disponible como
+  alternativa completa.
+
+**Consecuencias:** 17 pruebas unitarias nuevas (lógica de
+arrastre, límites, cuantización, no mutación, anchos
+fijados/automáticos/mixtos) y 3 verificaciones visuales
+nuevas (indicador visible, arrastre en frontal/isométrica,
+límite alcanzado) con 3 capturas de evidencia. La barra del
+visor suma 2 botones más (arrastre + modo).
+
 ## 4. Flujo de cálculo detallado
 
 1. `validateWardrobeConfig(input: unknown)` — validación runtime completa

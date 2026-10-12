@@ -215,13 +215,14 @@ export function setModuleDrawers(
 // del reparto; aquí solo se declaran/liberan anchos y se
 // consulta al motor si el resultado sigue siendo válido.
 
-function distributionInput(config: WardrobeConfig) {
+export function distributionInput(config: WardrobeConfig) {
   return {
     totalWidthMm: config.dimensions.widthMm,
     moduleCount: config.modules.length,
     sideThicknessMm: config.materials.structure.thicknessMm,
     dividerThicknessMm: config.materials.structure.thicknessMm,
     declaredWidthsMm: config.modules.map((module) => module.widthMm),
+    minModuleWidthMm: WARDROBE_LIMITS.moduleWidthMm.min,
   };
 }
 
@@ -250,7 +251,7 @@ function withoutDeclaredWidth(module: ModuleConfig): ModuleConfig {
   return next;
 }
 
-function equalizeAllWidths(config: WardrobeConfig): WardrobeConfig {
+export function equalizeAllWidths(config: WardrobeConfig): WardrobeConfig {
   if (!config.modules.some((module) => module.widthMm !== undefined)) {
     return config;
   }

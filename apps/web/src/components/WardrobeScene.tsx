@@ -16,7 +16,9 @@ import {
   type GeometryResult,
   type Material,
   type RodAxis,
+  type WardrobeConfig,
 } from '@furniconfig/geometry-core';
+import { SeparatorDragResult } from '../lib/studio/separators.js';
 import { toRenderMaterial, toRenderRodMaterial } from '../lib/materials.js';
 import {
   toRenderablePanels,
@@ -33,6 +35,7 @@ import {
   type CameraView,
   type ViewRequest,
 } from '../lib/camera-views.js';
+import { DividerDragHandle } from './DividerDragHandle.js';
 import { moduleBoundsMm } from '../lib/studio/selection.js';
 import { mmToM } from '../lib/units.js';
 
@@ -112,6 +115,12 @@ export function WardrobeScene({
   focusNonce = 0,
   clickGuard,
   onModulePicked,
+  config,
+  dividerDragMode = 'precise1',
+  dividerDragEnabled = false,
+  onDividerDragStart,
+  onDividerDragMove,
+  onDividerDragEnd,
 }: {
   geometry: GeometryResult;
   /**
@@ -145,6 +154,18 @@ export function WardrobeScene({
   clickGuard?: (native: { clientX: number; clientY: number }) => boolean;
   /** Un clic sobre una pieza eligió un módulo (`null`: pieza global). */
   onModulePicked?: (moduleId: string | null) => void;
+  /** Configuración actual (para arrastre de separadores). */
+  config?: WardrobeConfig;
+  /** Modo de arrastre de separadores. */
+  dividerDragMode?: 'precise1' | 'step10';
+  /** Habilita arrastre de separadores. */
+  dividerDragEnabled?: boolean;
+  /** Inicio de arrastre de separador. */
+  onDividerDragStart?: (separatorIndex: number) => void;
+  /** Movimiento durante arrastre. */
+  onDividerDragMove?: (result: SeparatorDragResult) => void;
+  /** Fin de arrastre. */
+  onDividerDragEnd?: (result: SeparatorDragResult) => void;
 }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -660,6 +681,17 @@ export function WardrobeScene({
             );
           })}
       </group>
+      {dividerDragEnabled && config && (
+        <DividerDragHandle
+          geometry={geometry}
+          config={config}
+          onDragStart={onDividerDragStart ?? (() => {})}
+          onDragMove={onDividerDragMove ?? (() => {})}
+          onDragEnd={onDividerDragEnd ?? (() => {})}
+          dragMode={dividerDragMode}
+          enabled={dividerDragEnabled}
+        />
+      )}
       <gridHelper
         args={[
           gridSize,

@@ -3,12 +3,13 @@
 ## Proyecto
 
 **FurniConfig**: SaaS B2B para diseño paramétrico de muebles a medida.
-Primer producto: clósets rectos modulares. Fase actual: **Fase 3F.1**
-(Cotas y medición 3D: motor de cotas puro en
-`lib/studio/dimensions.ts` — generales y contextuales del módulo
-seleccionado —, render CAD con líneas, flechas y etiquetas sobre el
-modelo, unidades mm/cm de presentación y control "Cotas" en el
-visor; en desarrollo en la rama `feat/3f1-dimensions`).
+Primer producto: clósets rectos modulares. Fase actual: **Fase 3F.2**
+(Arrastre visual de separadores: motor puro en
+`lib/studio/separators.ts` — `computeDragResult`, cuantización
+1/10 mm, clamp; componente 3D `DividerDragHandle` con `pointer capture`,
+raycasting plano Y=0, Escape; botón "Arrastre divisores" + selector
+1/10 mm en barra; historial una entrada por arrastre, Escape cancela;
+en desarrollo en la rama `feat/3f2-drag-separators`).
 La siguiente fase está pendiente de apertura.
 
 Antes de implementar cualquier cosa, lee `README.md`, `docs/architecture.md` y

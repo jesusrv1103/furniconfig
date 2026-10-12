@@ -14,6 +14,7 @@ import { moduleContext, resolveSelection } from './lib/studio/selection.js';
 import { type ConfigTabId } from './lib/studio/tabs.js';
 import { useDesignSession } from './hooks/use-design-session.js';
 import { useEditorHistory } from './hooks/use-editor-history.js';
+import { SeparatorDragResult } from './lib/studio/separators.js';
 
 // Carga diferida: Three.js es pesado y no bloquea la UI inicial.
 // El módulo usa exports nombrados, así que se adapta al
@@ -243,8 +244,23 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
             >
               <WardrobeViewer
                 geometry={derived.geometry}
+                config={config}
                 selectedModuleId={selectionId}
                 onSelectModule={setSelectedModuleId}
+                onDividerDragMove={useCallback(
+                  (result: SeparatorDragResult) => {
+                    update(() => result.config);
+                  },
+                  [update],
+                )}
+                onDividerDragEnd={useCallback(
+                  (result: SeparatorDragResult) => {
+                    if (result.changed) {
+                      update(() => result.config);
+                    }
+                  },
+                  [update],
+                )}
               />
             </Suspense>
           ) : (
