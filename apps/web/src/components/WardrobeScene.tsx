@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import * as THREE from 'three';
 import {
   BoxGeometry,
   CylinderGeometry,
@@ -16,7 +17,9 @@ import {
   type GeometryResult,
   type Material,
   type RodAxis,
+  type WardrobeConfig,
 } from '@furniconfig/geometry-core';
+import { SeparatorDragResult } from '../lib/studio/separators.js';
 import { toRenderMaterial, toRenderRodMaterial } from '../lib/materials.js';
 import {
   toRenderablePanels,
@@ -33,6 +36,7 @@ import {
   type CameraView,
   type ViewRequest,
 } from '../lib/camera-views.js';
+import { DividerDragHandle } from './DividerDragHandle.js';
 import { moduleBoundsMm } from '../lib/studio/selection.js';
 import { mmToM } from '../lib/units.js';
 
@@ -112,6 +116,12 @@ export function WardrobeScene({
   focusNonce = 0,
   clickGuard,
   onModulePicked,
+  config,
+  dividerDragMode = 'precise1',
+  dividerDragEnabled = false,
+  onDividerDragStart,
+  onDividerDragMove,
+  onDividerDragEnd,
 }: {
   geometry: GeometryResult;
   /**
@@ -145,6 +155,24 @@ export function WardrobeScene({
   clickGuard?: (native: { clientX: number; clientY: number }) => boolean;
   /** Un clic sobre una pieza eligió un módulo (`null`: pieza global). */
   onModulePicked?: (moduleId: string | null) => void;
+  /** Configuración actual (para arrastre de separadores). */
+  config?: WardrobeConfig;
+  /** Modo de arrastre de separadores. */
+  dividerDragMode?: 'precise1' | 'step10';
+  /** Habilita arrastre de separadores. */
+  dividerDragEnabled?: boolean;
+  /** Inicio de arrastre de separador. */
+  onDividerDragStart?: (separatorIndex: number) => void;
+  /** Movimiento durante arrastre. */
+  onDividerDragMove?: (result: SeparatorDragResult) => void;
+  /** Fin de arrastre. */
+  onDividerDragEnd?: (result: SeparatorDragResult) => void;
+  /**
+   * Referencia a OrbitControls para control de arrastre.
+   * Tipo estructural mínimo (solo `enabled`): evita
+   * depender del tipo concreto de drei/three-stdlib.
+   */
+  orbitControlsRef?: React.RefObject<{ enabled: boolean } | null>;
 }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -214,6 +242,10 @@ export function WardrobeScene({
     center: [widthM / 2, heightM / 2, depthM / 2],
     fit: 0,
   });
+
+  // Estado de arrastre de separadores para control de OrbitControls
+  const [isDividerDragging, setIsDividerDragging] = useState(false);
+  const orbitControlsRef = useRef<{ enabled: boolean } | null>(null);
 
   const handleControlsStart = useCallback(() => {
     cameraRigState.current.view = 'free';
@@ -660,6 +692,24 @@ export function WardrobeScene({
             );
           })}
       </group>
+      {dividerDragEnabled && config && (
+        <DividerDragHandle
+          geometry={geometry}
+          config={config}
+          onDragStart={(index) => {
+            setIsDividerDragging(true);
+            onDividerDragStart?.(index);
+          }}
+          onDragMove={onDividerDragMove ?? (() => {})}
+          onDragEnd={(result) => {
+            setIsDividerDragging(false);
+            onDividerDragEnd?.(result);
+          }}
+          dragMode={dividerDragMode}
+          enabled={dividerDragEnabled}
+          orbitControlsRef={orbitControlsRef}
+        />
+      )}
       <gridHelper
         args={[
           gridSize,
@@ -681,6 +731,7 @@ export function WardrobeScene({
         <shadowMaterial opacity={0.3} color="#1f2430" />
       </mesh>
       <OrbitControls
+        ref={orbitControlsRef}
         makeDefault
         target={target}
         enableDamping

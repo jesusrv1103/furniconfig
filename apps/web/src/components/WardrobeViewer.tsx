@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
-import { Canvas } from '@react-three/fiber';import {
+import { Canvas } from '@react-three/fiber';
+import {
   MAX_DOOR_OPEN_ANGLE_DEG,
   type GeometryResult,
+  type WardrobeConfig,
 } from '@furniconfig/geometry-core';
 import {
   VIEWER_FOV_DEG,
@@ -9,6 +11,8 @@ import {
   type ViewRequest,
 } from '../lib/camera-views.js';
 import { computeDimensionSpecs, type MeasureUnit } from '../lib/studio/dimensions.js';
+import { SeparatorDragResult } from '../lib/studio/separators.js';
+import { SeparatorKeyboardControls } from './SeparatorKeyboardControls.js';
 import { WardrobeDimensions } from './WardrobeDimensions.js';
 import { WardrobeScene } from './WardrobeScene.js';
 
@@ -58,12 +62,24 @@ export function WardrobeViewer({
   geometry,
   selectedModuleId = null,
   onSelectModule,
+  config,
+  onDividerDragStart,
+  onDividerDragMove,
+  onDividerDragEnd,
 }: {
   geometry: GeometryResult;
   /** Id del módulo seleccionado (resaltado en escena). */
   selectedModuleId?: string | null;
   /** Cambia la selección; `null` deselecciona. */
   onSelectModule?: (moduleId: string | null) => void;
+  /** Configuración actual (para arrastre de separadores). */
+  config?: WardrobeConfig;
+  /** Inicio de arrastre de separador. */
+  onDividerDragStart?: (separatorIndex: number) => void;
+  /** Movimiento durante arrastre. */
+  onDividerDragMove?: (result: SeparatorDragResult) => void;
+  /** Fin de arrastre. */
+  onDividerDragEnd?: (result: SeparatorDragResult) => void;
 }) {
   const hasDoors = geometry.doors.length > 0;
 
@@ -83,6 +99,8 @@ export function WardrobeViewer({
   );
   const [doorOpenAngleDeg, setDoorOpenAngleDeg] = useState(0);
   const [doorsVisible, setDoorsVisible] = useState(true);
+  const [dividerDragEnabled, setDividerDragEnabled] = useState(false);
+  const [dividerDragMode, setDividerDragMode] = useState<'precise1' | 'step10'>('precise1');
   const [viewRequest, setViewRequest] = useState<ViewRequest | null>(null);
   const [focusNonce, setFocusNonce] = useState(0);
 
@@ -146,6 +164,12 @@ export function WardrobeViewer({
           focusNonce={focusNonce}
           clickGuard={clickGuard}
           onModulePicked={onSelectModule}
+          config={config}
+          dividerDragMode={dividerDragMode}
+          dividerDragEnabled={dividerDragEnabled}
+          onDividerDragStart={onDividerDragStart}
+          onDividerDragMove={onDividerDragMove}
+          onDividerDragEnd={onDividerDragEnd}
         />
         {dimensionsVisible ? (
           <WardrobeDimensions
@@ -230,7 +254,42 @@ export function WardrobeViewer({
             </select>
           </label>
         )}
+        <button
+          type="button"
+          className="viewer-view-button viewer-divider-drag-toggle"
+          data-action="toggle-divider-drag"
+          aria-pressed={dividerDragEnabled}
+          onClick={() => setDividerDragEnabled((visible) => !visible)}
+          title="Activar/desactivar arrastre de separadores"
+        >
+          Arrastre divisores
+        </button>
+        {dividerDragEnabled && (
+          <label className="viewer-divider-mode">
+            <span className="visually-hidden">Modo de arrastre</span>
+            <select
+              value={dividerDragMode}
+              data-divider-drag-mode-select
+              onChange={(event) =>
+                setDividerDragMode(event.target.value as 'precise1' | 'step10')
+              }
+            >
+              <option value="precise1">1 mm</option>
+              <option value="step10">10 mm</option>
+            </select>
+          </label>
+        )}
       </div>
+
+      {dividerDragEnabled && config && onDividerDragMove && onDividerDragEnd && (
+        <SeparatorKeyboardControls
+          geometry={geometry}
+          config={config}
+          dragMode={dividerDragMode}
+          onMove={onDividerDragMove}
+          onEnd={onDividerDragEnd}
+        />
+      )}
 
       {showDoors && (
         <div className="viewer-controls" aria-label="Controles del visualizador">

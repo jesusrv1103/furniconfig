@@ -14,6 +14,7 @@ import { moduleContext, resolveSelection } from './lib/studio/selection.js';
 import { type ConfigTabId } from './lib/studio/tabs.js';
 import { useDesignSession } from './hooks/use-design-session.js';
 import { useEditorHistory } from './hooks/use-editor-history.js';
+import { SeparatorDragResult } from './lib/studio/separators.js';
 
 // Carga diferida: Three.js es pesado y no bloquea la UI inicial.
 // El módulo usa exports nombrados, así que se adapta al
@@ -71,6 +72,15 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
   // ConfigPanel, que es controlado desde aquí.
   const [activeTab, setActiveTab] = useState<ConfigTabId>('medidas');
 
+  // Previsualización de arrastre de separadores (Fase 3F.2):
+  // la geometría del visor sigue este borrador mientras dura
+  // el gesto, SIN tocar el historial. Al soltar se confirma
+  // con una sola entrada (`update`); al cancelar se descarta
+  // y queda exactamente el estado inicial. La sesión de
+  // diseños sigue la configuración confirmada, no el borrador.
+  const [dragPreview, setDragPreview] = useState<WardrobeConfig | null>(null);
+  const previewConfig = dragPreview ?? config;
+
   // Cambios EXTERNOS de proyecto desde la sesión 3B: nuevo
   // historial y selección limpia (nunca se mezclan dos
   // diseños en el historial). Identidad estable: la sesión
@@ -78,6 +88,7 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
   const handleSessionConfigChange = useCallback(
     (next: WardrobeConfig) => {
       resetTo(next);
+      setDragPreview(null);
       setSelectedModuleId(null);
     },
     [resetTo],
@@ -92,7 +103,8 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
   // Estado derivado de forma pura: el motor es la fuente
   // única de verdad (validación de forma y cálculo
   // geométrico, con captura explícita de GeometryError).
-  const derived = useMemo(() => deriveGeometryState(config), [config]);
+  // Durante un arrastre, el visor previsualiza el borrador.
+  const derived = useMemo(() => deriveGeometryState(previewConfig), [previewConfig]);
 
   const geometryIssues: readonly ConfigIssue[] =
     derived.geometryError === null
@@ -130,8 +142,30 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
 
   const handleReset = useCallback(() => {
     // Un restablecer es una edición más: deshacerable.
+    setDragPreview(null);
     update(() => resetConfig());
   }, [update]);
+
+  // Callbacks de arrastre SIEMPRE en el nivel superior: van
+  // como props de un JSX condicional (visor válido/inválido)
+  // y definirlos inline cambiaría el conteo de hooks entre
+  // renders (crash "fewer hooks" en estado inválido).
+  const handleDividerDragMove = useCallback(
+    (result: SeparatorDragResult) => {
+      setDragPreview(result.config);
+    },
+    [],
+  );
+  const handleDividerDragEnd = useCallback(
+    (result: SeparatorDragResult) => {
+      // Un gesto completo = una sola entrada de historial.
+      if (result.changed) {
+        update(() => result.config);
+      }
+      setDragPreview(null);
+    },
+    [update],
+  );
 
   const issueCount =
     (derived.validation.ok ? 0 : derived.validation.errors.length) +
@@ -243,8 +277,11 @@ export function App({ initialConfig = DEFAULT_CONFIG }: AppProps) {
             >
               <WardrobeViewer
                 geometry={derived.geometry}
+                config={config}
                 selectedModuleId={selectionId}
                 onSelectModule={setSelectedModuleId}
+                onDividerDragMove={handleDividerDragMove}
+                onDividerDragEnd={handleDividerDragEnd}
               />
             </Suspense>
           ) : (

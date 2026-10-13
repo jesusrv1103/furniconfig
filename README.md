@@ -8,46 +8,56 @@ visualiza los cambios inmediatamente y solicita cotizaciones.
 
 ## Estado actual
 
-**Fase 3F.1 — Cotas y medición 3D** (en desarrollo en la
-rama `feat/3f1-dimensions`); Fase 3E completada e
-integrada. Motor paramétrico puro (`packages/geometry-core`) con
-paneles estructurales, entrepaños, barras de colgado
-(Fase 2A), cajoneras (Fase 2B) y puertas abatibles
-con tiradores (Fase 2C: hojas de 1–2 por módulo,
-montadas sobre el frente, con apertura pura de
-presentación 0–110° y eje de bisagra en el plano medio
-del canto — corrección con evidencia de la Fase 3A);
-panel trasero opcional por encaje; y **anchos
-individuales por módulo** (Fase 3D: ancho interior libre
-en mm enteros, compatible con el reparto uniforme
-histórico, con suma exacta y códigos de error
-estables). La interfaz es un **estudio de diseño 3D**
-(`apps/web`, React + Three.js) organizado en **cuatro
-categorías** (Fase 3E, ADR-026): Medidas, Interior,
-Apariencia y Mis diseños, con pestañas accesibles
-WAI-ARIA (flechas/Home/End), visor central estable con
-scroll interno en los paneles (el visor nunca desplaza la
-página; en pantallas ≤1200 px el visor va primero),
-selección directa de módulos por clic (resaltado y umbral
-anti-drag), vistas predefinidas, "Ajustar" y "Encuadrar
-módulo", **cotas visuales sobre el modelo** (Fase 3F.1,
-ADR-027: ancho/alto/profundidad totales y del módulo
-seleccionado, etiquetas en mm o cm de presentación y
-control para mostrar u ocultarlas), barra superior con
-deshacer/rehacer (historial
-acotado de configuraciones) y atajo a "Mis diseños",
-panel contextual editable a la derecha (tipo, repisas,
-cajones, barra y ancho del módulo con previsualización de
-los módulos afectados), barra inferior de estado, paneles
-laterales colapsables y modo sencillo/avanzado. Sección
-"Proyectos": guardado local de diseños (`localStorage`
-vía contrato `DesignRepository`) con guardado
-automático, recuperación de sesión tras recargar, CRUD
-con confirmaciones y export/importación de JSON
-validado. CI en GitHub Actions para Pull Requests hacia
-`main` (npm ci, typecheck, pruebas y build; Node 22, sin
-secretos). No hay backend, autenticación, pagos ni
-cotizaciones todavía (Fases 3–4).
+**Fase 3F.2 — Arrastre visual de separadores** (en desarrollo
+en la rama `feat/3f2-drag-separators`); Fase 3F.1
+completada e integrada. Motor paramétrico puro
+(`packages/geometry-core`) con paneles estructurales,
+entrepaños, barras de colgado (Fase 2A), cajoneras (Fase 2B)
+y puertas abatibles con tiradores (Fase 2C: hojas de 1–2 por
+módulo, montadas sobre el frente, con apertura pura de
+presentación 0–110° y eje de bisagra en el plano medio del
+canto — corrección con evidencia de la Fase 3A); panel
+trasero opcional por encaje; **anchos individuales por
+módulo** (Fase 3D: ancho interior libre en mm enteros,
+compatible con el reparto uniforme histórico, con suma
+exacta y códigos de error estables); **cotas visuales 3D**
+(Fase 3F.1: motor puro `lib/studio/dimensions.ts` con
+cotas generales y contextuales, render CAD con líneas,
+flechas y etiquetas, unidades mm/cm, control "Cotas" en
+visor); **arrastre visual de separadores** (Fase 3F.2:
+motor puro `lib/studio/separators.ts` — `computeDragResult`,
+cuantización 1/10 mm, clamp; componente 3D `DividerDragHandle`
+con `pointer capture`, raycasting plano Y=0, Escape; botón
+"Arrastre divisores" + selector 1/10 mm en barra; historial
+una entrada por arrastre, Escape cancela). La interfaz es un
+**estudio de diseño 3D** (`apps/web`, React + Three.js)
+organizado en **cuatro categorías** (Fase 3E, ADR-026):
+Medidas, Interior, Apariencia y Mis diseños, con pestañas
+accesibles WAI-ARIA (flechas/Home/End), visor central
+estable con scroll interno en los paneles (el visor nunca
+desplaza la página; en pantallas ≤1200 px el visor va
+primero), selección directa de módulos por clic (resaltado
+y umbral anti-drag), vistas predefinidas, "Ajustar" y
+"Encuadrar módulo", **cotas visuales sobre el modelo**
+(Fase 3F.1, ADR-027: ancho/alto/profundidad totales y del
+módulo seleccionado, etiquetas en mm o cm de presentación y
+control para mostrar u ocultarlas), **arrastre visual de
+separadores** (Fase 3F.2, ADR-028: indicador por división,
+arrastre con `pointer capture`, raycasting plano Y=0, modo
+1/10 mm, historial una entrada, Escape cancela), barra
+superior con deshacer/rehacer (historial acotado de
+configuraciones) y atajo a "Mis diseños", panel contextual
+editable a la derecha (tipo, repisas, cajones, barra y
+ancho del módulo con previsualización de los módulos
+afectados), barra inferior de estado, paneles laterales
+colapsables y modo sencillo/avanzado. Sección "Proyectos":
+guardado local de diseños (`localStorage` vía contrato
+`DesignRepository`) con guardado automático, recuperación
+de sesión tras recargar, CRUD con confirmaciones y
+export/importación de JSON validado. CI en GitHub Actions
+para Pull Requests hacia `main` (npm ci, typecheck, pruebas
+y build; Node 22, sin secretos). No hay backend,
+autenticación, pagos ni cotizaciones todavía (Fases 3–4).
 
 ## Stack
 

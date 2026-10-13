@@ -390,6 +390,40 @@
       determinismo) y 13 verificaciones visuales nuevas con
       7 capturas de evidencia.
 
+## Fase 3F.2 — Arrastre visual de separadores ✅
+
+- [x] Motor de arrastre puro (`lib/studio/separators.ts`,
+      ADR-028): `computeDragResult` pura que recibe geometría,
+      config, separador, delta y modo; devuelve nueva config,
+      delta aplicado, límites y `clamped`. Solo los dos
+      módulos adyacentes cambian; suma de anchos conservada;
+      respeta mínimos/máximos y anchos fijados/automáticos.
+- [x] Cuantización configurable: paso 1 mm (`precise1`) o
+      10 mm (`step10`), redondeo *half away from zero*;
+      opción `clamp` para limitar a límites válidos.
+- [x] Interacción 3D (`DividerDragHandle`): área de agarre
+      siempre raycasteable + indicador visual (línea con
+      mangos) en hover/arrastre; `pointer capture` sobre
+      `gl.domElement`; plano vertical robusto (vista lateral
+      degenerada no arranca); confirmación con último
+      resultado; `Escape`/cancel/foco/desmontaje restauran.
+- [x] OrbitControls: desactivado solo durante el arrastre
+      válido (`createOrbitGuard` idempotente); el hover no
+      toca la cámara.
+- [x] Integración e historial: botón "Arrastre divisores"
+      (`aria-pressed`) + selector modo (1 mm / 10 mm) en
+      barra del visor; `WardrobeViewer` reenvía `config` y
+      callbacks a la escena; `App` previsualiza con borrador
+      (`dragPreview`) y confirma con una sola entrada;
+      `Escape`/`cancel` restauran estado inicial.
+- [x] Accesibilidad: controles DOM reales por separador
+      (botones −/+ por Tab, flechas ←/→ sin desplazar la
+      página, valores y rango del motor, límites
+      deshabilitados); edición numérica sigue disponible.
+- [x] Pruebas: 19 unitarias de arrastre + 16 de helpers de
+      interacción + 5 de teclado (SSR) y 10 verificaciones
+      visuales nuevas con 3 capturas de evidencia.
+
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
 - Muebles para TV, armarios y cocinas.

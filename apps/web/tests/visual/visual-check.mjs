@@ -786,8 +786,8 @@ try {
     (await viewer.getAttribute('data-view')) === 'isometric',
   );
   check(
-    'la barra de vistas expone 3 vistas + ajuste + encuadre + puertas + cotas',
-    (await page.locator('.viewer-toolbar button').count()) === 7,
+    'la barra de vistas expone 3 vistas + ajuste + encuadre + puertas + cotas + arrastre',
+    (await page.locator('.viewer-toolbar button').count()) === 8,
   );
 
   // 9a. Vistas predefinidas: encuadre medido sobre la
@@ -2447,6 +2447,171 @@ try {
     '3F.1: al volver a Cotas se restauran las etiquetas',
     (await dimLabels.count()) === 3,
   );
+
+  // ── Fase 3F.2: arrastre visual de separadores ──────
+  // Los valores absolutos dependen de los pasos previos de
+  // la suite (3D fija anchos): todas las comprobaciones son
+  // RELATIVAS al estado real leído del propio editor (misma
+  // fuente de verdad que el bloque 3F.1).
+  function parseSepReadout(text) {
+    const match = text.match(/módulo \d+ ([\d.]+) mm ↔ módulo \d+ ([\d.]+) mm/);
+    if (!match) {
+      return null;
+    }
+    return {
+      left: Number(match[1].replace(/\./g, '')),
+      right: Number(match[2].replace(/\./g, '')),
+    };
+  }
+  await page.getByRole('button', { name: 'Arrastre divisores', exact: true }).click();
+  await page.waitForTimeout(300);
+  const sepControls = page.locator('[data-separator-controls]');
+  check(
+    '3F.2: activar el arrastre muestra los controles de separador',
+    (await sepControls.count()) === 1,
+  );
+  const sepCount = await sepControls.getAttribute('data-separator-controls');
+  check(
+    '3F.2: hay un control por cada división (2 con 3 módulos)',
+    sepCount === '2',
+    `separadores=${sepCount ?? '?'}`,
+  );
+  const sepInitial = parseSepReadout(
+    await page.locator('[data-separator-readout="0"]').innerText(),
+  );
+  check(
+    '3F.2: el readout muestra anchos actuales y rango del motor',
+    sepInitial !== null &&
+      (await page.locator('[data-separator-readout="0"]').innerText()).includes('rango'),
+    sepInitial === null ? 'sin parseo' : `${sepInitial.left}/${sepInitial.right}`,
+  );
+  await shootStable(page, 'evidencia-3f2-01-controles');
+
+  // Botón +: una pulsación = una operación (preview +
+  // confirmación inmediata, paso 1 mm por defecto). Solo los
+  // dos módulos vecinos cambian y su suma se conserva.
+  await page.locator('[data-separator-inc="0"]').click();
+  await page.waitForTimeout(400);
+  const sepAfterInc = parseSepReadout(
+    await page.locator('[data-separator-readout="0"]').innerText(),
+  );
+  check(
+    '3F.2: +1 mm mueve el separador sin cambiar la suma vecina',
+    sepInitial !== null &&
+      sepAfterInc !== null &&
+      sepAfterInc.left === sepInitial.left + 1 &&
+      sepAfterInc.right === sepInitial.right - 1 &&
+      sepAfterInc.left + sepAfterInc.right === sepInitial.left + sepInitial.right,
+    sepAfterInc === null ? 'sin parseo' : `${sepAfterInc.left}/${sepAfterInc.right}`,
+  );
+  // El ancho exterior del mueble no cambia.
+  const sepSummary = await page.locator('.summary').innerText();
+  check(
+    '3F.2: el ancho exterior se conserva tras el ajuste (2.400 mm)',
+    sepSummary.includes('2.400 mm'),
+  );
+
+  // Paso configurable: 10 mm por pulsación.
+  await page.locator('[data-divider-drag-mode-select]').selectOption('step10');
+  await page.waitForTimeout(250);
+  await page.locator('[data-separator-inc="0"]').click();
+  await page.waitForTimeout(400);
+  const sepAfterStep10 = parseSepReadout(
+    await page.locator('[data-separator-readout="0"]').innerText(),
+  );
+  check(
+    '3F.2: en modo 10 mm una pulsación suma 10 al vecino izquierdo',
+    sepAfterInc !== null &&
+      sepAfterStep10 !== null &&
+      sepAfterStep10.left === sepAfterInc.left + 10 &&
+      sepAfterStep10.right === sepAfterInc.right - 10,
+    sepAfterStep10 === null ? 'sin parseo' : `${sepAfterStep10.left}/${sepAfterStep10.right}`,
+  );
+  await shootStable(page, 'evidencia-3f2-02-ajuste');
+
+  // Las cotas del módulo reflejan el ajuste (fuente de
+  // verdad cruzada: cotas 3F.1 contra readout 3F.2).
+  await openTab(page, 'interior');
+  await page
+    .getByRole('button', { name: 'Seleccionar módulo 1', exact: true })
+    .click();
+  await page.waitForTimeout(300);
+  const sepModuleTexts = await dimLabels.allInnerTexts();
+  check(
+    '3F.2: la cota del módulo refleja el ajuste',
+    sepAfterStep10 !== null &&
+      sepModuleTexts.includes(`${sepAfterStep10.left} mm`),
+    sepModuleTexts.join(' | '),
+  );
+  await shootStable(page, 'evidencia-3f2-03-cotas-actualizadas');
+  const sepCanvasBox = await page.locator('canvas').boundingBox();
+  if (sepCanvasBox !== null) {
+    await page.mouse.click(sepCanvasBox.x + 12, sepCanvasBox.y + 40);
+  }
+  await page.waitForTimeout(300);
+
+  // Teclado: flecha derecha sobre el control enfocado, con
+  // el paso vigente (10 mm).
+  const sepKeyBefore = parseSepReadout(
+    await page.locator('[data-separator-readout="1"]').innerText(),
+  );
+  await page.locator('[data-separator-inc="1"]').focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(400);
+  const sepAfterKey = parseSepReadout(
+    await page.locator('[data-separator-readout="1"]').innerText(),
+  );
+  check(
+    '3F.2: la flecha derecha ajusta con el paso vigente (+10)',
+    sepKeyBefore !== null &&
+      sepAfterKey !== null &&
+      sepAfterKey.left === sepKeyBefore.left + 10 &&
+      sepAfterKey.right === sepKeyBefore.right - 10,
+    sepAfterKey === null ? 'sin parseo' : `${sepAfterKey.left}/${sepAfterKey.right}`,
+  );
+
+  // Cada operación es una sola entrada de historial: tres
+  // Deshacer revierten las tres operaciones en orden.
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(300);
+  const sepAfterUndo1 = parseSepReadout(
+    await page.locator('[data-separator-readout="1"]').innerText(),
+  );
+  check(
+    '3F.2: un Deshacer revierte solo la última operación',
+    sepKeyBefore !== null &&
+      sepAfterUndo1 !== null &&
+      sepAfterUndo1.left === sepKeyBefore.left &&
+      sepAfterUndo1.right === sepKeyBefore.right,
+    sepAfterUndo1 === null ? 'sin parseo' : `${sepAfterUndo1.left}/${sepAfterUndo1.right}`,
+  );
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(300);
+  const sepAfterUndo2 = parseSepReadout(
+    await page.locator('[data-separator-readout="0"]').innerText(),
+  );
+  check(
+    '3F.2: el segundo Deshacer revierte el ajuste de 10 mm',
+    sepAfterInc !== null &&
+      sepAfterUndo2 !== null &&
+      sepAfterUndo2.left === sepAfterInc.left &&
+      sepAfterUndo2.right === sepAfterInc.right,
+    sepAfterUndo2 === null ? 'sin parseo' : `${sepAfterUndo2.left}/${sepAfterUndo2.right}`,
+  );
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.waitForTimeout(300);
+  const sepRestored = parseSepReadout(
+    await page.locator('[data-separator-readout="0"]').innerText(),
+  );
+  check(
+    '3F.2: el tercer Deshacer restaura el reparto original',
+    sepInitial !== null &&
+      sepRestored !== null &&
+      sepRestored.left === sepInitial.left &&
+      sepRestored.right === sepInitial.right,
+    sepRestored === null ? 'sin parseo' : `${sepRestored.left}/${sepRestored.right}`,
+  );
+  await openTab(page, 'medidas');
 
   // Errores de página (crashes de React/WebGL)
   check('sin errores de página durante la sesión', errors.length === 0, errors[0] ?? '');
