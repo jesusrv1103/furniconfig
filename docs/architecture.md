@@ -822,36 +822,62 @@ manipulación directa sobre el modelo 3D.
   + línea vertical con mangos superior/inferior.
 - `pointer capture` nativo para robustez; `Escape` cancela y
   restaura estado inicial.
-- Raycasting contra plano Y=0 para convertir movimiento
-  del puntero a delta en mm.
-- Desactiva `raycast` en indicadores visuales: no interfiere
-  con selección 3D por clic.
-- `OrbitControls` sigue activo (el usuario puede orbitar
-  mientras arrastra); si se desea desactivar, se añade flag
-  en `onDragStart`/`onDragEnd` (pendiente).
+- Proyección sobre plano vertical que contiene el eje X y
+  mira a la cámara (`dragPlaneNormal`); si la cámara es
+  lateral (`|dir.x| > 0,9`, `isDragDegenerate`) el gesto no
+  arranca —sin saltos ni inversiones— y los valores no
+  finitos abortan sin cambiar nada.
+- Área de agarre siempre raycasteable; indicador visual con
+  `raycast` nulo para no interferir con la selección 3D.
+- La confirmación usa el último resultado con cambio: soltar
+  sin mover confirma `changed: false`.
+- `OrbitControls` se desactiva solo durante un arrastre
+  válido (`createOrbitGuard`, idempotente, nunca lanza en
+  limpieza) y se restaura al soltar, con Escape,
+  `pointercancel`, pérdida de foco, `enabled=false` y
+  desmontaje. El hover nunca toca la cámara.
 
 **Decisión — integración e historial:**
 - Botón "Arrastre divisores" (`aria-pressed`) y selector
   de modo (1 mm / 10 mm) en barra del visor.
-- Callbacks `onDividerDragMove`/`onDividerDragEnd` en
-  `WardrobeViewer` → `App` llama a `update(() => result.config)`:
-  cada arrastre completo genera **una sola entrada** en el
-  historial (sin entradas intermedias).
+- `WardrobeViewer` reenvía `config` y los callbacks a la
+  escena (sin este cableado el manejador 3D nunca monta).
+- `App` mantiene un borrador de previsualización
+  (`dragPreview`): `onDividerDragMove` solo pinta el
+  borrador en el visor; `onDividerDragEnd` confirma con
+  **una sola entrada** de historial; cancelar descarta el
+  borrador y queda el estado inicial exacto. La sesión de
+  diseños y el panel siguen la configuración confirmada,
+  así que el autoguardado no persiste intermedios.
+- Los callbacks del arrastre viven en el nivel superior de
+  `App` (no inline en el JSX condicional del visor
+  válido/inválido): definir `useCallback` dentro de una
+  rama condicional cambia el conteo de hooks al pasar a
+  estado inválido y rompe React ("fewer hooks"). Defecto
+  real detectado por la suite visual y corregido.
 - `Escape` / `pointercancel` / pérdida de foco restauran
   estado inicial exacto (sin entrada en historial).
 - Compatible con anchos fijados, automáticos y mixtos;
   conserva módulos, ids y componentes.
-- Accesibilidad: `aria-pressed` en botón, `Escape` para
-  cancelar, etiquetas `visually-hidden` en selector de modo.
-- La edición numérica existente sigue disponible como
-  alternativa completa.
+- Accesibilidad: controles DOM reales por separador
+  (`SeparatorKeyboardControls`: botones −/+ enfocables por
+  Tab, flechas ←/→ con `preventDefault` para no desplazar
+  la página, valores y rango del motor en el readout,
+  botones deshabilitados en el límite, `aria-label`s con el
+  paso vigente). Reutilizan `computeDragResult`: sin
+  segunda implementación geométrica. Una pulsación = una
+  operación (coherente con Undo/Redo). La edición numérica
+  existente sigue disponible como alternativa completa.
 
-**Consecuencias:** 17 pruebas unitarias nuevas (lógica de
-arrastre, límites, cuantización, no mutación, anchos
-fijados/automáticos/mixtos) y 3 verificaciones visuales
-nuevas (indicador visible, arrastre en frontal/isométrica,
-límite alcanzado) con 3 capturas de evidencia. La barra del
-visor suma 2 botones más (arrastre + modo).
+**Consecuencias:** 19 pruebas unitarias nuevas de arrastre
+(límites, cuantización, anchos fijados/automáticos/mixtos,
+no mutación) + 16 de helpers de interacción (planos,
+degeneración lateral, guardián de OrbitControls) + 5 de
+controles de teclado (SSR) y 10 verificaciones visuales
+nuevas (controles, ajuste 1 mm y 10 mm, cotas cruzadas,
+teclado, tres niveles de Deshacer) con 3 capturas de
+evidencia. La barra del visor suma 2 controles (arrastre +
+modo).
 
 ## 4. Flujo de cálculo detallado
 

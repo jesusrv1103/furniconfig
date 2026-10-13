@@ -259,6 +259,66 @@ body {
   outline-offset: 1px;
 }
 
+/* Controles de separadores por teclado (Fase 3F.2):
+   alternativa DOM accesible al arrastre con puntero. */
+.separator-controls {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 8px 0 0;
+  background: #fff;
+}
+
+.separator-controls legend {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.separator-controls-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.separator-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.separator-control-label {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.separator-control-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.separator-control-buttons button {
+  min-width: 2em;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.separator-control-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.separator-control-buttons button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Etiqueta de cota: valor sobre la línea, sin capturar
    clics (pointer-events: none en el contenedor Html).
    Colores neutros (croma ≤ 25) para no contaminar la

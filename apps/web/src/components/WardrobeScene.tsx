@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import CameraControls from 'camera-controls';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -168,8 +167,12 @@ export function WardrobeScene({
   onDividerDragMove?: (result: SeparatorDragResult) => void;
   /** Fin de arrastre. */
   onDividerDragEnd?: (result: SeparatorDragResult) => void;
-  /** Referencia a OrbitControls para control de arrastre. */
-  orbitControlsRef?: React.RefObject<CameraControls | null>;
+  /**
+   * Referencia a OrbitControls para control de arrastre.
+   * Tipo estructural mínimo (solo `enabled`): evita
+   * depender del tipo concreto de drei/three-stdlib.
+   */
+  orbitControlsRef?: React.RefObject<{ enabled: boolean } | null>;
 }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -242,7 +245,7 @@ export function WardrobeScene({
 
   // Estado de arrastre de separadores para control de OrbitControls
   const [isDividerDragging, setIsDividerDragging] = useState(false);
-  const orbitControlsRef = useRef<CameraControls | null>(null);
+  const orbitControlsRef = useRef<{ enabled: boolean } | null>(null);
 
   const handleControlsStart = useCallback(() => {
     cameraRigState.current.view = 'free';

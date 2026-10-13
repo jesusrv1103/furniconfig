@@ -12,6 +12,7 @@ import {
 } from '../lib/camera-views.js';
 import { computeDimensionSpecs, type MeasureUnit } from '../lib/studio/dimensions.js';
 import { SeparatorDragResult } from '../lib/studio/separators.js';
+import { SeparatorKeyboardControls } from './SeparatorKeyboardControls.js';
 import { WardrobeDimensions } from './WardrobeDimensions.js';
 import { WardrobeScene } from './WardrobeScene.js';
 
@@ -163,6 +164,12 @@ export function WardrobeViewer({
           focusNonce={focusNonce}
           clickGuard={clickGuard}
           onModulePicked={onSelectModule}
+          config={config}
+          dividerDragMode={dividerDragMode}
+          dividerDragEnabled={dividerDragEnabled}
+          onDividerDragStart={onDividerDragStart}
+          onDividerDragMove={onDividerDragMove}
+          onDividerDragEnd={onDividerDragEnd}
         />
         {dimensionsVisible ? (
           <WardrobeDimensions
@@ -273,6 +280,16 @@ export function WardrobeViewer({
           </label>
         )}
       </div>
+
+      {dividerDragEnabled && config && onDividerDragMove && onDividerDragEnd && (
+        <SeparatorKeyboardControls
+          geometry={geometry}
+          config={config}
+          dragMode={dividerDragMode}
+          onMove={onDividerDragMove}
+          onEnd={onDividerDragEnd}
+        />
+      )}
 
       {showDoors && (
         <div className="viewer-controls" aria-label="Controles del visualizador">

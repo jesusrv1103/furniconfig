@@ -401,21 +401,28 @@
 - [x] Cuantización configurable: paso 1 mm (`precise1`) o
       10 mm (`step10`), redondeo *half away from zero*;
       opción `clamp` para limitar a límites válidos.
-- [x] Interacción 3D (`DividerDragHandle`): indicador visual
-      por división (área invisible + línea con mangos),
-      `pointer capture`, raycasting plano Y=0, `Escape` para
-      cancelar, `raycast` nulo en indicadores (no interfiere
-      con selección 3D).
+- [x] Interacción 3D (`DividerDragHandle`): área de agarre
+      siempre raycasteable + indicador visual (línea con
+      mangos) en hover/arrastre; `pointer capture` sobre
+      `gl.domElement`; plano vertical robusto (vista lateral
+      degenerada no arranca); confirmación con último
+      resultado; `Escape`/cancel/foco/desmontaje restauran.
+- [x] OrbitControls: desactivado solo durante el arrastre
+      válido (`createOrbitGuard` idempotente); el hover no
+      toca la cámara.
 - [x] Integración e historial: botón "Arrastre divisores"
       (`aria-pressed`) + selector modo (1 mm / 10 mm) en
-      barra del visor; callbacks `onDividerDragMove/End`
-      generan una sola entrada en historial por arrastre
-      completo; `Escape`/`cancel` restauran estado inicial.
-- [x] Accesibilidad: `aria-pressed`, `Escape`, etiquetas
-      `visually-hidden`; edición numérica sigue disponible.
-- [x] Pruebas: 17 unitarias nuevas (límites, cuantización,
-      anchos fijados/automáticos/mixtos, no mutación,
-      determinismo) y 3 visuales nuevas con 3 capturas.
+      barra del visor; `WardrobeViewer` reenvía `config` y
+      callbacks a la escena; `App` previsualiza con borrador
+      (`dragPreview`) y confirma con una sola entrada;
+      `Escape`/`cancel` restauran estado inicial.
+- [x] Accesibilidad: controles DOM reales por separador
+      (botones −/+ por Tab, flechas ←/→ sin desplazar la
+      página, valores y rango del motor, límites
+      deshabilitados); edición numérica sigue disponible.
+- [x] Pruebas: 19 unitarias de arrastre + 16 de helpers de
+      interacción + 5 de teclado (SSR) y 10 verificaciones
+      visuales nuevas con 3 capturas de evidencia.
 
 ## Fase 2D — Segundas familias de mueble (pendiente)
 
