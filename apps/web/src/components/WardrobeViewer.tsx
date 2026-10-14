@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Canvas } from '@react-three/fiber';
 import {
   MAX_DOOR_OPEN_ANGLE_DEG,
@@ -125,13 +125,29 @@ export function WardrobeViewer({
 
   // Guarda anti-drag: registra la pulsación y descarta como
   // clic los gestos que se movieron (órbita con OrbitControls).
+  // El ref se CONSUME en cada llamada a clickGuard para que
+  // cada clic se evalúe de forma independiente (evita que un
+  // clic previo contamine el siguiente).
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  // Rastrea si el clic actual golpeó un mesh (para no deseleccionar
+  // en el onClick fallback cuando handlePick ya seleccionó).
+  const meshClickedRef = useRef(false);
+  // Rastrea si el gesto actual fue un arrastre (para no deseleccionar
+  // en el onClick fallback cuando fue un arrastre de órbita).
+  const wasDragRef = useRef(false);
   const clickGuard = useCallback((native: { clientX: number; clientY: number }) => {
     const down = pointerDownRef.current;
+    pointerDownRef.current = null; // Consumir: cada clic es independiente
     if (down === null) {
       return true;
     }
-    return Math.hypot(native.clientX - down.x, native.clientY - down.y) <= CLICK_DRIFT_PX;
+    const dist = Math.hypot(native.clientX - down.x, native.clientY - down.y);
+    if (dist > CLICK_DRIFT_PX) {
+      wasDragRef.current = true;
+      return false;
+    }
+    wasDragRef.current = false;
+    return true;
   }, []);
 
   const showDoors = hasDoors && doorsVisible;
@@ -144,12 +160,47 @@ export function WardrobeViewer({
       data-selected-module={selectedModuleId ?? undefined}
       onPointerDown={(event) => {
         pointerDownRef.current = { x: event.clientX, y: event.clientY };
+        meshClickedRef.current = false; // Reset al iniciar nuevo clic
+      }}
+      // NO limpiar en onPointerUp: el ref debe sobrevivir hasta que
+      // clickGuard lo consuma (en onPointerMissed) o hasta el
+      // listener global de pointerup (safety net).
+      onPointerLeave={() => {
+        pointerDownRef.current = null;
+      }}
+      onLostPointerCapture={() => {
+        pointerDownRef.current = null;
+      }}
+      onClick={(event) => {
+        // No deseleccionar si el clic fue en un elemento interactivo (botón, input, select, etc.)
+        // del toolbar u otra UI. Solo deseleccionar en espacio vacío real.
+        const target = event.target as HTMLElement;
+        const isInteractive = target.closest('button, input, select, [role="button"], [role="tab"], [role="menuitem"]');
+        if (isInteractive) {
+          return;
+        }
+        // Fallback de deselección: solo si NO se golpeó un mesh Y no fue un arrastre.
+        // handlePick en WardrobeScene pone meshClickedRef.current = true
+        // cuando selecciona un módulo.
+        // clickGuard pone wasDragRef.current = true cuando detecta un arrastre.
+        if (!meshClickedRef.current && !wasDragRef.current && onSelectModule) {
+          onSelectModule(null);
+        }
+        meshClickedRef.current = false; // Reset para siguiente clic
+        wasDragRef.current = false; // Reset para siguiente clic
       }}
     >
       <Canvas
         shadows="soft"
         camera={VIEWER_CAMERA}
+        onPointerDown={() => {
+          // No limpiar el ref aquí: el ref se usa para medir la distancia
+          // del clic en clickGuard.
+        }}
         onPointerMissed={(event) => {
+          // onPointerMissed dispara al hacer clic en espacio vacío.
+          // Usar clickGuard para distinguir clic (deselección) de
+          // arrastre de órbita (no deseleccionar).
           if (clickGuard(event) && onSelectModule) {
             onSelectModule(null);
           }
@@ -170,6 +221,7 @@ export function WardrobeViewer({
           onDividerDragStart={onDividerDragStart}
           onDividerDragMove={onDividerDragMove}
           onDividerDragEnd={onDividerDragEnd}
+          meshClickedRef={meshClickedRef}
         />
         {dimensionsVisible ? (
           <WardrobeDimensions
