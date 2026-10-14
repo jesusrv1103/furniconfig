@@ -172,6 +172,13 @@ export function WardrobeViewer({
         pointerDownRef.current = null;
       }}
       onClick={(event) => {
+        // No deseleccionar si el clic fue en un elemento interactivo (botón, input, select, etc.)
+        // del toolbar u otra UI. Solo deseleccionar en espacio vacío real.
+        const target = event.target as HTMLElement;
+        const isInteractive = target.closest('button, input, select, [role="button"], [role="tab"], [role="menuitem"]');
+        if (isInteractive) {
+          return;
+        }
         // Fallback de deselección: solo si NO se golpeó un mesh Y no fue un arrastre.
         // handlePick en WardrobeScene pone meshClickedRef.current = true
         // cuando selecciona un módulo.
