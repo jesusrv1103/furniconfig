@@ -1,0 +1,124 @@
+# GitHub Labels Configuration
+
+# This file documents the proposed labels for the repository.
+# Use `gh label create` or GitHub UI to create them.
+
+# Core labels
+- name: "good first issue"
+  color: "7057ff"
+  description: "Ideal for new contributors"
+
+- name: "help wanted"
+  color: "0075ca"
+  description: "Actively looking for help"
+
+- name: "bug"
+  color: "d73a4a"
+  description: "Functional bug"
+
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New feature or improvement"
+
+- name: "documentation"
+  color: "0075ca"
+  description: "Documentation only"
+
+- name: "geometry-core"
+  color: "5319e7"
+  description: "Geometric engine (packages/geometry-core)"
+
+- name: "frontend"
+  color: "1d76db"
+  description: "Frontend (apps/web - React/Three.js)"
+
+- name: "UX"
+  color: "fbca04"
+  description: "User experience"
+
+- name: "testing"
+  color: "bfd4f2"
+  description: "Unit/visual testing"
+
+- name: "accessibility"
+  color: "d4c5f9"
+  description: "WAI-ARIA accessibility"
+
+- name: "CI"
+  color: "bfdadc"
+  description: "Continuous integration"
+
+- name: "security"
+  color: "ee0701"
+  description: "Security related"
+
+- name: "dependencies"
+  color: "0366d6"
+  description: "Dependency updates"
+
+# Phase labels (for roadmap tracking)
+- name: "phase-3g"
+  color: "c5def5"
+  description: "Phase 3G - Productivity features"
+
+- name: "phase-3h"
+  color: "c5def5"
+  description: "Phase 3H - Materials and finishes"
+
+- name: "phase-3i"
+  color: "c5def5"
+  description: "Phase 3I - New furniture types"
+
+- name: "phase-3j"
+  color: "c5def5"
+  description: "Phase 3J - Engine and data"
+
+- name: "phase-3k"
+  color: "c5def5"
+  description: "Phase 3K - Collaboration"
+
+- name: "phase-3l"
+  color: "c5def5"
+  description: "Phase 3L - Accessibility and UX"
+
+- name: "phase-3m"
+  color: "c5def5"
+  description: "Phase 3M - Quality and testing"
+
+- name: "phase-3n"
+  color: "c5def5"
+  description: "Phase 3N - Documentation and examples"
+
+# Priority labels
+- name: "priority: high"
+  color: "b60205"
+  description: "High priority"
+
+- name: "priority: medium"
+  color: "fbca04"
+  description: "Medium priority"
+
+- name: "priority: low"
+  color: "0e8a16"
+  description: "Low priority"
+
+# Status labels
+- name: "status: needs triage"
+  color: "ededed"
+  description: "Needs triage"
+
+- name: "status: in progress"
+  color: "fbca04"
+  description: "Work in progress"
+
+- name: "status: needs review"
+  color: "006b75"
+  description: "Ready for review"
+
+- name: "status: blocked"
+  color: "b60205"
+  description: "Blocked by external dependency"
+
+- name: "status: ready to merge"
+  color: "0e8a16"
+  description: "Approved and ready to merge"
