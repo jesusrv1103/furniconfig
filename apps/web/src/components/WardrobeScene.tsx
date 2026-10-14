@@ -122,6 +122,8 @@ export function WardrobeScene({
   onDividerDragStart,
   onDividerDragMove,
   onDividerDragEnd,
+  /** Ref para indicar que un mesh fue clicado (evita deselección espuria). */
+  meshClickedRef,
 }: {
   geometry: GeometryResult;
   /**
@@ -173,6 +175,8 @@ export function WardrobeScene({
    * depender del tipo concreto de drei/three-stdlib.
    */
   orbitControlsRef?: React.RefObject<{ enabled: boolean } | null>;
+  /** Ref para indicar que un mesh fue clicado (evita deselección espuria). */
+  meshClickedRef?: React.RefObject<boolean>;
 }) {
   const { widthMm, heightMm, depthMm, materials } = geometry.wardrobe;
   const widthM = mmToM(widthMm);
@@ -488,9 +492,12 @@ export function WardrobeScene({
         return; // gesto de órbita, no de selección
       }
       event.stopPropagation();
+      if (meshClickedRef) {
+        meshClickedRef.current = true;
+      }
       onModulePicked?.(moduleId);
     },
-    [clickGuard, onModulePicked],
+    [clickGuard, onModulePicked, meshClickedRef],
   );
 
   // Envolvente del módulo seleccionado (mm → m) para el
