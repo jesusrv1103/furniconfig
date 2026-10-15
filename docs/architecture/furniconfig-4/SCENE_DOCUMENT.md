@@ -1,6 +1,12 @@
 # SCENE_DOCUMENT — Modelo del documento de escena (FASE-4A)
 
-> Diseño propuesto, no implementado. Complementa
+> **Estado (FASE-4B-A)**: los contratos de §3, la validación de §4 (salvo lo
+> indicado) y la selección por objeto están **implementados** en
+> `packages/modeler-core` (paquete puro, sin Three.js/DOM). **No** está
+> completada la arquitectura total de 4B: faltan herramientas de dibujo
+> (4B-B), el kernel en Web Worker (4B-C) y el registro completo de
+> componentes con `build()` (4B-D). Las invariantes **I7 e I8** requieren
+> la integración del kernel y siguen **pendientes**. Complementa
 > `PROPOSED_ARCHITECTURE.md` §3.1 y §3.8.
 
 ## 1. Propósito
@@ -15,16 +21,16 @@ Diferencia clave con el estado actual: el documento actual
 
 ## 2. Invariantes
 
-| # | Invariant | Origen |
-|---|-----------|--------|
-| I1 | Unidad interna **mm enteros** en todo el documento | Regla 1, ADR-003 |
-| I2 | Origen en la esquina **inferior-izquierda-frontal**; posiciones = esquina mínima | ADR-004 |
-| I3 | El documento es **inmutable**: toda edición produce una nueva instancia | Patrón `config.ts` |
-| I4 | IDs **deterministas** (sin UUID): `object-1`, `sketch-2`, `component-3` | Convención del repo |
-| I5 | Nada de Three.js ni I/O en `modeler-core` | Regla 2, ADR-002 |
-| I6 | Toda entrada externa se **valida antes** de entrar al documento | Regla 3 |
-| I7 | Las operaciones geométricas delegan al kernel tras la interfaz `GeometryKernel` | ADR-001 (provisional) |
-| I8 | La cuantización mm ocurre **en la frontera del kernel** (al entrar y al salir) | Regla 1 + ADR-003 |
+| # | Invariant | Origen | Estado |
+|---|-----------|--------|--------|
+| I1 | Unidad interna **mm enteros** en todo el documento | Regla 1, ADR-003 | ✅ activa: validada en `validateSceneDocument` |
+| I2 | Origen en la esquina **inferior-izquierda-frontal**; posiciones = esquina mínima | ADR-004 | ✅ activa: documentada en el contrato; el render la respeta vía `units.ts` |
+| I3 | El documento es **inmutable**: toda edición produce una nueva instancia | Patrón `config.ts` | ✅ activa: salida del validador congelada en profundidad |
+| I4 | IDs **deterministas** (sin UUID): `object-1`, `sketch-2`, `component-3` | Convención del repo | ✅ activa: `createEmptySceneDocument`/`nextSceneId` (comparación `BigInt`) |
+| I5 | Nada de Three.js ni I/O en `modeler-core` | Regla 2, ADR-002 | ✅ activa: `@furniconfig/modeler-core` sin dependencias runtime |
+| I6 | Toda entrada externa se **valida antes** de entrar al documento | Regla 3 | ✅ activa: `validateSceneDocument(input: unknown)` |
+| I7 | Las operaciones geométricas delegan al kernel tras la interfaz `GeometryKernel` | ADR-001 (provisional) | ⏳ **pendiente de integración**: llega con 4B-C (kernel en Worker); `modeler-core` aún no ejecuta operaciones geométricas |
+| I8 | La cuantización mm ocurre **en la frontera del kernel** (al entrar y al salir) | Regla 1 + ADR-003 | ⏳ **pendiente de integración**: ver §8.1; el validador ya exige mm enteros en el lado del documento |
 
 ## 3. Estructura
 
@@ -54,7 +60,15 @@ type SceneObject =
 | `geometry` | `SceneGeometryRef` (sketch + extrusión o referencia de caché) | `type` + `params` + `version` |
 | `transform` | sí (mm enteros) | sí |
 | `materialId` | sí | sí (o materiales por rol internos) |
-| `params` | no | sí (`Record<string, number \| string \| boolean>`) |
+| `params` | no | sí (JSON serializable: escalares **y anidado**, ver nota) |
+
+> **Implementado** (`packages/modeler-core/src/types/document.ts`): `params`
+> acepta `SceneParamValue` = número finito | cadena | booleano | listas y
+> objetos anidados. Delta justificado sobre este contrato: §6–§7 almacena un
+> `WardrobeConfig` **completo** en `params` del clóset, que es una estructura
+> anidada. Lo no declarado en el `paramsSchema` del registro se admite si es
+> JSON serializable; el rango de `WardrobeConfig` lo valida `geometry-core`
+> al construir el componente.
 
 ### 3.2 Referencia de geometría (cacheada)
 
@@ -91,16 +105,47 @@ interface Sketch2D {
   Sin auto-intersección (validación I6).
 - `extrusionMm` es un entero ≥ 1; la dirección es la normal del plano.
 
+**Validación estructural ≠ validación geométrica (declaración explícita):**
+
+- `validateSceneDocument` (`modeler-core`) hace solo validación
+  **estructural** del croquis: ≥3 vértices, `closed: true`, vértices en mm
+  enteros, primer vértice no repetido al final y área shoelace ≠ 0 (cubriendo
+  así el caso *bowtie*). **No** es una validación geométrica completa: no
+  comprueba auto-intersecciones no triviales entre aristas no adyacentes.
+- Las auto-intersecciones **no** se duplican en `modeler-core`: la autoridad
+  es `assertSimplePolygon` de `packages/kernel-adapter/src/polygon.ts` (coste
+  O(n²), una sola copia — RISKS R-18).
+- **Dónde se comprueban, antes de construir geometría**: en la frontera del
+  kernel, en `ManifoldKernel.fromSketch()`
+  (`packages/kernel-adapter/src/manifold-kernel.ts`), que invoca
+  `assertSimplePolygon(polygon)` **antes** de `Manifold.extrude(...)`,
+  siguiendo la regla 3 (validar antes de calcular). Cualquier camino que
+  convierta un `Sketch2D` de un `SceneDocument` en geometría debe pasar por
+  ese kernel, de modo que el chequeo queda garantizado en el único punto de
+  construcción.
+
 ## 4. Validación
 
 `validateSceneDocument(input: unknown): SceneValidationResult`, análoga a
 `validateWardrobeConfig`:
 
 - Recopila **todos** los errores, no para en el primero.
-- Devuelve `{ ok: true, document } | { ok: false, errors: SceneIssue[] }`.
-- Lanza `SceneError` (clase con `code` propio, siguiendo el patrón de
-  `GeometryError`, pero en un **union nuevo y separado** para no tocar el
-  contrato del motor del clóset).
+- Devuelve `{ ok: true, document } | { ok: false; errors: SceneIssue[] }`.
+- **Implementado**: no lanza sobre entrada hostil; devuelve siempre el
+  resultado discriminado. La clase `SceneError` (clase con `code` propio,
+  siguiendo el patrón de `GeometryError`, pero en un **union nuevo y
+  separado** para no tocar el contrato del motor del clóset) se lanza en los
+  constructores de programación (`createEmptySceneDocument` con argumentos
+  inválidos).
+- **Implementado**: acepta `options.components`, un `ComponentRegistry`
+  **opcional** con la identidad mínima (`version` + `paramsSchema`). Con
+  registro se valida tipo/versión/rango (`ERR_SCENE_UNKNOWN_COMPONENT`,
+  `ERR_SCENE_PARAMS_OUT_OF_RANGE`); sin él, solo estructura. El registro
+  completo con `build()` llega en 4B-D.
+- **Implementado**: la salida se reconstruye campo a campo (claves
+  desconocidas descartadas), las claves de `params` se copian con
+  `Object.defineProperty` (sin contaminación de prototipos) y el documento
+  se congela en profundidad (I3).
 
 Códigos propuestos (union propio, mínimo para el MVP):
 
@@ -119,6 +164,15 @@ Códigos propuestos (union propio, mínimo para el MVP):
 > Los valores de rango (máximos, holguras) **no se inventan**: los que
 > dependan de carpintería se marcan PROVISIONAL en `docs/product-rules.md`
 > (regla 4).
+>
+> **Implementado**: las cotas de sanidad del documento viven en
+> `packages/modeler-core/src/limits.ts` (`SCENE_LIMITS`), **todas**
+> marcadas PROVISIONAL: `gridStepMm` [1, 1000], `extrusionMm`
+> [1, 1 000 000], `coordinateMm` ±100 000 (exactitud del área del croquis
+> en `double`) y `paramsMaxDepth` 32 (contra JSON hostil). Son cotas de
+> sanidad con justificación anotada, **no** reglas de fabricación; el
+> catálogo de espesores de tablero [15, 18] sigue siendo responsabilidad de
+> `geometry-core`, no de este documento.
 
 ## 5. Versionado y migración
 
@@ -132,6 +186,11 @@ Códigos propuestos (union propio, mínimo para el MVP):
 Regla (heredada de `designs/local-storage.ts`): **versión desconocida →
 error antes de escribir; sin migraciones silenciosas**. La migración es un
 paso explícito y versionado (ver `MIGRATION_STRATEGY.md`).
+
+> **Implementado (4B-A)**: solo `documentVersion` (controlado por
+> `SCENE_DOCUMENT_VERSION` en `modeler-core`). El sobre `format` +
+> `formatVersion` de §7 corresponde al almacén/exportación, **fuera del
+> alcance de 4B-A** (llega con la persistencia de fases posteriores).
 
 ## 6. Relación con `WardrobeConfig`
 
