@@ -1,0 +1,272 @@
+{
+  "fase": "4B-0",
+  "script": "experiments/run-all.mjs",
+  "executedAt": "2026-10-15T18:23:15.702Z",
+  "node": "v22.23.2",
+  "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "v1_carga_bajo_vite": {
+    "buildOk": "774 ms",
+    "navegadorOk": true,
+    "initMsNavegador": 23.5,
+    "erroresConsola": [],
+    "recursos": [
+      "200 http://127.0.0.1:33859/",
+      "200 http://127.0.0.1:33859/assets/index-D6AS8_eu.js",
+      "200 http://127.0.0.1:33859/assets/manifold-BE4c7gO-.wasm"
+    ],
+    "crossOriginIsolated": false
+  },
+  "v1_carga_bajo_vite_dev": {
+    "navegadorOk": true,
+    "initMsNavegador": 27,
+    "erroresConsola": [],
+    "recursos": [
+      "200 http://127.0.0.1:42711/",
+      "200 http://127.0.0.1:42711/main.ts",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/index.ts",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/kernel.ts",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/manifold-kernel.ts",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/polygon.ts",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/node_modules/.vite/deps/manifold-3d.js?v=e5daa211",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/node_modules/.vite/deps/rolldown-runtime-BPOCksWG.js?v=e5daa211",
+      "200 http://127.0.0.1:42711/@vite/client",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/node_modules/vite/dist/client/env.mjs",
+      "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/node_modules/manifold-3d/manifold.wasm"
+    ],
+    "crossOriginIsolated": false,
+    "pageSettleMs": 951.1286129999999
+  },
+  "v4_rendimiento": {
+    "initNode": {
+      "n": 5,
+      "samplesMs": [
+        14.61,
+        14.45,
+        14.14,
+        13.37,
+        13.4
+      ],
+      "minMs": 13.37,
+      "medianMs": 14.14,
+      "maxMs": 14.61,
+      "meanMs": 14,
+      "node": "v22.23.2",
+      "measuredAt": "2026-10-15T18:23:04.068Z"
+    },
+    "navegador": {
+      "boxMs": 4.199999988079071,
+      "extrudeMs": 6.600000023841858,
+      "differenceMs": 7.699999988079071
+    },
+    "assets": [
+      {
+        "file": "assets/manifold-BE4c7gO-.wasm",
+        "raw": 541470,
+        "gzip": 205699,
+        "brotli": 158724
+      },
+      {
+        "file": "assets/index-D6AS8_eu.js",
+        "raw": 52988,
+        "gzip": 17896,
+        "brotli": 16076
+      },
+      {
+        "file": "index.html",
+        "raw": 463,
+        "gzip": 341,
+        "brotli": 256
+      },
+      {
+        "file": "assets/__vite-browser-external-BKqe9YVL.js",
+        "raw": 92,
+        "gzip": 105,
+        "brotli": 89
+      },
+      {
+        "file": "favicon.ico",
+        "raw": 0,
+        "gzip": 20,
+        "brotli": 1
+      }
+    ],
+    "totalBytes": {
+      "raw": 595013,
+      "gzip": 224061,
+      "brotli": 175146
+    }
+  },
+  "v5_memoria_y_limpieza": {
+    "meshTieneDelete": false,
+    "propsMesh": "constructor, numTri, numVert, numRun, merge, verts, position, extras, tangent, transform, backside, hasNormals",
+    "heapExpuesto": false,
+    "vertPropertiesEsVistaDeHeap": false,
+    "iteraciones": 20000,
+    "rssTrasBucle1": 6.09,
+    "rssTrasBucle2": 6.09,
+    "crecimientoSegundoBucle": 0,
+    "estableSinFuga": true,
+    "rssSólidos500": 8.96,
+    "rssTrasDisposeAll": 8.96,
+    "node": "v22.23.2",
+    "at": "2026-10-15T18:23:04.677Z"
+  },
+  "bloqueo_hilo_principal": {
+    "nodo": {
+      "fase": "4B-0",
+      "script": "experiments/blocking-probe.mjs",
+      "executedAt": "2026-10-15T18:23:08.981Z",
+      "node": "v22.23.2",
+      "umbralTareaLargaMs": 50,
+      "metodologia": "Para cada N: (a) construcción de una esfera de radio 300 mm con N segmentos, y (b) resta booleana contra una caja de 400 mm cronometrada con getMesh() incluido, ya que subtract() es perezoso y medirlo sin forzar la evaluación daría ~0 ms. Se programa setTimeout(0) antes de la operación: su retraso real (= stallEventLoopMs) mide el bloqueo efectivo del hilo, no solo el tiempo de CPU percibido.",
+      "operaciones": [
+        {
+          "segmentosEsfera": 256,
+          "triangulos": 4300,
+          "esferaMs": 52.88,
+          "booleanaForzadaMs": 27.86,
+          "stallEventLoopMs": 54.42,
+          "bloqueaHiloPrincipal": false
+        },
+        {
+          "segmentosEsfera": 512,
+          "triangulos": 16780,
+          "esferaMs": 155.24,
+          "booleanaForzadaMs": 60.07,
+          "stallEventLoopMs": 60.14,
+          "bloqueaHiloPrincipal": true
+        },
+        {
+          "segmentosEsfera": 1024,
+          "triangulos": 66316,
+          "esferaMs": 548.46,
+          "booleanaForzadaMs": 215.56,
+          "stallEventLoopMs": 215.65,
+          "bloqueaHiloPrincipal": true
+        },
+        {
+          "segmentosEsfera": 2048,
+          "triangulos": 263692,
+          "esferaMs": 2217.65,
+          "booleanaForzadaMs": 871.77,
+          "stallEventLoopMs": 871.85,
+          "bloqueaHiloPrincipal": true
+        }
+      ],
+      "conclusion": "Operaciones > 50 ms: el kernel bloquea el hilo principal durante la ejecución (WASM síncrono, sin cesión). En el editor esto congelaría el bucle de render y la entrada del usuario; la estrategia documentada es delegar en un Web Worker."
+    },
+    "navegador": {
+      "umbralTareaLargaMs": 50,
+      "gapRafMaxMs": 883.3,
+      "gapRafMedioMs": 233.3,
+      "temporizadorRetrasoMs": 903.6,
+      "framesObservados": 5,
+      "operaciones": [
+        {
+          "segmentos": 500,
+          "triangulos": 8480,
+          "validacionExtrusionMs": 126.59999996423721,
+          "booleanaForzadaMs": 776.1000000238419,
+          "perOpMs": [
+            31.599999964237213,
+            29,
+            25.100000023841858,
+            24.400000035762787,
+            23,
+            22.100000023841858,
+            21.900000035762787,
+            21.5,
+            21.900000035762787,
+            20.69999998807907,
+            20.399999976158142,
+            20,
+            20.299999952316284,
+            19.5,
+            20.5,
+            19.799999952316284,
+            19,
+            19.100000023841858,
+            19.299999952316284,
+            18.700000047683716,
+            19.5,
+            18.399999976158142,
+            18.299999952316284,
+            18.100000023841858,
+            18.69999998807907,
+            17.899999976158142,
+            19.30000001192093,
+            17.599999964237213,
+            17.200000047683716,
+            16.299999952316284,
+            16.30000001192093,
+            15.700000047683716,
+            15.5,
+            16.19999998807907,
+            16.400000035762787,
+            15,
+            15.5,
+            14.399999976158142,
+            15.100000023841858,
+            14.100000023841858
+          ],
+          "booleanasEncadenadas": 40,
+          "bloqueaHiloPrincipal": true
+        }
+      ],
+      "bloqueaHiloPrincipal": true,
+      "estrategiaWorker": "Delegar la geometría en un Web Worker con el WASM ya cargado (una única instantánea por worker, cacheada). La interfaz GeometryKernel se expone en el hilo principal como proxy que envía mensajes y recibe mallas como ArrayBuffer transferible. El editor no integra todavía el worker: solo se documenta."
+    }
+  },
+  "mediciones": {
+    "box": {
+      "volumeMm3": 8640000,
+      "boundsMm": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          800,
+          600,
+          18
+        ]
+      }
+    },
+    "extruded": {
+      "volumeMm3": 12960000,
+      "boundsMm": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          1200,
+          600,
+          18
+        ]
+      }
+    },
+    "holed": {
+      "volumeMm3": 12240000,
+      "boundsMm": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          1200,
+          600,
+          18
+        ]
+      }
+    }
+  },
+  "malla": {
+    "boxTris": 12,
+    "holedTris": 20,
+    "holedPositions": 12
+  }
+}

@@ -1,11 +1,17 @@
 # ADR-001 — Motor de geometría para el modelador 3D libre (FurniConfig 4.0)
 
-- **Estado**: **Aprobada (decisión de dirección)** — pendiente de PoC para la
-  elección final del motor
+- **Estado**: **Aprobada (decisión de dirección)** — **etapa 0 del PoC
+  EJECUTADA (15/10/2026)**; Manifold promovido a **motor del PoC** con
+  **GO condicionado** (ver "Actualización tras la etapa 0" más abajo)
 - **Fecha**: 15 de octubre de 2026
 - **Contexto**: Fase 4A — investigación y arquitectura; sin implementación
 - **Serie**: nueva (`FC-4/ADR-001`); no confundir con el ADR-001
   ("Monorepo con npm workspaces") de `docs/architecture.md`
+
+> **Nota de historial (15/10/2026)**: el texto de Fase 4A se conserva
+> íntegro a continuación. La ejecución de la etapa 0 (FASE-4B-0) se registra
+> en la sección "Actualización tras la etapa 0", sin borrar la redacción
+> original, para mantener la trazabilidad de la decisión.
 
 ### Alcance de la aprobación (importante)
 
@@ -21,6 +27,52 @@
 El motor definitivo se decide **solo después** de ejecutar la etapa 0 del
 `POC_PLAN.md` (V1–V5) con resultados reales registrados. Hasta entonces,
 "Manifold" significa *candidato a evaluar*, no *decisión cerrada*.
+
+---
+
+## Actualización tras la etapa 0 (FASE-4B-0, 15/10/2026)
+
+La etapa 0 se ejecutó con **`manifold-3d@3.5.4`** (Apache-2.0), instalado de
+forma **aislada** en `packages/kernel-adapter`. Resultado: **GO condicionado**
+para promover Manifold de *candidato* a **motor del PoC** (no de producción).
+
+### Versiones y evidencias
+
+| Elemento | Valor medido | Origen |
+|----------|-------------|--------|
+| Versión del kernel | `manifold-3d@3.5.4` (fijada, `--save-exact`) | `packages/kernel-adapter/package.json` |
+| V1 — carga bajo Vite | init 23,5 ms (build) / 27,0 ms (dev); **0 errores de consola**; sin COOP/COEP | `4b0-results.json` |
+| V2 — operaciones | box/extrude/union/intersect/difference: volúmenes exactos, mallas cerradas (0 aristas abiertas) | `4b0-results.json` |
+| V3 — precisión | **error absoluto 0 mm³**; bounds en rejilla mm entero | `4b0-results.json` |
+| V4 — rendimiento | init Node mediana 14,1 ms (n=5); ops mediana de 20: box 0,074 / extrusión 0,186 / booleana 0,478 ms (Node); navegador 4,2–7,7 ms. Todas muy por debajo del objetivo PoC (< 100 ms) | `4b0-results.json` |
+| V5 — memoria | determinismo byte a byte; 20 000 `getMesh` → crecimiento **0 MB**; `disposeAll → liveCount 0` | `4b0-results.json` |
+| Tamaño | `manifold.wasm` 541 470 B (gzip 205 699 / brotli 158 724) | `4b0-results.json` |
+| Robustez | 31 tests nuevos: rotaciones no rectas, escalos fraccionarios, cóncavos, bowties rechazados, caras coplanares exactas, extremos 0,001–1e15 mm³ | `tests/robustness.test.ts` |
+
+### Las 5 condiciones del GO condicionado
+
+1. **Registrar el hallazgo LGPL transitivo** (`sharp` → `libvips`) en
+   `THIRD_PARTY_NOTICES.md` y definir política de empaquetado antes de
+   escritorio/CLI. → **Hecho** (`THIRD_PARTY_NOTICES.md` §3–4; RISKS R-16).
+2. **Ampliar V3** con rotaciones/escalos fraccionarios y cóncavos (si fallaba
+   → plan B `three-bvh-csg`). → **Hecho**: pasaron todos; el plan B no se
+   activa.
+3. **Validar operaciones largas en _worker_** → **estrategia documentada**
+   (`README` del paquete + RISKS R-17); **no implementada** en el editor.
+4. **Corregir `ENGINE_COMPARISON.md` C11** ("0 dependencias declaradas" es
+   incorrecto: declara 11 directas) y volcar mediciones a docs. → **Hecho**.
+5. **`THIRD_PARTY_NOTICES.md` debe ir en el PR** que introduzca la
+   dependencia. → **Cumplido** en este PR.
+
+### Qué NO decide esta actualización
+
+- **No** se declara Manifold motor definitivo de producción: es motor del
+  **PoC**, sujeto a revisión al cierre de la Fase 4B completa.
+- **No** se integra Manifold en el visor de clósets actual.
+- **No** se implementa el Web Worker (solo se documenta la estrategia).
+- **No** se abre la Fase 4B completa ni la 3F.3.
+
+---
 
 ## Contexto
 
@@ -158,6 +210,15 @@ Condiciones de la decisión:
 
 ## Obligaciones de licencia Apache-2.0 (si se llega a instalar Manifold)
 
+> **Estado (15/10/2026)**: `manifold-3d@3.5.4` **ya está instalado** (aislado
+> en `packages/kernel-adapter`, FASE-4B-0). El `THIRD_PARTY_NOTICES.md`
+> exigido más abajo **se creó en el mismo PR** que introduce la dependencia,
+> conforme a la condición "Responsable". Se confirma además que el paquete
+> **no** incluye un `NOTICE` upstream (solo `LICENSE`), por lo que la
+> atribución se consigna en nuestro `THIRD_PARTY_NOTICES.md`. Se añade el
+> hallazgo de **copyleft transitivo (LGPL)** no alcanzable desde el bundle web
+> (ver `THIRD_PARTY_NOTICES.md` §3 y RISKS R-16).
+
 Manifold se distribuye bajo **Apache License 2.0**. Es compatible con la
 distribución de FurniConfig bajo MIT, **con condiciones**. Si en una fase
 futura se instala `manifold-3d`, deberán cumplirse estas obligaciones:
@@ -186,8 +247,11 @@ con la simplicidad buscada; por eso quedó descartada
 **Positivas**
 
 - El modelador arranca con un kernel robusto, ligero y mantenido.
-- `geometry-core`, `WardrobeConfig` v1 y las 522 pruebas + 200 visuales
-  quedan intactos (`MIGRATION_STRATEGY.md`).
+- `geometry-core`, `WardrobeConfig` v1 y las pruebas + 200 visuales quedan
+  intactos (`MIGRATION_STRATEGY.md`). En Fase 4A eran 522 pruebas; tras la
+  FASE-4B-0 son **565** (179 `geometry-core` + 43 `kernel-adapter` + 343 web),
+  más las **200 visuales** que siguen en verde — el crecimiento es solo
+  aditivo (paquete nuevo), sin tocar el motor existente.
 - La reversibilidad reduce el riesgo de dependencia (RISKS R-01).
 
 **Negativas / costes**
@@ -211,6 +275,10 @@ Reevaluar este ADR cuando:
 1. La etapa 0 del `POC_PLAN.md` tenga resultados registrados → decidir si
    Manifold pasa de **candidato a motor definitivo** (o si se activa la
    alternativa `three-bvh-csg`).
+   > **Disparado (15/10/2026)**: la etapa 0 se ejecutó (FASE-4B-0) con
+   > resultado **GO condicionado** → Manifold es ahora **motor del PoC**. La
+   > decisión de *motor definitivo de producción* se diffiere al cierre de la
+   > Fase 4B completa, cuando se integre en el editor con Web Worker.
 2. Se alcance el Paso 10 (componentes paramétricos) del MVP.
 3. Aparezca una necesidad de edición de subelementos (caras/vértices) —
    **capacidad futura** — no cubierta por la capa de comandos (disparador

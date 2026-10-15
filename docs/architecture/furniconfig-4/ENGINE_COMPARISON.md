@@ -4,6 +4,13 @@
 > Etiquetas: **HECHO** (fuente oficial o repo), **HIPÓTESIS** (razonado, no
 > probado), **RIESGO**. Ninguna fila es resultado de pruebas nuestras: las
 > pruebas están definidas en `POC_PLAN.md`.
+>
+> **Actualización FASE-4B-0 (15/10/2026)**: la etapa 0 del PoC se ejecutó con
+> `manifold-3d@3.5.4` y sus resultados empíricos **promueven varias filas de
+> HIPÓTESIS a HECHO (medido)** en la Opción C.1. Las etiquetas originales se
+> conservan y se anota a su lado la medición real (ver
+> `packages/kernel-adapter/experiments/results/4b0-results.json`). El texto de
+> FASE-4A se mantiene intacto salvo la corrección de datos erróneos (C11).
 
 ## 0. Criterios de comparación
 
@@ -90,15 +97,15 @@ inestable** la descartan como primera opción (ver ADR-001).
 | C2 | **No incluye editor**: la entrada son mallas construidas por código (primitivas, `Extrude`, SDF) o nuestras; la edición se expresa como operaciones | HECHO (fuente: API `Manifold`) |
 | C3 | **Nativa**: `Manifold.Extrude(crossSection, height, nDivisions, twistDegrees, scaleTop)` y `Revolve` | HECHO (fuente: `manifold.h` / docs JS) |
 | C4 | **Nativas con garantía**: `union`/`subtract`/`intersect`/`BatchBoolean`; "guaranteed manifold output without caveats or edge cases" | HECHO (fuente: README) |
-| C5 | Alta para mallas: garantía declarada de salida 2-manifold; manejo de coincidencias coplanares con perturbación simbólica documentada | HECHO (fuente: wiki/README) |
+| C5 | Alta para mallas: garantía declarada de salida 2-manifold; manejo de coincidencias coplanares con perturbación simbólica documentada. **Medido (4B-0)**: todas las operaciones V2–V5 produjeron mallas cerradas (0 aristas abiertas, 0 degenerados), y las booleanas con caras compartidas/coplanares dieron volúmenes **exactos** (p. ej. apiladas 2 000 000 mm³; solape 50 % → 1 500 000 mm³) | HECHO (fuente: wiki/README) + HECHO (medido en FASE-4B-0) |
 | C6 | A cargo nuestro (rejilla, puntos, planos) — independiente del kernel | HIPÓTESIS |
-| C7 | Internamente doubles en unidades del usuario; **nosotros** mantenemos mm enteros en el documento y cuantizamos en la frontera | HIPÓTESIS (mitigable; ver `SCENE_DOCUMENT.md`) |
-| C8 | Alta: operaciones paralelas en nativo; **el WASM es monohilo** (sin `TBB`) | HECHO (fuente: README) |
+| C7 | Internamente doubles en unidades del usuario; **nosotros** mantenemos mm enteros en el documento y cuantizamos en la frontera. **Medido (4B-0)**: el cálculo interno es `double` con error ≤ tolerancia justificada (bounds exactos más allá de 2²⁴ mm); la representación final `Float32` es exacta a escala de mueble (< 2²⁴ mm ≈ 16,7 km) y solo pierde por encima, cuantificable | HIPÓTESIS (mitigable; ver `SCENE_DOCUMENT.md`) + HECHO (medido en FASE-4B-0) |
+| C8 | Alta: operaciones paralelas en nativo; **el WASM es monohilo** (sin `TBB`). **Medido (4B-0)**: operaciones típicas de mueble muy por debajo del objetivo (mediana de 20: box 0,074 ms; extrusión 0,186 ms; booleana 0,478 ms en Node; 4,2–7,7 ms en navegador; init mediana 14,1 ms). **Pero** operaciones densas (booleanas encadenadas sobre ~8 500 triángulos) **bloquean el hilo principal** (gap rAF hasta 883 ms en navegador) → confirmada la necesidad de Web Worker para el modelador | HECHO (fuente: README) + HECHO (medido en FASE-4B-0) |
 | C9 | WASM sí, pero **sin COOP/COEP** (al no ser multihilo) | HECHO (fuente: README build WASM serial-only) + HIPÓTESIS de compatibilidad de hosting |
-| C10 | **`manifold.wasm` 528,78 KB + `manifold.js` 80,44 KB** | HECHO (fuente: jsDelivr, 3.5.4) |
-| C11 | Init `async` (`await Module(); wasm.setup()`), 0 dependencias declaradas; previsible con `?url` + dynamic import | HIPÓTESIS (no probado; PoC etapa 0) |
+| C10 | **`manifold.wasm` 528,78 KB + `manifold.js` 80,44 KB** (jsDelivr); medido en nuestro build: **wasm 541 470 B** (gzip 205 699; brotli 158 724) | HECHO (fuente: jsDelivr, 3.5.4) + HECHO (medido en FASE-4B-0, `4b0-results.json`) |
+| C11 | Init `async` (`await Module(); wasm.setup()`) confirmado en navegador real (Chromium, **0 errores de consola**, init **23,5 ms** en build y **27,0 ms** en dev). Carga diferida con dynamic import + `?url` de Vite funciona sin COOP/COEP. **Corrige la hipótesis previa de "0 dependencias declaradas": `manifold-3d` declara 11 directas**, pero ninguna es reachable desde el *entry* que consumimos (solo built-ins de Node); no entran en el bundle | **HECHO (medido en FASE-4B-0**, experimento V1, `4b0-results.json`) |
 | C12 | **Activo**: `manifold-3d` 3.5.x con publicaciones en 2026, ~52 k descargas/semana, bindings internos mantenidos; usado por BREP.io | HECHO (fuente: registry.npmjs, GitHub) |
-| C13 | **Apache-2.0**: compatible con distribución en repo MIT conservando atribución/NOTICE | HECHO (fuente: LICENSE) |
+| C13 | **Apache-2.0**: compatible con distribución en repo MIT conservando atribución/NOTICE. **Matiz 4B-0**: el paquete declara 11 dependencias transitivas cuyo subárbol incluye `sharp` → `@img/sharp-libvips-*` (**LGPL-3.0-or-later**); esas rutas **no son alcanzables** desde el *entry* que consumimos ni entran en el bundle web (evidencia en `THIRD_PARTY_NOTICES.md` §3), pero serían relevantes al empaquetar escritorio/CLI | HECHO (fuente: LICENSE) + HECHO (auditado en FASE-4B-0) |
 | C14 | **Media-baja**: interfaz pequeña (`Manifold` + `MeshGL`), salida convertible a `BufferGeometry` | HIPÓTESIS |
 
 ### C.2 `three-bvh-csg` (CSG puro JS)
@@ -161,11 +168,11 @@ permite empezar el modelador sin bloquear el configurador existente.
 | Extrusión | ⚠️ render-only | ✅ nativa | ✅ nativa | ❌ no incluida | ✅ según kernel |
 | Edición v/a/c | ❌ propia | ✅ B-rep | ⚠️ por operaciones | ❌ propia | ⚠️ por objeto primero |
 | Robustez | ❌ riesgo alto | ✅ industrial | ✅ declarada | ⚠️ experimental | según kernel |
-| Tamaño | 0 | 2,4–9,1 MB | **~0,6 MB** | ~1,3 MB | según kernel |
+| Tamaño | 0 | 2,4–9,1 MB | **~0,6 MB** (medido: wasm 541 kB; total brotli 174 kB) | ~1,3 MB | según kernel |
 | WASM/COOP-COEP | no/WASM no | sí/COEP en MT | sí/sin COEP | no/no | opcional |
 | Licencia | MIT | **LGPL-2.1** | Apache-2.0 | MIT | MIT + kernel |
 | Mantenimiento | ✅ | ⚠️ upstream parado | ✅ activo | ✅ (0.0.x) | — |
-| Integración Vite | ✅ ya está | ⚠️ compleja | ⚠️ a validar | ✅ simple | ⚠️ PoC |
+| Integración Vite | ✅ ya está | ⚠️ compleja | ✅ **validada (4B-0)**: init 23,5 ms, 0 errores consola | ✅ simple | ⚠️ ~~PoC~~ PoC ejecutado |
 | Complejidad | 🔴 muy alta | 🟠 alta | 🟡 media | 🟠 media-alta | 🟡 media |
 
 ## Recomendación (aprobada como dirección; ver ADR-001)
@@ -179,9 +186,20 @@ Condiciones de la recomendación:
 
 1. **Manifold es un candidato, no el motor definitivo**: se evalúa primero y
    se decide con los resultados de la etapa 0 del `POC_PLAN.md` (V1–V5).
+   > **Cumplido (FASE-4B-0, 15/10/2026)**: la etapa 0 se ejecutó con
+   > `manifold-3d@3.5.4`. Resultado: **GO condicionado** para promover Manifold
+   > a motor del PoC (no de producción), con las 5 condiciones registradas en
+   > `RISKS.md` y `ADR-001-GEOMETRY-ENGINE.md`.
 2. **No se instala ninguna dependencia en esta fase** (REGLA de FASE-4A);
    `manifold-3d` sigue sin instalar.
+   > **Actualizado (FASE-4B-0)**: la prueba de viabilidad autorizó instalar
+   > `manifold-3d@3.5.4` de forma **aislada** (solo en
+   > `packages/kernel-adapter`), sin tocar `geometry-core` ni `apps/web`.
+   > La regla de no instalar en FASE-4A se cumplió en su momento; el aislamiento
+   > se mantiene y el bundle del configurador no incluye Manifold (verificado).
 3. Si la evaluación falla, la alternativa es `three-bvh-csg` (MIT, sin WASM)
    aceptando reducir ambición de booleanas en la primera versión.
+   > La evaluación **no** falló; `three-bvh-csg` queda como plan B documentado.
 4. Obligaciones de licencia Apache-2.0 documentadas en
    `ADR-001-GEOMETRY-ENGINE.md` ("Obligaciones de licencia").
+   > Ampliadas con el hallazgo LGPL transitivo en `THIRD_PARTY_NOTICES.md`.

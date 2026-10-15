@@ -1,0 +1,154 @@
+{
+  "mode": "dev",
+  "buildMs": 0,
+  "skipped": true,
+  "sizes": [],
+  "total": null,
+  "port": 42711,
+  "devServerLog": "\n  VITE v8.3.4  ready in 370 ms\n\n  ➜  Local:   http://127.0.0.1:42711/\n",
+  "result": {
+    "ok": true,
+    "errors": [],
+    "initMs": 27,
+    "timings": {
+      "boxMs": 2.700000047683716,
+      "extrudeMs": 4.099999964237213,
+      "differenceMs": 4.900000035762787
+    },
+    "measures": {
+      "box": {
+        "volumeMm3": 8640000,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            800,
+            600,
+            18
+          ]
+        }
+      },
+      "extruded": {
+        "volumeMm3": 12960000,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            1200,
+            600,
+            18
+          ]
+        }
+      },
+      "holed": {
+        "volumeMm3": 12240000,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            1200,
+            600,
+            18
+          ]
+        }
+      }
+    },
+    "mesh": {
+      "boxTris": 12,
+      "holedTris": 20,
+      "holedPositions": 12
+    },
+    "blocking": {
+      "umbralTareaLargaMs": 50,
+      "gapRafMaxMs": 733.3,
+      "gapRafMedioMs": 195.82,
+      "temporizadorRetrasoMs": 751.9,
+      "framesObservados": 5,
+      "operaciones": [
+        {
+          "segmentos": 500,
+          "triangulos": 8480,
+          "validacionExtrusionMs": 91.69999998807907,
+          "booleanaForzadaMs": 659.5,
+          "perOpMs": [
+            27.19999998807907,
+            22.900000035762787,
+            22.099999964237213,
+            19.5,
+            19.399999976158142,
+            19.899999976158142,
+            19.19999998807907,
+            18,
+            17.69999998807907,
+            17.099999964237213,
+            17.899999976158142,
+            19.19999998807907,
+            17.100000023841858,
+            16.400000035762787,
+            16.100000023841858,
+            16,
+            16.099999964237213,
+            16.30000001192093,
+            16.80000001192093,
+            15.600000023841858,
+            16.299999952316284,
+            15.300000011920929,
+            15.300000011920929,
+            16.299999952316284,
+            15.5,
+            17.5,
+            15.600000023841858,
+            15,
+            14.300000011920929,
+            13.799999952316284,
+            14.100000023841858,
+            13.399999976158142,
+            13.5,
+            13.400000035762787,
+            14.200000047683716,
+            12.899999976158142,
+            13.199999988079071,
+            12.399999976158142,
+            12.800000011920929,
+            12.099999964237213
+          ],
+          "booleanasEncadenadas": 40,
+          "bloqueaHiloPrincipal": true
+        }
+      ],
+      "bloqueaHiloPrincipal": true,
+      "estrategiaWorker": "Delegar la geometría en un Web Worker con el WASM ya cargado (una única instantánea por worker, cacheada). La interfaz GeometryKernel se expone en el hilo principal como proxy que envía mensajes y recibe mallas como ArrayBuffer transferible. El editor no integra todavía el worker: solo se documenta."
+    },
+    "env": {
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "crossOriginIsolated": false,
+      "webAssembly": true,
+      "hardwareConcurrency": 12
+    }
+  },
+  "pageSettleMs": 951.1286129999999,
+  "consoleErrors": [],
+  "failedRequests": [],
+  "allResponses": [
+    "200 http://127.0.0.1:42711/",
+    "200 http://127.0.0.1:42711/main.ts",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/index.ts",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/kernel.ts",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/manifold-kernel.ts",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/src/polygon.ts",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/node_modules/.vite/deps/manifold-3d.js?v=e5daa211",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/packages/kernel-adapter/node_modules/.vite/deps/rolldown-runtime-BPOCksWG.js?v=e5daa211",
+    "200 http://127.0.0.1:42711/@vite/client",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/node_modules/vite/dist/client/env.mjs",
+    "200 http://127.0.0.1:42711/@fs/home/jesus/proyectos/furniconfig/node_modules/manifold-3d/manifold.wasm"
+  ]
+}
