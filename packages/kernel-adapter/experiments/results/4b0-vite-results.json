@@ -1,0 +1,180 @@
+{
+  "mode": "build",
+  "buildMs": 774.324384,
+  "skipped": false,
+  "sizes": [
+    {
+      "file": "assets/manifold-BE4c7gO-.wasm",
+      "raw": 541470,
+      "gzip": 205699,
+      "brotli": 158724
+    },
+    {
+      "file": "assets/index-D6AS8_eu.js",
+      "raw": 52988,
+      "gzip": 17896,
+      "brotli": 16076
+    },
+    {
+      "file": "index.html",
+      "raw": 463,
+      "gzip": 341,
+      "brotli": 256
+    },
+    {
+      "file": "assets/__vite-browser-external-BKqe9YVL.js",
+      "raw": 92,
+      "gzip": 105,
+      "brotli": 89
+    },
+    {
+      "file": "favicon.ico",
+      "raw": 0,
+      "gzip": 20,
+      "brotli": 1
+    }
+  ],
+  "total": {
+    "raw": 595013,
+    "gzip": 224061,
+    "brotli": 175146
+  },
+  "port": 33859,
+  "result": {
+    "ok": true,
+    "errors": [],
+    "initMs": 23.5,
+    "timings": {
+      "boxMs": 4.199999988079071,
+      "extrudeMs": 6.600000023841858,
+      "differenceMs": 7.699999988079071
+    },
+    "measures": {
+      "box": {
+        "volumeMm3": 8640000,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            800,
+            600,
+            18
+          ]
+        }
+      },
+      "extruded": {
+        "volumeMm3": 12960000,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            1200,
+            600,
+            18
+          ]
+        }
+      },
+      "holed": {
+        "volumeMm3": 12240000,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            1200,
+            600,
+            18
+          ]
+        }
+      }
+    },
+    "mesh": {
+      "boxTris": 12,
+      "holedTris": 20,
+      "holedPositions": 12
+    },
+    "blocking": {
+      "umbralTareaLargaMs": 50,
+      "gapRafMaxMs": 883.3,
+      "gapRafMedioMs": 233.3,
+      "temporizadorRetrasoMs": 903.6,
+      "framesObservados": 5,
+      "operaciones": [
+        {
+          "segmentos": 500,
+          "triangulos": 8480,
+          "validacionExtrusionMs": 126.59999996423721,
+          "booleanaForzadaMs": 776.1000000238419,
+          "perOpMs": [
+            31.599999964237213,
+            29,
+            25.100000023841858,
+            24.400000035762787,
+            23,
+            22.100000023841858,
+            21.900000035762787,
+            21.5,
+            21.900000035762787,
+            20.69999998807907,
+            20.399999976158142,
+            20,
+            20.299999952316284,
+            19.5,
+            20.5,
+            19.799999952316284,
+            19,
+            19.100000023841858,
+            19.299999952316284,
+            18.700000047683716,
+            19.5,
+            18.399999976158142,
+            18.299999952316284,
+            18.100000023841858,
+            18.69999998807907,
+            17.899999976158142,
+            19.30000001192093,
+            17.599999964237213,
+            17.200000047683716,
+            16.299999952316284,
+            16.30000001192093,
+            15.700000047683716,
+            15.5,
+            16.19999998807907,
+            16.400000035762787,
+            15,
+            15.5,
+            14.399999976158142,
+            15.100000023841858,
+            14.100000023841858
+          ],
+          "booleanasEncadenadas": 40,
+          "bloqueaHiloPrincipal": true
+        }
+      ],
+      "bloqueaHiloPrincipal": true,
+      "estrategiaWorker": "Delegar la geometría en un Web Worker con el WASM ya cargado (una única instantánea por worker, cacheada). La interfaz GeometryKernel se expone en el hilo principal como proxy que envía mensajes y recibe mallas como ArrayBuffer transferible. El editor no integra todavía el worker: solo se documenta."
+    },
+    "env": {
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "crossOriginIsolated": false,
+      "webAssembly": true,
+      "hardwareConcurrency": 12
+    }
+  },
+  "pageSettleMs": 1049.7972100000002,
+  "consoleErrors": [],
+  "failedRequests": [],
+  "allResponses": [
+    "200 http://127.0.0.1:33859/",
+    "200 http://127.0.0.1:33859/assets/index-D6AS8_eu.js",
+    "200 http://127.0.0.1:33859/assets/manifold-BE4c7gO-.wasm"
+  ]
+}

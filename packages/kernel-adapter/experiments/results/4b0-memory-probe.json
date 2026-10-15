@@ -1,0 +1,15 @@
+{
+  "meshTieneDelete": false,
+  "propsMesh": "constructor, numTri, numVert, numRun, merge, verts, position, extras, tangent, transform, backside, hasNormals",
+  "heapExpuesto": false,
+  "vertPropertiesEsVistaDeHeap": false,
+  "iteraciones": 20000,
+  "rssTrasBucle1": 6.09,
+  "rssTrasBucle2": 6.09,
+  "crecimientoSegundoBucle": 0,
+  "estableSinFuga": true,
+  "rssSólidos500": 8.96,
+  "rssTrasDisposeAll": 8.96,
+  "node": "v22.23.2",
+  "at": "2026-10-15T18:23:04.677Z"
+}

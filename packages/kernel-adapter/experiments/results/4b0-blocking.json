@@ -1,0 +1,43 @@
+{
+  "fase": "4B-0",
+  "script": "experiments/blocking-probe.mjs",
+  "executedAt": "2026-10-15T18:23:08.981Z",
+  "node": "v22.23.2",
+  "umbralTareaLargaMs": 50,
+  "metodologia": "Para cada N: (a) construcción de una esfera de radio 300 mm con N segmentos, y (b) resta booleana contra una caja de 400 mm cronometrada con getMesh() incluido, ya que subtract() es perezoso y medirlo sin forzar la evaluación daría ~0 ms. Se programa setTimeout(0) antes de la operación: su retraso real (= stallEventLoopMs) mide el bloqueo efectivo del hilo, no solo el tiempo de CPU percibido.",
+  "operaciones": [
+    {
+      "segmentosEsfera": 256,
+      "triangulos": 4300,
+      "esferaMs": 52.88,
+      "booleanaForzadaMs": 27.86,
+      "stallEventLoopMs": 54.42,
+      "bloqueaHiloPrincipal": false
+    },
+    {
+      "segmentosEsfera": 512,
+      "triangulos": 16780,
+      "esferaMs": 155.24,
+      "booleanaForzadaMs": 60.07,
+      "stallEventLoopMs": 60.14,
+      "bloqueaHiloPrincipal": true
+    },
+    {
+      "segmentosEsfera": 1024,
+      "triangulos": 66316,
+      "esferaMs": 548.46,
+      "booleanaForzadaMs": 215.56,
+      "stallEventLoopMs": 215.65,
+      "bloqueaHiloPrincipal": true
+    },
+    {
+      "segmentosEsfera": 2048,
+      "triangulos": 263692,
+      "esferaMs": 2217.65,
+      "booleanaForzadaMs": 871.77,
+      "stallEventLoopMs": 871.85,
+      "bloqueaHiloPrincipal": true
+    }
+  ],
+  "conclusion": "Operaciones > 50 ms: el kernel bloquea el hilo principal durante la ejecución (WASM síncrono, sin cesión). En el editor esto congelaría el bucle de render y la entrada del usuario; la estrategia documentada es delegar en un Web Worker."
+}
