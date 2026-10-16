@@ -1,13 +1,15 @@
 # SCENE_DOCUMENT — Modelo del documento de escena (FASE-4A)
 
-> **Estado (FASE-4B-A)**: los contratos de §3, la validación de §4 (salvo lo
-> indicado) y la selección por objeto están **implementados** en
+> **Estado (FASE-4B-B)**: los contratos de §3, la validación de §4 (salvo lo
+> indicado), la selección por objeto, el **Command System con Undo/Redo**
+> (§3.4, `command.ts` + `commands.ts`) y la **serialización en
+> `SceneEnvelope`** (§3.5, `serialize.ts`) están **implementados** en
 > `packages/modeler-core` (paquete puro, sin Three.js/DOM). **No** está
-> completada la arquitectura total de 4B: faltan herramientas de dibujo
-> (4B-B), el kernel en Web Worker (4B-C) y el registro completo de
-> componentes con `build()` (4B-D). Las invariantes **I7 e I8** requieren
-> la integración del kernel y siguen **pendientes**. Complementa
-> `PROPOSED_ARCHITECTURE.md` §3.1 y §3.8.
+> completada la arquitectura total de 4B: faltan el kernel en Web Worker
+> (4B-C, incluida la `geometryCache` del sobre) y el registro completo de
+> componentes con `build()` (4B-D). Las invariantes **I7 e I8** requieren la
+> integración del kernel y siguen **pendientes**. Complementa
+> `PROPOSED_ARCHITECTURE.md` §3.1–§3.8.
 
 ## 1. Propósito
 
@@ -86,6 +88,10 @@ type SceneGeometryRef =
 - La caché (`MeshData`) es **descartable**: si se pierde, se recalcula.
 - El envelope de guardado puede incluir `geometryCache` opcional para
   acelerar la apertura (patrón: `transfer.ts` con marcador + versión).
+  **Implementado (4B-B) con delta**: `SceneEnvelope` v1 **no** incluye
+  `geometryCache` (diferida a 4B-C); el parser de 4B-B ignora claves
+  desconocidas del sobre (tolerancia hacia adelante), de modo que un sobre
+  futuro con caché se leerá sin romper el formato.
 
 ### 3.3 Croquis
 
@@ -124,6 +130,65 @@ interface Sketch2D {
   ese kernel, de modo que el chequeo queda garantizado en el único punto de
   construcción.
 
+### 3.4 Command System + Undo/Redo (implementado, FASE-4B-B)
+
+Contratos en `PROPOSED_ARCHITECTURE.md` §3.7; código en
+`packages/modeler-core/src/command.ts` (tipos + historial) y
+`src/commands.ts` (las 7 fábricas). Diseño:
+
+- **Comandos, no documentos completos**: cada fábrica captura solo el delta
+  para revertir (valor previo; en `remove-object`, el objeto íntegro y su
+  índice). `apply`/`revert` son **puros y deterministas** y no mutan la
+  entrada (I3).
+- `CommandHistory` = `{ past, present, future, limit }` inmutable;
+  `present` es **siempre** un documento validado y congelado (toda
+  operación que lo produce pasa por `validateSceneDocument`).
+- Tres situaciones diferenciadas:
+  **(A)** cambio válido → entrada nueva en `past`, `future` descartado,
+  `past` recortado al límite (PROVISIONAL, 100);
+  **(B)** no-op (el valor ya estaba; detección por referencia e igualdad
+  estructural, **sin** `JSON.stringify`) → misma referencia de historial,
+  sin entrada nueva;
+  **(C)** operación inválida o conflicto → `SceneError` con código estable
+  y el historial intacto.
+- Mapeo de códigos de (C): objetivo ausente → `ERR_SCENE_OBJECT_NOT_FOUND`;
+  `add-object` sobre id ya presente → `ERR_SCENE_DUPLICATE_ID`; estado
+  actual ≠ estado capturado al crear el comando →
+  `ERR_SCENE_COMMAND_CONFLICT`; resultado que no valida → el código del
+  validador.
+- IDs de comando **deterministas y únicos por contenido** (sin UUID, I4):
+  `cmd:tipo:idObjetivo:hash64`, donde el hash (FNV-1a de 64 bits sobre la
+  forma canónica del delta, con claves ordenadas) distingue operaciones
+  distintas sobre el mismo objetivo. El historial se direcciona por
+  posición, no por id. Las fábricas congelan los insumos nuevos (objeto,
+  croquis, posición, parámetros) al capturarlos: los deltas son
+  inmutables (I3).
+- Historiales **independientes** del configurador de clóset (RISKS R-06):
+  este sistema no toca `WardrobeConfig` ni `apps/web`.
+
+### 3.5 SceneEnvelope — serialización (implementada, FASE-4B-B)
+
+Contratos en `PROPOSED_ARCHITECTURE.md` §3.8; código en
+`packages/modeler-core/src/serialize.ts`:
+
+- `SCENE_FORMAT = 'furniconfig-scene'`, `SCENE_FORMAT_VERSION = 1`.
+- `serializeScene(document, options?)` valida antes de escribir (un
+  documento inválido no sale del paquete) y empaqueta el documento
+  **reconstruido** (sin claves desconocidas).
+- `parseSceneEnvelope(text, options?)` devuelve un **resultado
+  discriminado** (patrón ADR-005, no lanza sobre entrada hostil):
+  `ERR_SCENE_ENVELOPE_INVALID` (JSON malformado, sobre no estructural,
+  marcador incorrecto, documento ausente/no-objeto),
+  `ERR_SCENE_ENVELOPE_VERSION` (versión desconocida, **sin migración
+  silenciosa**) y, para el documento, los códigos de
+  `validateSceneDocument` reutilizados tal cual.
+- El sobre transporta **solo** el documento: sin historial, UI ni
+  `geometryCache` (§3.2). Claves extra ignoradas (tolerancia hacia
+  adelante) y sin contaminación de prototipos (reconstrucción con
+  `Object.defineProperty`).
+- Round-trip sin pérdida: `parse(serialize(doc))` = documento
+  estructuralmente idéntico y congelado.
+
 ## 4. Validación
 
 `validateSceneDocument(input: unknown): SceneValidationResult`, análoga a
@@ -160,6 +225,10 @@ Códigos propuestos (union propio, mínimo para el MVP):
 | `ERR_SCENE_UNKNOWN_COMPONENT` | `type` de componente no registrado |
 | `ERR_SCENE_PARAMS_OUT_OF_RANGE` | Parámetro fuera del `paramsSchema` |
 | `ERR_SCENE_TRANSFORM_INVALID` | Transformación no entera / no finita |
+| `ERR_SCENE_OBJECT_NOT_FOUND` (4B-B) | El comando apunta a un objeto inexistente |
+| `ERR_SCENE_COMMAND_CONFLICT` (4B-B) | Precondición de comando incumplida (§3.4); el historial no se altera |
+| `ERR_SCENE_ENVELOPE_INVALID` (4B-B) | Sobre malformado: JSON, marcador o documento ausente/no-objeto (§3.5) |
+| `ERR_SCENE_ENVELOPE_VERSION` (4B-B) | Versión de sobre desconocida; sin migración silenciosa (§3.5) |
 
 > Los valores de rango (máximos, holguras) **no se inventan**: los que
 > dependan de carpintería se marcan PROVISIONAL en `docs/product-rules.md`
@@ -191,6 +260,13 @@ paso explícito y versionado (ver `MIGRATION_STRATEGY.md`).
 > `SCENE_DOCUMENT_VERSION` en `modeler-core`). El sobre `format` +
 > `formatVersion` de §7 corresponde al almacén/exportación, **fuera del
 > alcance de 4B-A** (llega con la persistencia de fases posteriores).
+>
+> **Implementado (4B-B)**: el sobre de escena `SceneEnvelope`
+> (`format` + `version` + `document`) con `serializeScene` /
+> `parseSceneEnvelope` (§3.5). Regla confirmada: versión desconocida del
+> sobre → `ERR_SCENE_ENVELOPE_VERSION` **antes** de tocar el documento; sin
+> migraciones silenciosas. La persistencia (repositorio localStorage,
+> paso 8 completo) sigue pendiente.
 
 ## 6. Relación con `WardrobeConfig`
 

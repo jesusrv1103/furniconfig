@@ -204,14 +204,13 @@ patrón de `apps/web/src/lib/studio/history.ts` (que hoy está tipado contra
 
 ```ts
 interface Command {
-  readonly id: string;                  // determinista
+  readonly id: string;                  // determinista por contenido (ver nota)
   readonly label: string;               // para UI de historial
   readonly kind: 'add-object' | 'remove-object' | 'set-sketch' | 'set-extrusion'
                | 'set-transform' | 'set-params' | 'rename';
   apply(doc: SceneDocument): SceneDocument;      // puro, inmutable
   revert(doc: SceneDocument): SceneDocument;     // puro, inmutable
 }
-
 interface CommandHistory {
   readonly past: readonly Command[];
   readonly present: SceneDocument;
@@ -224,6 +223,26 @@ interface CommandHistory {
 completos (el documento crecerá con sólidos). `apply`/`revert` deben ser
 **puros y deterministas** (misma entrada → misma salida), lo que permite
 serializar el historial en el futuro.
+
+> **Implementado (4B-B)** en `command.ts` (`createCommandHistory`,
+> `executeCommand`, `undoCommand`, `redoCommand`, `canUndo`, `canRedo`) y
+> `commands.ts` (las 7 fábricas). Delta de contrato sobre este esquema:
+> las fábricas reciben además el **documento actual** para capturar el
+> delta de reversión (valor previo; en `remove-object`, objeto + índice) y
+> validan sus entradas estáticas con `SceneError`. Semántica de resultado
+> (FASE-4B-B): (A) cambio válido → entrada nueva; (B) **no-op** (el valor
+> ya estaba, detectado por referencia e igualdad estructural, sin
+> `JSON.stringify`) → misma referencia de historial; (C) operación
+> inválida o conflicto de precondiciones → `SceneError`
+> (`ERR_SCENE_OBJECT_NOT_FOUND` / `ERR_SCENE_DUPLICATE_ID` /
+> `ERR_SCENE_COMMAND_CONFLICT` / código del validador) con el historial
+> intacto. `present` se revalida en cada transición (validación con
+> `SceneValidationOptions`, p. ej. registro de componentes). Los ids de
+> comando son **deterministas y únicos por contenido**:
+> `cmd:tipo:idObjetivo:hash64` (FNV-1a sobre la forma canónica del delta),
+> de modo que dos operaciones distintas nunca comparten id; el
+> direccionamiento del historial es posicional. Las fábricas congelan los
+> insumos nuevos al capturarlos (deltas inmutables, I3).
 
 ### 3.8 Serialization — `modeler-core/src/serialize.ts` (puro)
 
@@ -244,6 +263,18 @@ interface SceneEnvelope {
 Reglas heredadas del patrón existente (`apps/web/src/lib/designs/transfer.ts`):
 marcador + versión + validación completa del JSON hostil; versiones
 desconocidas → error **antes de escribir**.
+
+> **Implementado (4B-B)**: `serializeScene(document, options?)` y
+> `parseSceneEnvelope(text, options?)`. Delta de contrato sobre este
+> esquema: (1) `geometryCache` **no** existe en `SceneEnvelope` v1
+> (diferida a 4B-C; el parser ignora claves desconocidas del sobre por
+> tolerancia hacia adelante); (2) el parser devuelve un **resultado
+> discriminado** `{ ok: true; document } | { ok: false; code; message;
+> issues }` en lugar de lanzar (patrón ADR-005 del validador), con códigos
+> propios `ERR_SCENE_ENVELOPE_INVALID` / `ERR_SCENE_ENVELOPE_VERSION` y los
+> de `validateSceneDocument` reutilizados para el documento; (3)
+> `serializeScene` valida antes de escribir y lanza `SceneError` con el
+> código del primer hallazgo.
 
 ### 3.9 Parametric Components — `modeler-core/src/components.ts`
 
