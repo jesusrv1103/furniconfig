@@ -30,11 +30,14 @@ Fuente de contratos: `docs/architecture/furniconfig-4/SCENE_DOCUMENT.md`
   escribir) y `parseSceneEnvelope` (parser hostil con resultado
   discriminado, sin migraciones silenciosas).
 
-**No incluido** (fases posteriores): kernel en Web Worker (4B-C, incluida la
-`geometryCache` del sobre), registro completo de componentes con `build()`
-(4B-D), edición por caras/aristas/vértices (capacidad futura, RISKS R-05),
-persistencia de documentos (repositorio localStorage) e integración con la
-GUI.
+**No incluido** (fases posteriores): kernel en Web Worker — la
+**infraestructura** quedó lista en `packages/kernel-adapter` (FASE-4B-C:
+protocolo, proxy `WorkerGeometryKernel`, watchdog, transfer), pero la
+integración con el documento y la `geometryCache` del sobre siguen **fuera de
+4B-C** (decisión de alcance; ver `kernel-adapter/README.md`), registro completo
+de componentes con `build()` (4B-D), edición por caras/aristas/vértices
+(capacidad futura, RISKS R-05), persistencia de documentos (repositorio
+localStorage) e integración con la GUI.
 
 ## Invariantes
 

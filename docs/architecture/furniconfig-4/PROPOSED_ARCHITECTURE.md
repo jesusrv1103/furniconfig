@@ -109,6 +109,17 @@ interface GeometryKernel {
 **HIPÓTESIS**: `Manifold.Extrude` + `Cube` cubren los pasos 2–7 del MVP;
 confirmar en `POC_PLAN.md` etapa 0.
 
+> **Actualización (FASE-4B-C)**: el contrato anterior se implementó en
+> `packages/kernel-adapter` (deltas documentados en su README) y, desde 4B-C,
+> **todas las operaciones del editor se ejecutarán en un Web Worker dedicado**
+> mediante `AsyncGeometryKernel` (reflejo asíncrono con `Promise` + cancelación
+> lógica por clave): el WASM es monohilo y síncrono, y medir en Chromium real
+> confirmó que el hilo principal se congelaba hasta 1 699,9 ms con booleanas
+> densas frente a **16,8 ms** con worker. Manejo de referencias por epoch
+> (`unknown-ref` tras reinicio ⇒ reconstruir sólidos desde `SceneDocument`),
+> watchdog con reinicio controlado (sin reintento de operaciones) y `MeshData`
+> transferible. Sin `geometryCache` ni persistencia aún (4B-D).
+
 ### 3.3 Tool System — `apps/web/src/lib/modeler/tools.ts`
 
 Responsabilidad: traducir gestos del usuario en comandos. Un tool activo a

@@ -1,0 +1,150 @@
+{
+  "fase": "4B-C",
+  "script": "experiments/quantization-probe.mjs",
+  "executedAt": "2026-10-16T20:41:58.509Z",
+  "invariantesConservadas": "SceneDocument permanece en mm enteros (I8); esta sonda no cambia ninguna política.",
+  "alternativas": {
+    "A": {
+      "nombre": "A) status quo: mm enteros, salidas float sin redondear",
+      "geometriaBase": {
+        "volumenMm3": 12240000,
+        "volumenEsperadoMm3": 12240000,
+        "volumenErrorRel": 0,
+        "boundsMm": {
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            1200,
+            600,
+            18
+          ]
+        },
+        "triangulos": 32
+      },
+      "cadenaAlineada": {
+        "volumenMm3": 97920000,
+        "volumenEsperadoMm3": 97920000,
+        "volumenErrorRel": 0,
+        "boundsMm": {
+          "min": [
+            -1280,
+            300,
+            0
+          ],
+          "max": [
+            -80,
+            2700,
+            36
+          ]
+        }
+      },
+      "determinismoByteAByte": true
+    },
+    "B": {
+      "nombre": "B) rejilla de 1/10 mm: ops en décimas, resultados ÷10",
+      "cadenaAlineada": {
+        "volumenMm3": 97920000,
+        "volumenReferenciaMm3": 97920000,
+        "volumenErrorRel": 0,
+        "boundsMm": {
+          "min": [
+            -1280,
+            300,
+            0
+          ],
+          "max": [
+            -80,
+            2700,
+            36
+          ]
+        },
+        "errorBoundsVsA": 0
+      },
+      "desplazamientoMedioMm": {
+        "alcanzableEnB": 0.5,
+        "boundsMinXMm": 0.5,
+        "errorVsEsperadoMm": 0,
+        "imposibleEnA": "en mm enteros el desplazamiento mínimo es 1 mm (error ≥ 0,5 mm)"
+      }
+    },
+    "C": {
+      "nombre": "C) cuantizar salidas: redondear vértices a mm enteros y reconstruir",
+      "reconstructionOk": true,
+      "triangulosAntes": 32,
+      "triangulosDespues": 32,
+      "triangulosPerdidos": 0,
+      "triangulosDegeneradosAntesDeReconstruir": 0,
+      "triangulosDegeneradosEnMallaRedondeada": 0,
+      "volumenAntesMm3": 12240000,
+      "volumenDespuesMm3": 12246318,
+      "volumenErrorRel": 0.0005161764705880831,
+      "boundsAntesMm": {
+        "min": [
+          -299.99999999999994,
+          0,
+          0
+        ],
+        "max": [
+          1039.2304845413264,
+          1119.6152422706632,
+          18
+        ]
+      },
+      "boundsDespuesMm": {
+        "min": [
+          -300,
+          0,
+          0
+        ],
+        "max": [
+          1039,
+          1120,
+          18
+        ]
+      },
+      "boundsErrorMaxMm": 0.38,
+      "nota": "El constructor de Manifold colapsa triángulos degenerados: el redondeo de vértices no conserva la topología ni el volumen exacto."
+    },
+    "D": {
+      "nombre": "D) floats sin cuantizar: fraccionarios arbitrarios, sin redondeos ocultos",
+      "determinismoByteAByte": true,
+      "boundsMm": {
+        "min": [
+          -449.5379809471616,
+          0.6997595264191645,
+          0
+        ],
+        "max": [
+          1559.307745864828,
+          1680.1226229324138,
+          27
+        ]
+      },
+      "boundsAnaliticosMm": {
+        "minX": -449.5379809471616,
+        "maxX": 1559.3077458648281,
+        "minY": 0.6997595264191645,
+        "maxY": 1680.1226229324138,
+        "minZ": 0,
+        "maxZ": 27
+      },
+      "boundsErrorMaxMm": 0,
+      "volumenMm3": 41310000,
+      "volumenAnaliticoMm3": 41310000,
+      "volumenErrorRel": 0
+    }
+  },
+  "recomendacionTecnica": {
+    "decision": "RESERVADA (no se aplica ningún cambio en 4B-C)",
+    "hallazgos": [
+      "A) Con mm enteros la geometría alineada al eje es exacta (error rel. 0) y determinista byte a byte; el costo es imposibilidad de offsets fraccionarios.",
+      "B) La rejilla de 1/10 mm reproduce exactamente la geometría entera y admite offsets de 0,5 mm sin error (décimas se dividen exactas en dobles).",
+      "C) Redondear salidas produce 0 triángulos degenerados y error de volumen rel. 0.0005161764705880831.",
+      "D) Los floats sin cuantizar son deterministas byte a byte y sus bounds siguen los analíticos dentro de ~1e-4 mm (redondeo float)."
+    ],
+    "recomendacion": "Mantener los mm enteros de SceneDocument como contrato (I8) y, si el modelador necesita precisión fina, adoptar la rejilla de 1/10 mm en la ENTRADA (B) en lugar del redondeo de salidas (C), que degrada topología. La precisión de salida en float (A/D) es suficiente para render y medidas; no se proponen redondeos ocultos."
+  }
+}

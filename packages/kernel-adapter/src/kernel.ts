@@ -58,7 +58,25 @@ export type KernelErrorCode =
   | 'kernel-not-ready'
   | 'unknown-ref'
   | 'invalid-input'
-  | 'kernel-status';
+  | 'kernel-status'
+  // --- Añadidos en FASE-4B-C (Kernel Worker) ---
+  /**
+   * Pérdida de disponibilidad **no deliberada** del worker: el watchdog no
+   * recibió señales de vida dentro del presupuesto (10 s PROVISIONAL en
+   * reposo; presupuesto amplio con operaciones en vuelo), o el puerto del
+   * worker falló (error/crash no controlado). El proxy puede reiniciar el
+   * worker de forma controlada, pero **no reintenta** las operaciones
+   * fallidas: el consumidor decide.
+   */
+  | 'worker-timeout'
+  /**
+   * Indisponibilidad **deliberada** del worker: `terminate()` /
+   * `terminateAndRestart()` del consumidor, cierre del proxy, o fin del
+   * presupuesto de reinicios (`maxRestarts`). Tras este código el worker no
+   * vuelve solo: hay que crear un proxy nuevo o llamar a
+   * `terminateAndRestart()`.
+   */
+  | 'worker-terminated';
 
 /** Error estable del adaptador (patrón de `GeometryError`, union propio). */
 export class KernelError extends Error {
