@@ -1,0 +1,82 @@
+{
+  "fase": "4B-C",
+  "script": "experiments/worker-check.mjs",
+  "executedAt": "2026-10-16T20:34:24.836Z",
+  "buildMs": 663,
+  "skipped": false,
+  "assets": [
+    {
+      "file": "assets/manifold-BE4c7gO-.wasm",
+      "raw": 541470
+    },
+    {
+      "file": "assets/index-BBEPBpXy.js",
+      "raw": 62460
+    },
+    {
+      "file": "assets/kernel-worker-entry-nalvj7v7.js",
+      "raw": 51210
+    },
+    {
+      "file": "index.html",
+      "raw": 447
+    },
+    {
+      "file": "assets/__vite-browser-external-4TrdPGV4.js",
+      "raw": 92
+    }
+  ],
+  "pageSettleMs": 3152,
+  "consoleErrors": [],
+  "result": {
+    "ok": true,
+    "errors": [],
+    "env": {
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "hardwareConcurrency": 12
+    },
+    "initWorkerMs": 195.1,
+    "directo": {
+      "gapRafMaxMs": 1699.8999999999999,
+      "gapRafMedioMs": 437.47499999999997,
+      "framesObservados": 5,
+      "temporizadorRetrasoMs": 1505.7999999970198,
+      "totalMs": 1544.3,
+      "triangulos": 8480
+    },
+    "worker": {
+      "gapRafMaxMs": 16.800000000000182,
+      "gapRafMedioMs": 16.666666666666668,
+      "framesObservados": 52,
+      "temporizadorRetrasoMs": 0.5,
+      "totalMs": 869.6,
+      "triangulos": 8480,
+      "pasosMs": {
+        "p50": 17.9,
+        "p95": 21.2,
+        "max": 24.8
+      }
+    },
+    "latenciaTipicaMs": {
+      "p50": 0.5,
+      "p95": 1.2,
+      "max": 1.5,
+      "muestras": 20
+    },
+    "concurrentes": {
+      "solicitudes": 10,
+      "wallMs": 0.6,
+      "medidasOk": true
+    },
+    "reinicio": {
+      "downtimeMs": 29.3,
+      "operacionPostReinicioOk": true
+    },
+    "memoria": {
+      "usedJSHeapSizeAntes": 10000000,
+      "usedJSHeapSizeDespues": 10000000
+    },
+    "presupuestoVisualMs": 50,
+    "presupuestoVisualCumplido": true
+  }
+}

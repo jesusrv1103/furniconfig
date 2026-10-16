@@ -57,8 +57,12 @@ para promover Manifold de *candidato* a **motor del PoC** (no de producción).
 2. **Ampliar V3** con rotaciones/escalos fraccionarios y cóncavos (si fallaba
    → plan B `three-bvh-csg`). → **Hecho**: pasaron todos; el plan B no se
    activa.
-3. **Validar operaciones largas en _worker_** → **estrategia documentada**
-   (`README` del paquete + RISKS R-17); **no implementada** en el editor.
+3. **Validar operaciones largas en _worker_** → **implementada como
+   infraestructura (4B-C)**: `kernel-adapter/src/worker/` (protocolo tipado,
+   proxy `WorkerGeometryKernel`, watchdog con reinicio controlado, transfer
+   zero-copy) y medida en Chromium real — gap rAF 1 699,9 ms (hilo principal)
+   → **16,8 ms** (worker) con salida idéntica. **Pendiente**: integración en
+   el editor (Fase 4B-D).
 4. **Corregir `ENGINE_COMPARISON.md` C11** ("0 dependencias declaradas" es
    incorrecto: declara 11 directas) y volcar mediciones a docs. → **Hecho**.
 5. **`THIRD_PARTY_NOTICES.md` debe ir en el PR** que introduzca la
@@ -70,6 +74,8 @@ para promover Manifold de *candidato* a **motor del PoC** (no de producción).
   **PoC**, sujeto a revisión al cierre de la Fase 4B completa.
 - **No** se integra Manifold en el visor de clósets actual.
 - **No** se implementa el Web Worker (solo se documenta la estrategia).
+  *(Actualizado 4B-C: la infraestructura del worker está implementada y medida
+  en `kernel-adapter`; sigue **sin integrarse** en el editor — Fase 4B-D.)*
 - **No** se abre la Fase 4B completa ni la 3F.3.
 
 ---
