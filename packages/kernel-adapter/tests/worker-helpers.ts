@@ -3,13 +3,11 @@
  *
  * - `FakePort`: puerto determinista controlado por la prueba (sin hilos).
  * - `FakeClock`: reloj manual para el watchdog (sin esperas reales).
- * - `NodePortAdapter`: adapta un `MessagePort` de `node:worker_threads` a
- *   `WorkerPort` para las pruebas de integración con WASM real.
+ * - `NodePortAdapter`: adapta un `MessagePort` real (el `MessageChannel`
+ *   global de Node) a `WorkerPort` para las pruebas de integración con WASM.
  * - `SpyPort`: envuelve un puerto registrando mensajes y buffers
  *   transferidos (para asserts de transferencia y detach).
  */
-
-import { MessagePort as NodeMessagePort } from 'node:worker_threads';
 
 import {
   isKernelRequest,
@@ -144,7 +142,16 @@ export class SpyPort implements WorkerPort {
   }
 }
 
-/** Adaptador `node:worker_threads.MessagePort` → `WorkerPort`. */
+/**
+ * `MessagePort` real de un `MessageChannel` de Node: la interfaz compartida
+ * DOM (`addEventListener`/`start`/`close`/`postMessage`) más `unref()` de
+ * Node. Se define localmente (sin `@types/node`) para que el typecheck
+ * funcione igual en local y en CI: los mensajes se reciben por EventTarget,
+ * que ambos mundos implementan.
+ */
+export type NodeMessagePort = MessagePort & { unref?: () => void };
+
+/** Adaptador `MessagePort` real → `WorkerPort`. */
 export class NodePortAdapter implements WorkerPort {
   onmessage: ((event: WorkerPortEvent) => void) | null = null;
   onerror: ((event: unknown) => void) | null = null;
@@ -154,10 +161,10 @@ export class NodePortAdapter implements WorkerPort {
 
   constructor(port: NodeMessagePort) {
     this.#port = port;
-    port.on('message', (data: unknown) => this.onmessage?.({ data }));
+    port.addEventListener('message', (event: MessageEvent) => this.onmessage?.({ data: event.data }));
     port.start();
     // no mantener vivo el event loop de Node por un puerto abierto (tests)
-    port.unref();
+    port.unref?.();
   }
 
   postMessage(message: unknown, transfer?: readonly ArrayBuffer[]): void {

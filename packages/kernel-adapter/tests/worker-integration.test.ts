@@ -1,11 +1,9 @@
 /**
  * FASE-4B-C — integración real: proxy + sesión del worker comunicados por un
- * `MessageChannel` de `node:worker_threads` (structured clone y **transfer**
+ * `MessageChannel` global de Node (structured clone y **transfer**
  * reales, WASM de Manifold real). La verificación con hilos aislados y
  * Chromium real vive en el experimento `experiments/worker-perf` (§9).
  */
-
-import { MessageChannel } from 'node:worker_threads';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
