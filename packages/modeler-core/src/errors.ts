@@ -20,7 +20,20 @@ export type SceneErrorCode =
   | 'ERR_SCENE_UNKNOWN_MATERIAL'
   | 'ERR_SCENE_UNKNOWN_COMPONENT'
   | 'ERR_SCENE_PARAMS_OUT_OF_RANGE'
-  | 'ERR_SCENE_TRANSFORM_INVALID';
+  | 'ERR_SCENE_TRANSFORM_INVALID'
+  // --- Añadidos en FASE-4B-B (comandos y serialización) ---
+  /** Un comando apunta a un objeto que no existe en el documento. */
+  | 'ERR_SCENE_OBJECT_NOT_FOUND'
+  /**
+   * Conflicto de precondiciones de un comando: el estado capturado al
+   * crearlo ya no coincide con el documento (comando obsoleto o edición
+   * concurrente). El historial no se altera.
+   */
+  | 'ERR_SCENE_COMMAND_CONFLICT'
+  /** `SceneEnvelope` malformado: no es JSON, no es un registro, marcador o documento ausente/incorrecto. */
+  | 'ERR_SCENE_ENVELOPE_INVALID'
+  /** Versión de `SceneEnvelope` desconocida. Rechazo sin migración silenciosa. */
+  | 'ERR_SCENE_ENVELOPE_VERSION';
 
 /**
  * Error con código estable del núcleo del modelador, siguiendo el patrón de

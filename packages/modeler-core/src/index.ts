@@ -1,8 +1,10 @@
 /**
- * @furniconfig/modeler-core — núcleo puro del modelador libre (FASE-4B-A).
+ * @furniconfig/modeler-core — núcleo puro del modelador libre (FASE-4B-A/4B-B).
  *
  * Contiene el Scene Document v1 (fuente única de verdad, inmutable y
- * serializable), su validación estricta y la selección por objeto.
+ * serializable), su validación estricta, la selección por objeto, el
+ * sistema de comandos con undo/redo (FASE-4B-B) y la serialización
+ * versionada en `SceneEnvelope`.
  *
  * Paquete **puro**: sin React, Three.js, DOM, WebAssembly ni dependencias
  * runtime (invariante I5). La escena 3D se deriva del documento; este
@@ -60,3 +62,35 @@ export {
 } from './validate.js';
 
 export { resolveObjectSelection, isSelected } from './selection.js';
+
+export {
+  createCommandHistory,
+  executeCommand,
+  undoCommand,
+  redoCommand,
+  canUndo,
+  canRedo,
+  DEFAULT_COMMAND_HISTORY_LIMIT,
+  type Command,
+  type CommandKind,
+  type CommandHistory,
+} from './command.js';
+
+export {
+  createAddObjectCommand,
+  createRemoveObjectCommand,
+  createSetSketchCommand,
+  createSetExtrusionCommand,
+  createSetTransformCommand,
+  createSetParamsCommand,
+  createRenameCommand,
+} from './commands.js';
+
+export {
+  SCENE_FORMAT,
+  SCENE_FORMAT_VERSION,
+  serializeScene,
+  parseSceneEnvelope,
+  type SceneEnvelope,
+  type ParseSceneEnvelopeResult,
+} from './serialize.js';

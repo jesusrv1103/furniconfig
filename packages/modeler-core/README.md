@@ -1,10 +1,11 @@
 # @furniconfig/modeler-core
 
-Núcleo puro del modelador libre de FurniConfig (**FASE-4B-A**): documentos de
-escena versionados, validación estricta y selección de objetos.
+Núcleo puro del modelador libre de FurniConfig (**FASE-4B-A/4B-B**):
+documentos de escena versionados, validación estricta, selección de
+objetos, sistema de comandos con undo/redo y serialización en `SceneEnvelope`.
 
 Fuente de contratos: `docs/architecture/furniconfig-4/SCENE_DOCUMENT.md`
-(complementa `PROPOSED_ARCHITECTURE.md` §3.1–§3.4).
+(complementa `PROPOSED_ARCHITECTURE.md` §3.1–§3.8).
 
 ## Alcance de esta fase
 
@@ -19,10 +20,21 @@ Fuente de contratos: `docs/architecture/furniconfig-4/SCENE_DOCUMENT.md`
 - `resolveObjectSelection(document, pick)` (`selection.ts`): selección
   **por objeto completo** (clic en vacío, id inexistente o documento vacío →
   `null`, criterio del `POC_PLAN.md` paso 5).
+- **FASE-4B-B** — Command System + Undo/Redo (`command.ts`, `commands.ts`):
+  `Command`/`CommandHistory` inmutables, `createCommandHistory`,
+  `executeCommand`, `undoCommand`, `redoCommand`, `canUndo`, `canRedo` y las
+  7 fábricas de comandos (`add-object`, `remove-object`, `set-sketch`,
+  `set-extrusion`, `set-transform`, `set-params`, `rename`).
+- **FASE-4B-B** — Serialización (`serialize.ts`): `SceneEnvelope` versionado
+  (`SCENE_FORMAT`/`SCENE_FORMAT_VERSION`), `serializeScene` (valida antes de
+  escribir) y `parseSceneEnvelope` (parser hostil con resultado
+  discriminado, sin migraciones silenciosas).
 
-**No incluido** (fases posteriores): herramientas de dibujo (4B-B), kernel en
-Web Worker (4B-C), registro completo de componentes con `build()` (4B-D),
-edición por caras/aristas/vértices (capacidad futura, RISKS R-05).
+**No incluido** (fases posteriores): kernel en Web Worker (4B-C, incluida la
+`geometryCache` del sobre), registro completo de componentes con `build()`
+(4B-D), edición por caras/aristas/vértices (capacidad futura, RISKS R-05),
+persistencia de documentos (repositorio localStorage) e integración con la
+GUI.
 
 ## Invariantes
 
@@ -35,20 +47,24 @@ edición por caras/aristas/vértices (capacidad futura, RISKS R-05).
 
 ## Códigos de error
 
-Nueve códigos estables (`SceneErrorCode`), separados de `GeometryErrorCode`
+Trece códigos estables (`SceneErrorCode`), separados de `GeometryErrorCode`
 de `geometry-core` (que este paquete no conoce ni modifica):
 
 | Código | Significado |
 |--------|-------------|
 | `ERR_SCENE_INVALID_VERSION` | `documentVersion` distinto de 1 |
 | `ERR_SCENE_INVALID_OBJECT` | Forma inválida (documento, objeto, material, croquis) |
-| `ERR_SCENE_DUPLICATE_ID` | IDs repetidos en objetos o materiales |
+| `ERR_SCENE_DUPLICATE_ID` | IDs repetidos en objetos o materiales (y `add-object` sobre un id existente) |
 | `ERR_SCENE_DEGENERATE_SKETCH` | Croquis vacío, no cerrado o de área 0 |
 | `ERR_SCENE_INVALID_EXTRUSION` | Extrusión fuera de rango |
 | `ERR_SCENE_UNKNOWN_MATERIAL` | `materialId` sin resolver |
 | `ERR_SCENE_UNKNOWN_COMPONENT` | Tipo/versión de componente no registrado |
 | `ERR_SCENE_PARAMS_OUT_OF_RANGE` | Parámetro fuera del esquema o no serializable |
 | `ERR_SCENE_TRANSFORM_INVALID` | Transformación/posición no entera o no finita |
+| `ERR_SCENE_OBJECT_NOT_FOUND` (4B-B) | El comando apunta a un objeto inexistente |
+| `ERR_SCENE_COMMAND_CONFLICT` (4B-B) | Precondición del comando incumplida (estado drift); el historial no se altera |
+| `ERR_SCENE_ENVELOPE_INVALID` (4B-B) | Sobre de escena malformado (JSON, marcador o documento ausente) |
+| `ERR_SCENE_ENVELOPE_VERSION` (4B-B) | Versión de sobre desconocida (sin migración) |
 
 ## Registro de componentes
 
@@ -86,6 +102,78 @@ valida `geometry-core` al construir el componente.
   de escena son genéricos y este paquete no depende de `geometry-core`. El
   catálogo de espesores de tablero [15, 18] sigue siendo responsabilidad del
   motor del clóset.
+
+## Command System + Undo/Redo (FASE-4B-B)
+
+Cada operación reversible es un `Command` (`command.ts` + `commands.ts`):
+`id` determinista **por contenido** (`cmd:tipo:idObjetivo:hash64`, FNV-1a
+sobre la representación canónica del delta: mismo insumo → mismo id;
+operaciones distintas → ids distintos), `kind`, `label` legible en español
+y `apply`/`revert` **puros y deterministas** que no mutan el documento de
+entrada. El historial guarda **comandos, no documentos completos**: cada
+fábrica captura solo el delta (el valor sustituido y, en `remove-object`,
+el objeto retirado con su índice) y congela los insumos nuevos que el
+comando introduce (I3), de modo que los deltas son inmutables.
+
+```ts
+const history0 = createCommandHistory(document, 100); // límite PROVISIONAL
+const history1 = executeCommand(history0, createRenameCommand(document, 'object-1', 'Mesa'));
+const history2 = undoCommand(history1);   // revert exacto
+const history3 = redoCommand(history2);   // re-aplica el mismo comando
+```
+
+Tres situaciones diferenciadas (explícitas, nunca un no-op silencioso):
+
+- **(A) cambio válido**: nueva entrada en `past`, `future` descartado,
+  `past` recortado al límite, `present` validado y congelado.
+- **(B) no-op**: el valor pedido ya estaba (comparado por referencia y luego
+  por igualdad estructural, **sin** `JSON.stringify`); se devuelve la misma
+  referencia de historial, sin entrada nueva y sin tocar `future`.
+- **(C) operación inválida o conflicto**: `SceneError` con código estable y
+  el historial **intacto**. Mapeo: objetivo ausente →
+  `ERR_SCENE_OBJECT_NOT_FOUND`; `add-object` sobre id existente →
+  `ERR_SCENE_DUPLICATE_ID`; estado actual ≠ estado capturado en la creación →
+  `ERR_SCENE_COMMAND_CONFLICT`; documento resultante inválido → el código del
+  validador (`ERR_SCENE_UNKNOWN_MATERIAL`, `ERR_SCENE_PARAMS_OUT_OF_RANGE`…).
+
+Notas de contrato:
+
+- `undoCommand`/`redoCommand` sobre pila vacía devuelven la misma
+  referencia (la UI consulta `canUndo`/`canRedo`; navegar vacío no es error).
+- `executeCommand`/`undo`/`redo` aceptan `options` (`SceneValidationOptions`)
+  para validar el documento resultante contra el registro de componentes.
+- `set-params` **reemplaza** el mapa completo de parámetros; para editar una
+  sola clave el llamante combina: `{ ...obj.params, ancho: 600 }`.
+- Los ids de comando son etiquetas deterministas: el direccionamiento del
+  historial es **posicional** (`past`/`future` son arrays), por lo que
+  incluso ids repetidos (entradas manipuladas a mano) no pueden confundir
+  operaciones.
+- Los historiales del modelador y del configurador (clóset) son
+  **independientes** (RISKS R-06): este paquete no toca `WardrobeConfig` ni
+  el historial de `apps/web`.
+- El límite por defecto (`DEFAULT_COMMAND_HISTORY_LIMIT = 100`) es
+  **PROVISIONAL** (hipótesis de trabajo, patrón de `studio/history.ts`).
+
+## Serialización (FASE-4B-B, paso 8 del MVP)
+
+Formato propio versionado, molde de `designs/transfer.ts`:
+
+```ts
+const text = serializeScene(document);        // valida antes de escribir
+const result = parseSceneEnvelope(text);      // resultado discriminado, nunca lanza
+```
+
+- `SCENE_FORMAT = 'furniconfig-scene'`, `SCENE_FORMAT_VERSION = 1`.
+- El sobre transporta **solo** el documento validado (sin historial, UI ni
+  `geometryCache` — esta última, diferida a 4B-C, se ignora al parsear:
+  tolerancia hacia adelante).
+- `parseSceneEnvelope` trata todo el texto como hostil: JSON malformado,
+  sobre no estructural o marcador incorrecto → `ERR_SCENE_ENVELOPE_INVALID`;
+  versión desconocida → `ERR_SCENE_ENVELOPE_VERSION` (sin migración
+  silenciosa); el documento se revalida con `validateSceneDocument` y sus
+  códigos se reutilizan tal cual (ids duplicados, materiales, croquis…).
+- Round-trip sin pérdida: `parseSceneEnvelope(serializeScene(doc))`
+  devuelve un documento estructuralmente idéntico y congelado.
 
 ## Comandos
 
