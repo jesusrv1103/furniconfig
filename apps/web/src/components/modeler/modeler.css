@@ -257,6 +257,104 @@
   pointer-events: none;
 }
 
+/* --- 4C-B: campos, lista de objetos y etiqueta de cotas --- */
+
+.modeler-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  margin-bottom: var(--space-2, 8px);
+  font-size: 13px;
+}
+
+.modeler-field input {
+  width: 96px;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: var(--radius-sm, 6px);
+  background: #ffffff;
+  color: var(--text, #1f2430);
+}
+
+.modeler-field input:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 1px;
+}
+
+.modeler-object-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-object-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: var(--radius-sm, 6px);
+  background: #ffffff;
+  color: var(--text, #1f2430);
+  cursor: pointer;
+  text-align: left;
+}
+
+.modeler-object-list button[aria-pressed='true'] {
+  border-color: var(--accent, #2563eb);
+  box-shadow: inset 0 0 0 1px var(--accent, #2563eb);
+}
+
+.modeler-object-dims {
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+}
+
+.modeler-object-status {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted, #6b7280);
+}
+
+.modeler-selection-name {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.modeler-error {
+  margin: var(--space-2, 8px) 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #b91c1c;
+}
+
+/* Etiqueta de cotas durante el arrastre (div DOM, nunca `Html`). */
+.modeler-draw-hint {
+  position: fixed;
+  z-index: 30;
+  transform: translateY(-100%);
+  padding: 4px 9px;
+  border-radius: var(--radius-sm, 6px);
+  background: #1f2430;
+  color: #f4f5f7;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* --- Estado de error (imposible, pero honesto) ----------- */
 
 .modeler-root--error {

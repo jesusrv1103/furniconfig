@@ -9,8 +9,13 @@
 > **implementados** en `packages/modeler-core` (paquete puro, sin
 > Three.js/DOM). El kernel en Web Worker se implementó en 4B-C y su consumo
 > sin UI (servicio de regeneración) en 4B-D (D4a); la integración en UI del
-> modelador sigue **pendiente** (4B-D D4b / Fase 4C), por lo que las
-> invariantes **I7 e I8** siguen **pendientes**. Complementa
+> modelador se **inició en la FASE-4C-B** (modelado libre: croquis →
+> extrusión → selección → edición → eliminación; ver `MODELER_4C.md`):
+> en ese flujo **I7 está activa** (toda derivación pasa por
+> `GeometryKernel` en Worker vía `SceneGeometryService`), mientras que
+> **I8** sigue **pendiente en la salida del kernel** (§8.1). El flujo de
+> componentes en la UI del modelador sigue **pendiente** (Fase 4D).
+> Complementa
 > `PROPOSED_ARCHITECTURE.md` §3.1–§3.9.
 
 ## 1. Propósito
@@ -33,7 +38,7 @@ Diferencia clave con el estado actual: el documento actual
 | I4 | IDs **deterministas** (sin UUID): `object-1`, `sketch-2`, `component-3` | Convención del repo | ✅ activa: `createEmptySceneDocument`/`nextSceneId` (comparación `BigInt`) |
 | I5 | Nada de Three.js ni I/O en `modeler-core` | Regla 2, ADR-002 | ✅ activa: `@furniconfig/modeler-core` sin dependencias runtime |
 | I6 | Toda entrada externa se **valida antes** de entrar al documento | Regla 3 | ✅ activa: `validateSceneDocument(input: unknown)` |
-| I7 | Las operaciones geométricas delegan al kernel tras la interfaz `GeometryKernel` | ADR-001 (provisional) | ⏳ **pendiente de integración**: llega con 4B-C (kernel en Worker); `modeler-core` aún no ejecuta operaciones geométricas |
+| I7 | Las operaciones geométricas delegan al kernel tras la interfaz `GeometryKernel` | ADR-001 (provisional) | ✅ activa en el flujo de modelado libre (4C-B): `SceneGeometryCoordinator` → `SceneGeometryService` → `GeometryKernel` (Worker); pendiente en componentes hasta 4D |
 | I8 | La cuantización mm ocurre **en la frontera del kernel** (al entrar y al salir) | Regla 1 + ADR-003 | ⏳ **pendiente de integración**: ver §8.1; el validador ya exige mm enteros en el lado del documento |
 
 ## 3. Estructura

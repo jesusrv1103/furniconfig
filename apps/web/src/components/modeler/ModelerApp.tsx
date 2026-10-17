@@ -1,96 +1,430 @@
 /**
- * FASE-4C-A — pantalla del modelador 3D (ruta `#/modeler`).
+ * FASE-4C-A/B — pantalla del modelador 3D (ruta `#/modeler`).
  *
  * Composición:
  *
  * - `ModelerShell`: chrome (barra, panel lateral, estados) —
  *   marcado puro testeable con `renderToString`.
- * - `ModelerScene`: Canvas R3F con rejilla/ejes/vistas.
+ * - `ModelerScene`: Canvas R3F con rejilla/ejes/vistas y la
+ *   interacción de dibujo/selección (4C-B).
  *
- * Documento (§5): UN `SceneDocument` v1 vacío creado con
- * `createEmptySceneDocument()` y verificado con
- * `validateSceneDocument()`; estado INMUTABLE (el objeto se
- * congela de fábrica y no se muta nunca). En 4C-C este estado
- * se sustituirá por el `present` de un `CommandHistory`
- * (mismo `SceneDocument`, otro contenedor): el seam es este
- * `useMemo`, no hay edición en esta fase.
+ * Documento (§5, 4C-B): el `SceneDocument` v1 vive en
+ * `useState`; CADA edición pasa por `applySceneAction`, que usa
+ * los comandos existentes de `modeler-core` (`add-object`,
+ * `set-sketch`, `set-extrusion`, `remove-object`) y valida el
+ * resultado antes de instalarlo — nunca se muta el documento.
  *
- * Motor geométrico (§6): `useModelerGeometry` mantiene el
- * estado `idle` — abrir la pantalla NO crea el Worker ni
- * calcula Manifold; la escena vacía no lo necesita.
+ * Seam para 4C-C (CommandHistory): el sustituto de
+ * `applySceneAction` por `executeCommand(history, command)` es
+ * EXACTAMENTE esta capa; la UI no cambia.
+ *
+ * Motor geométrico (§6): `useModelerGeometry` sigue creando el
+ * Worker de forma perezosa; `useSceneGeometry` (4C-B) lo invoca
+ * en el primer sólido y publica la geometría derivada por
+ * objeto. Abrir la pantalla en escena vacía NO crea el Worker.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  SCENE_LIMITS,
   createEmptySceneDocument,
-  validateSceneDocument,
+  resolveObjectSelection,
+  setSketchDimension,
+  sketchDimensionMm,
+  type SceneDocument,
+  type SelectionState,
+  type Sketch2D,
+  type SketchDimension,
 } from '@furniconfig/modeler-core';
 
+import {
+  ModelerShell,
+  type ObjectRowProps,
+  type PendingSketchPanelProps,
+  type SelectionPanelProps,
+} from './ModelerShell.js';
+import { ModelerScene } from './ModelerScene.js';
 import { useModelerGeometry } from '../../hooks/use-modeler-geometry.js';
+import { useSceneGeometry } from '../../hooks/use-scene-geometry.js';
 import {
   createCameraControlsState,
   requestFit,
   requestView,
   type ModelerCameraControlsState,
 } from '../../lib/modeler/camera-controls.js';
+import {
+  applySceneAction,
+  nextSolidId,
+} from '../../lib/modeler/document-actions.js';
 import type { CameraView } from '../../lib/camera-views.js';
-import { ModelerScene } from './ModelerScene.js';
-import { ModelerShell } from './ModelerShell.js';
+import type { ModelerTool } from '../../lib/modeler/drawing.js';
+import { geometryLifecycle } from './use-solid-geometry.js';
+
 import './modeler.css';
 
-export function ModelerApp() {
-  // Documento único e inmutable de la sesión (v1, vacío).
-  const document = useMemo(() => createEmptySceneDocument(), []);
-  const validation = useMemo(
-    () => validateSceneDocument(document),
-    [document],
-  );
+/**
+ * Paso de rejilla inicial (PROVISIONAL): se fija a la celda
+ * menor VISIBLE de la rejilla (100 mm) para que el snap
+ * coincida con lo que el usuario ve; es un ajuste de UX, no una
+ * regla de fabricación.
+ */
+const INITIAL_GRID_STEP_MM = 100;
 
-  const geometry = useModelerGeometry();
+/**
+ * Extrusión por defecto al pulsar "Extruir" (PROVISIONAL):
+ * valor de conveniencia; siempre editable antes y después.
+ */
+const DEFAULT_EXTRUSION_MM = 100;
+
+/** Enteros positivos en texto de campo (lo inválido no aplica). */
+function parseMm(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d{1,7}$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) && value >= 1 ? value : null;
+}
+
+export function ModelerApp(): ReactNode {
+  const [document, setDocument] = useState<SceneDocument>(
+    () =>
+      applySceneAction(createEmptySceneDocument(), {
+        type: 'set-grid-step',
+        gridStepMm: INITIAL_GRID_STEP_MM,
+      }) ?? createEmptySceneDocument(),
+  );
+  const [tool, setTool] = useState<ModelerTool>('select');
   const [camera, setCamera] = useState<ModelerCameraControlsState>(
     createCameraControlsState,
   );
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [pendingSketch, setPendingSketch] = useState<Sketch2D | null>(null);
+  const [pendingExtrusionMm, setPendingExtrusionMm] = useState(
+    DEFAULT_EXTRUSION_MM,
+  );
+  const [pendingTexts, setPendingTexts] = useState({
+    width: '',
+    depth: '',
+    height: String(DEFAULT_EXTRUSION_MM),
+  });
+  const [selectionTexts, setSelectionTexts] = useState({
+    width: '',
+    depth: '',
+    height: '',
+  });
+
+  const geometry = useModelerGeometry();
+  const sceneGeometry = useSceneGeometry(document, geometry);
+
+  const selectedObject = useMemo(() => {
+    if (selection === null || selection.anchor === null) return null;
+    const objectId = selection.anchor;
+    const object = document.objects.find((entry) => entry.id === objectId);
+    if (object === undefined || object.kind !== 'solid') return null;
+    if (object.geometry.source !== 'sketch') return null;
+    // Se extraen ya estrechados: la estrechez de una propiedad
+    // de interfaz no sobrevive al `return` del objeto entero.
+    return {
+      id: object.id,
+      name: object.name,
+      sketch: object.geometry.sketch,
+      extrusionMm: object.geometry.extrusionMm,
+    };
+  }, [document, selection]);
+
+  // Sincroniza los campos con el objeto recién seleccionado (solo
+  // al cambiar el id: editar cotas no debe pisar lo tecleado).
+  const selectedId = selection?.anchor ?? null;
+  useEffect(() => {
+    if (selectedId === null) {
+      setSelectionTexts({ width: '', depth: '', height: '' });
+      return;
+    }
+    const object = document.objects.find((entry) => entry.id === selectedId);
+    if (object === undefined || object.kind !== 'solid') {
+      return;
+    }
+    if (object.geometry.source !== 'sketch') {
+      return;
+    }
+    setSelectionTexts({
+      width: String(sketchDimensionMm(object.geometry.sketch, 'widthMm')),
+      depth: String(sketchDimensionMm(object.geometry.sketch, 'depthMm')),
+      height: String(object.geometry.extrusionMm),
+    });
+    // `document` se omite a propósito: solo cambia el texto al
+    // cambiar de objeto seleccionado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // Escape cancela el croquis pendiente (operación incompleta).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      setPendingSketch((current) => (current === null ? current : null));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Acciones de la interfaz (todas puras vía comandos)
+  // -------------------------------------------------------------------------
+
+  const handleCreateSketch = useCallback((sketch: Sketch2D) => {
+    setPendingSketch(sketch);
+    setSelection(null);
+    setPendingExtrusionMm(DEFAULT_EXTRUSION_MM);
+    setPendingTexts({
+      width: String(sketchDimensionMm(sketch, 'widthMm')),
+      depth: String(sketchDimensionMm(sketch, 'depthMm')),
+      height: String(DEFAULT_EXTRUSION_MM),
+    });
+  }, []);
+
+  const handlePickObject = useCallback(
+    (objectId: string | null) => {
+      setSelection(
+        objectId === null
+          ? null
+          : resolveObjectSelection(document, { objectId }),
+      );
+    },
+    [document],
+  );
+
+  const handlePendingDimension = useCallback(
+    (dimension: SketchDimension, text: string) => {
+      const key = dimension === 'widthMm' ? 'width' : 'depth';
+      setPendingTexts((prev) => ({ ...prev, [key]: text }));
+      const value = parseMm(text);
+      if (value === null || pendingSketch === null) return;
+      try {
+        setPendingSketch(setSketchDimension(pendingSketch, dimension, value));
+      } catch {
+        // Fuera de límites: se conserva el último croquis válido.
+      }
+    },
+    [pendingSketch],
+  );
+
+  const handlePendingHeight = useCallback((text: string) => {
+    setPendingTexts((prev) => ({ ...prev, height: text }));
+    const value = parseMm(text);
+    if (value === null || value > SCENE_LIMITS.extrusionMm.max) return;
+    setPendingExtrusionMm(value);
+  }, []);
+
+  const handleCancelPending = useCallback(() => {
+    setPendingSketch(null);
+  }, []);
+
+  const handleExtrude = useCallback(() => {
+    if (pendingSketch === null) return;
+    const objectId = nextSolidId(document);
+    const next = applySceneAction(document, {
+      type: 'add-solid',
+      sketch: pendingSketch,
+      extrusionMm: pendingExtrusionMm,
+    });
+    if (next === null) return;
+    setDocument(next);
+    setPendingSketch(null);
+    setSelection(resolveObjectSelection(next, { objectId }));
+  }, [document, pendingSketch, pendingExtrusionMm]);
+
+  const handleSelectionDimension = useCallback(
+    (dimension: SketchDimension, text: string) => {
+      const key = dimension === 'widthMm' ? 'width' : 'depth';
+      setSelectionTexts((prev) => ({ ...prev, [key]: text }));
+      const value = parseMm(text);
+      if (value === null || selectedObject === null) return;
+      try {
+        const sketch = setSketchDimension(
+          selectedObject.sketch,
+          dimension,
+          value,
+        );
+        const next = applySceneAction(document, {
+          type: 'set-sketch',
+          objectId: selectedObject.id,
+          sketch,
+        });
+        if (next !== null) setDocument(next);
+      } catch {
+        // Fuera de límites: se conserva el último valor válido.
+      }
+    },
+    [document, selectedObject],
+  );
+
+  const handleSelectionHeight = useCallback(
+    (text: string) => {
+      setSelectionTexts((prev) => ({ ...prev, height: text }));
+      const value = parseMm(text);
+      if (
+        value === null ||
+        selectedObject === null ||
+        value > SCENE_LIMITS.extrusionMm.max
+      ) {
+        return;
+      }
+      const next = applySceneAction(document, {
+        type: 'set-extrusion',
+        objectId: selectedObject.id,
+        extrusionMm: value,
+      });
+      if (next !== null) setDocument(next);
+    },
+    [document, selectedObject],
+  );
+
+  const handleDelete = useCallback(() => {
+    if (selectedObject === null) return;
+    const next = applySceneAction(document, {
+      type: 'remove-object',
+      objectId: selectedObject.id,
+    });
+    if (next === null) return;
+    setDocument(next);
+    setSelection(null);
+  }, [document, selectedObject]);
 
   const handleViewChange = useCallback((view: CameraView) => {
-    setCamera((current) => requestView(current, view));
+    setCamera((prev) => requestView(prev, view));
   }, []);
+  const handleFit = useCallback(() => setCamera((prev) => requestFit(prev)), []);
 
-  const handleFit = useCallback(() => {
-    setCamera((current) => requestFit(current));
-  }, []);
+  // -------------------------------------------------------------------------
+  // Derivados para la carcasa
+  // -------------------------------------------------------------------------
 
-  // `createEmptySceneDocument` valida internamente y congela;
-  // la doble validación aquí es la garantía del contrato.
-  if (!validation.ok) {
-    // Estado imposible en 4C-A: si el documento creado no
-    // valida, la pantalla lo dice en lugar de fingir normalidad.
-    return (
-      <div className="modeler-root modeler-root--error" data-modeler="">
-        <p role="alert">
-          El documento de escena no es válido:{' '}
-          {validation.errors.map((issue) => issue.message).join('; ')}
-        </p>
-        <a href="#/">Volver al configurador</a>
-      </div>
-    );
-  }
+  const objectRows: readonly ObjectRowProps[] = useMemo(
+    () =>
+      document.objects
+        .filter(
+          (object) =>
+            object.kind === 'solid' && object.geometry.source === 'sketch',
+        )
+        .map((object) => {
+          if (object.kind !== 'solid') {
+            throw new Error('objeto filtrado inválido');
+          }
+          if (object.geometry.source !== 'sketch') {
+            throw new Error('objeto filtrado sin croquis');
+          }
+          const state = sceneGeometry.states.get(object.id);
+          return {
+            id: object.id,
+            name: object.name,
+            dimsText: `${sketchDimensionMm(object.geometry.sketch, 'widthMm')} × ${sketchDimensionMm(
+              object.geometry.sketch,
+              'depthMm',
+            )} × ${object.geometry.extrusionMm} mm`,
+            status: state?.status ?? 'pending',
+            selected: selection?.anchor === object.id,
+            onSelect: () => {
+              setSelection(resolveObjectSelection(document, { objectId: object.id }));
+            },
+          };
+        }),
+    [document, sceneGeometry.states, selection],
+  );
 
-  const info = {
-    name: document.name,
-    objectCount: document.objects.length,
-    gridStepMm: document.gridStepMm,
-  };
+  const pendingPanel: PendingSketchPanelProps | null =
+    pendingSketch === null
+      ? null
+      : {
+          widthText: pendingTexts.width,
+          depthText: pendingTexts.depth,
+          heightText: pendingTexts.height,
+          onWidthChange: (text) => handlePendingDimension('widthMm', text),
+          onDepthChange: (text) => handlePendingDimension('depthMm', text),
+          onHeightChange: handlePendingHeight,
+          onExtrude: handleExtrude,
+          onCancel: handleCancelPending,
+        };
+
+  const selectionPanel: SelectionPanelProps | null =
+    selectedObject === null
+      ? null
+      : {
+          name: selectedObject.name,
+          widthText: selectionTexts.width,
+          depthText: selectionTexts.depth,
+          heightText: selectionTexts.height,
+          onWidthChange: (text) => handleSelectionDimension('widthMm', text),
+          onDepthChange: (text) => handleSelectionDimension('depthMm', text),
+          onHeightChange: handleSelectionHeight,
+          status:
+            sceneGeometry.states.get(selectedObject.id)?.status ?? 'pending',
+          errorMessage:
+            sceneGeometry.states.get(selectedObject.id)?.errorMessage ?? null,
+          onRetry: () => sceneGeometry.retry(selectedObject.id),
+          onDelete: handleDelete,
+        };
+
+  // Depuración para las verificaciones visuales (patrón del
+  // configurador con `__wardrobeConfigDebug`).
+  useEffect(() => {
+    const target = window as unknown as { __modeler?: unknown };
+    target.__modeler = {
+      getDocument: () => document,
+      getTool: () => tool,
+      getSelection: () => selection,
+      getStates: () =>
+        Object.fromEntries(
+          [...sceneGeometry.states.entries()].map(([id, state]) => [
+            id,
+            {
+              status: state.status,
+              revision: state.revision,
+              errorMessage: state.errorMessage,
+            },
+          ]),
+        ),
+      getStats: () => sceneGeometry.stats,
+      /** Croquis pendiente (UI, aún sin documento) para verificación visual. */
+      getPending: () =>
+        pendingSketch === null
+          ? null
+          : { sketch: pendingSketch, extrusionMm: pendingExtrusionMm },
+      /** Ciclo de vida de BufferGeometry (auditoría §2, check visual 7l). */
+      getGeometryStats: () => ({ ...geometryLifecycle }),
+    };
+    return () => {
+      delete target.__modeler;
+    };
+  }, [document, tool, selection, sceneGeometry]);
 
   return (
     <ModelerShell
-      document={info}
+      document={{
+        name: document.name,
+        objectCount: document.objects.length,
+        gridStepMm: document.gridStepMm,
+      }}
       engineStatus={geometry.status}
       view={camera.view}
       onViewChange={handleViewChange}
       onFit={handleFit}
+      tool={tool}
+      onToolChange={setTool}
+      pendingSketch={pendingPanel}
+      objects={objectRows}
+      selection={selectionPanel}
     >
-      <ModelerScene viewRequest={camera.request} />
+      <ModelerScene
+        viewRequest={camera.request}
+        tool={tool}
+        gridStepMm={document.gridStepMm}
+        sceneDocument={document}
+        solidStates={sceneGeometry.states}
+        selection={selection}
+        pendingSketch={pendingSketch}
+        onCreateSketch={handleCreateSketch}
+        onPickObject={handlePickObject}
+      />
     </ModelerShell>
   );
 }
