@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App.js';
+// FASE-4C-A: selector de ruta por hash (#/modeler → modelador;
+// el resto → configurador, igual que siempre).
+import { AppRoot } from './AppRoot.js';
 import './styles.css';
 
 const container = document.getElementById('root');
@@ -10,6 +12,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <AppRoot />
   </StrictMode>,
 );

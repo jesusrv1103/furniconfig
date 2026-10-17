@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:visual": "node tests/visual/visual-check.mjs"
+    "test:visual": "node tests/visual/visual-check.mjs",
+    "test:visual:modeler": "node scripts/modeler-visual-check.mjs"
   },
   "dependencies": {
     "@furniconfig/geometry-core": "*",
