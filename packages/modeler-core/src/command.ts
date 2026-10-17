@@ -51,7 +51,9 @@ export type CommandKind =
   | 'set-extrusion'
   | 'set-transform'
   | 'set-params'
-  | 'rename';
+  | 'rename'
+  /** Conversión de sólido libre a componente paramétrico (FASE-4B-D). */
+  | 'convert-to-component';
 
 /**
  * Operación reversible sobre el documento de escena.

@@ -1,11 +1,13 @@
 # @furniconfig/modeler-core
 
-Núcleo puro del modelador libre de FurniConfig (**FASE-4B-A/4B-B**):
+Núcleo puro del modelador libre de FurniConfig (**FASE-4B-A/4B-B/4B-D**):
 documentos de escena versionados, validación estricta, selección de
-objetos, sistema de comandos con undo/redo y serialización en `SceneEnvelope`.
+objetos, sistema de comandos con undo/redo (incluida la conversión a
+componente paramétrico), serialización en `SceneEnvelope` y registro de
+componentes con `build()` (geometría derivada determinista).
 
 Fuente de contratos: `docs/architecture/furniconfig-4/SCENE_DOCUMENT.md`
-(complementa `PROPOSED_ARCHITECTURE.md` §3.1–§3.8).
+(complementa `PROPOSED_ARCHITECTURE.md` §3.1–§3.9).
 
 ## Alcance de esta fase
 
@@ -23,21 +25,36 @@ Fuente de contratos: `docs/architecture/furniconfig-4/SCENE_DOCUMENT.md`
 - **FASE-4B-B** — Command System + Undo/Redo (`command.ts`, `commands.ts`):
   `Command`/`CommandHistory` inmutables, `createCommandHistory`,
   `executeCommand`, `undoCommand`, `redoCommand`, `canUndo`, `canRedo` y las
-  7 fábricas de comandos (`add-object`, `remove-object`, `set-sketch`,
-  `set-extrusion`, `set-transform`, `set-params`, `rename`).
+  8 fábricas de comandos (`add-object`, `remove-object`, `set-sketch`,
+  `set-extrusion`, `set-transform`, `set-params`, `rename` y
+  `convert-to-component`, añadida en 4B-D).
 - **FASE-4B-B** — Serialización (`serialize.ts`): `SceneEnvelope` versionado
   (`SCENE_FORMAT`/`SCENE_FORMAT_VERSION`), `serializeScene` (valida antes de
   escribir) y `parseSceneEnvelope` (parser hostil con resultado
   discriminado, sin migraciones silenciosas).
+- **FASE-4B-D** — Componentes paramétricos (`components.ts`,
+  `types/component.ts`): `ParametricComponentDef` (extiende
+  `ComponentDefRef` con `build()`), `ComponentBuild`/`ComponentPart` (caja y
+  cilindro, sin simplificar), `defineComponent`, `createComponentRegistry`
+  (un solo `version` por `type`) y `buildComponent` (valida registro,
+  versión, params y la forma de las piezas; ids de pieza namespaced
+  `objeto::pieza`, estables). La geometría derivada **nunca se almacena** en
+  el documento.
+- **FASE-4B-D** — `createConvertToComponentCommand` (`commands.ts`): convierte
+  un sólido de croquis en componente **solo** con equivalencia demostrable
+  (rectángulo axial en `ground` + construcción de una única caja con el
+  mismo prisma canónico); conserva id/nombre/transformación/material y
+  restaura exactamente el sólido en undo. Ver "Conversión a componente".
 
-**No incluido** (fases posteriores): kernel en Web Worker — la
-**infraestructura** quedó lista en `packages/kernel-adapter` (FASE-4B-C:
-protocolo, proxy `WorkerGeometryKernel`, watchdog, transfer), pero la
-integración con el documento y la `geometryCache` del sobre siguen **fuera de
-4B-C** (decisión de alcance; ver `kernel-adapter/README.md`), registro completo
-de componentes con `build()` (4B-D), edición por caras/aristas/vértices
-(capacidad futura, RISKS R-05), persistencia de documentos (repositorio
-localStorage) e integración con la GUI.
+**No incluido** (fases posteriores): integración del kernel en la UI del
+modelador — la infraestructura quedó lista en `packages/kernel-adapter`
+(FASE-4B-C: protocolo, proxy `WorkerGeometryKernel`, watchdog, transfer) y
+4B-D implementó el servicio de regeneración sin UI en la capa de
+composición de `apps/web` (`SceneGeometryService`), pero el cableado en
+pantalla (D4b), la `geometryCache` del sobre, la edición por
+caras/aristas/vértices (capacidad futura, RISKS R-05), la persistencia de
+documentos (repositorio localStorage) y la GUI siguen **fuera** de este
+paquete.
 
 ## Invariantes
 
@@ -50,7 +67,7 @@ localStorage) e integración con la GUI.
 
 ## Códigos de error
 
-Trece códigos estables (`SceneErrorCode`), separados de `GeometryErrorCode`
+Catorce códigos estables (`SceneErrorCode`), separados de `GeometryErrorCode`
 de `geometry-core` (que este paquete no conoce ni modifica):
 
 | Código | Significado |
@@ -68,19 +85,57 @@ de `geometry-core` (que este paquete no conoce ni modifica):
 | `ERR_SCENE_COMMAND_CONFLICT` (4B-B) | Precondición del comando incumplida (estado drift); el historial no se altera |
 | `ERR_SCENE_ENVELOPE_INVALID` (4B-B) | Sobre de escena malformado (JSON, marcador o documento ausente) |
 | `ERR_SCENE_ENVELOPE_VERSION` (4B-B) | Versión de sobre desconocida (sin migración) |
+| `ERR_SCENE_CONVERSION_INCOMPATIBLE` (4B-D) | Conversión sólido → componente no demostrablemente equivalente (nunca se aproxima) |
 
 ## Registro de componentes
 
 `validateSceneDocument` acepta opcionalmente `options.components`
 (`ComponentRegistry`), el contrato **mínimo** que la validación necesita
 (versión + esquema de parámetros escalares). Sin registro, los componentes se
-validan solo estructuralmente. La definición completa con `build()`
-(regeneración de geometría) llega en la Fase 4B-D y se apoya en este contrato.
+validan solo estructuralmente. Desde la Fase 4B-D existe además el contrato
+**completo** (`ParametricComponentDef`, que añade `build()`); un registro de
+definiciones completas es asignable estructuralmente a `ComponentRegistry`,
+por lo que la validación no cambió.
 
 Los parámetros **no declarados** en el esquema se admiten como JSON
 serializable: necesario para parámetros anidados como un `WardrobeConfig`
 completo en `params` del componente clóset (§6–§7 del contrato), cuyo rango
 valida `geometry-core` al construir el componente.
+
+## Componentes paramétricos (FASE-4B-D)
+
+- `defineComponent(def)`: valida la forma (type, version ≥ 1, `build`
+  función, `paramsSchema` con kind/min/max coherentes) y devuelve la
+  definición congelada.
+- `createComponentRegistry(defs)`: registro congelado; rechaza tipos
+  duplicados (un solo `version` por `type`).
+- `buildComponent(registry, objectId, type, version, params)`:
+  registro → versión → params contra `paramsSchema` → `build()` → validación
+  de la forma de las piezas → ids namespaced (`componentPartId`) → salida
+  congelada. Determinismo y estabilidad de ids garantizados y probados.
+- `ComponentPart` es caja o cilindro (eje, longitud y diámetro exactos:
+  nunca se simplifica un cilindro a caja). Admite **campos opcionales de
+  asociación** validados: `moduleId` (módulo dueño), `doorId` (tirador →
+  hoja), `hingeSide`/`leafIndex`/`leafCount` (puerta → animación de
+  apertura) y `assemblyId`/`assemblyIndex` (cajón ↔ paneles), para que la
+  interacción futura no dependa de volver al motor. Las medidas son números
+  finitos en mm: el motor de clóset emite medio milímetro al centrar barras
+  (p. ej. `z: 277.5`) y **preservar el valor exacto** prima sobre redondear;
+  I1 sigue rigiendo el documento persistente, y las piezas derivadas no se
+  almacenan en él (§6.1 de SCENE_DOCUMENT.md).
+
+## Conversión a componente (FASE-4B-D)
+
+`createConvertToComponentCommand(doc, objectId, type, version, params,
+registry)` sustituye un `SolidObject` por un `ComponentInstance`
+conservando **id, nombre, transformación y material**, solo si la
+equivalencia es demostrable: croquis = rectángulo axial exacto en el plano
+`ground` (prisma canónico en mm) y `build(params)` = **una única caja** con
+el mismo prisma. Todo lo demás (otros planos, otras formas, multi-pieza,
+geometría de fuente kernel, tamaños distintos) →
+`ERR_SCENE_CONVERSION_INCOMPATIBLE`: no se inventan parámetros ni se
+aproxima. `undo` restaura exactamente el sólido capturado; `redo` reproduce
+la conversión.
 
 ## Frontera hostil
 

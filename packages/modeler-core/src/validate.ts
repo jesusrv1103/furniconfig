@@ -524,8 +524,13 @@ function sanitizeParamValue(
   return null;
 }
 
-/** Valida los parámetros declarados de un componente contra su esquema. */
-function validateParamsAgainstSchema(
+/**
+ * Valida los parámetros declarados de un componente contra su esquema.
+ *
+ * Función interna del paquete: se exporta del módulo para `components.ts`
+ * (frontera de `buildComponent`, FASE-4B-D) pero **no** desde `index.ts`.
+ */
+export function validateParamsAgainstSchema(
   params: SceneParams,
   def: ComponentDefRef,
   field: string,

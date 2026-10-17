@@ -1,5 +1,6 @@
 /**
- * Las 7 operaciones reversibles del modelador (FASE-4B-B).
+ * Las 8 operaciones reversibles del modelador (FASE-4B-B; la octava,
+ * `convert-to-component`, llegó en FASE-4B-D).
  *
  * Fuente de verdad: `PROPOSED_ARCHITECTURE.md` §3.7. Cada fábrica:
  *
@@ -50,8 +51,13 @@
  */
 
 import { deepEqual, type Command, type CommandKind } from './command.js';
+import { buildComponent } from './components.js';
 import { deepFreeze } from './freeze.js';
 import { SceneError } from './errors.js';
+import type {
+  ComponentBuild,
+  ParametricComponentRegistry,
+} from './types/component.js';
 import type {
   ComponentInstance,
   MmPoint3,
@@ -750,6 +756,203 @@ export function createRenameCommand(
       }
       if (previous === next) return current;
       return withName(current, id, previous);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// FASE-4B-D: conversión de sólido libre a componente paramétrico
+// ---------------------------------------------------------------------------
+
+/** Prisma axial exacto en mm enteros (marco local del objeto). */
+interface CanonicalPrism {
+  readonly minMm: MmPoint3;
+  readonly sizeMm: MmPoint3;
+}
+
+/**
+ * Canoniza la geometría de un sólido croquis a un prisma axial exacto, o
+ * `null` cuando la equivalencia **no es demostrable**.
+ *
+ * Restricciones documentadas (`SCENE_DOCUMENT.md` §3.7, FASE-4B-D): el
+ * croquis debe ser un rectángulo exacto de 4 vértices axiales en el plano
+ * `ground` (el kernel extruye sobre +Z; otros planos no se canonizan sin
+ * ambigüedad en el MVP). Cualquier otra forma → `null` y la conversión se
+ * **rechaza explícitamente**: nunca se inventan parámetros ni se aproxima
+ * geometría.
+ */
+function canonicalSketchPrism(geometry: SketchGeometry): CanonicalPrism | null {
+  const { sketch, extrusionMm } = geometry;
+  if (sketch.plane !== 'ground') return null;
+  const points = sketch.pointsMm;
+  if (points.length !== 4) return null;
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  const seen = new Set<string>();
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    seen.add(`${x},${y}`);
+  }
+  const width = maxX - minX;
+  const height = maxY - minY;
+  if (width < 1 || height < 1 || seen.size !== 4) return null;
+  // El conjunto de vértices debe ser exactamente las 4 esquinas del
+  // rectángulo axial (descarta rombos, trapecios y rectángulos rotados).
+  for (const corner of [
+    `${minX},${minY}`,
+    `${maxX},${minY}`,
+    `${maxX},${maxY}`,
+    `${minX},${maxY}`,
+  ]) {
+    if (!seen.has(corner)) return null;
+  }
+  const [originX, originY, originZ] = sketch.planeOriginMm;
+  return {
+    minMm: [originX + minX, originY + minY, originZ],
+    sizeMm: [width, height, extrusionMm],
+  };
+}
+
+/**
+ * Canoniza la construcción de un componente a un prisma axial exacto, o
+ * `null` si no es demostrablemente una caja única (multi-pieza, cilindros,
+ * etc. → la equivalencia con un sólido individual no puede probarse).
+ */
+function canonicalBuildPrism(build: ComponentBuild): CanonicalPrism | null {
+  if (build.parts.length !== 1) return null;
+  const part = build.parts[0];
+  if (part === undefined || part.kind !== 'box') return null;
+  return { minMm: part.positionMm, sizeMm: part.sizeMm };
+}
+
+/** Igualdad exacta de prisma (mm enteros: sin epsilons). */
+function prismsEqual(a: CanonicalPrism, b: CanonicalPrism): boolean {
+  return (
+    a.minMm[0] === b.minMm[0] &&
+    a.minMm[1] === b.minMm[1] &&
+    a.minMm[2] === b.minMm[2] &&
+    a.sizeMm[0] === b.sizeMm[0] &&
+    a.sizeMm[1] === b.sizeMm[1] &&
+    a.sizeMm[2] === b.sizeMm[2]
+  );
+}
+
+/** Sustituye un objeto por id con otro objeto distinto (cambia el `kind`). */
+function withObject(
+  doc: SceneDocument,
+  objectId: string,
+  object: SceneObject,
+): SceneDocument {
+  return {
+    ...doc,
+    objects: doc.objects.map((candidate) =>
+      candidate.id === objectId ? object : candidate,
+    ),
+  };
+}
+
+/**
+ * Comando `convert-to-component` (FASE-4B-D): sustituye un `SolidObject`
+ * por un `ComponentInstance` **conservando id, nombre, transformación y
+ * material**, solo si la equivalencia geométrica es **demostrable**:
+ *
+ * 1. El sólido debe ser croquis con rectángulo axial en `ground`
+ *    (prisma canónico exacto).
+ * 2. `build(params)` del componente registrado debe producir **una única
+ *    caja** con el mismo prisma canónico (mismo min y tamaño, mm exactos).
+ *
+ * Cualquier caso no demostrable se rechaza con
+ * `ERR_SCENE_CONVERSION_INCOMPATIBLE` (sin aproximación). El `revert`
+ * restaura exactamente el `SolidObject` anterior (capturado por
+ * referencia del documento, ya congelado).
+ *
+ * @throws SceneError `ERR_SCENE_OBJECT_NOT_FOUND`, `ERR_SCENE_INVALID_OBJECT`
+ * (objetivo no es sólido), `ERR_SCENE_UNKNOWN_COMPONENT`,
+ * `ERR_SCENE_PARAMS_OUT_OF_RANGE` o `ERR_SCENE_CONVERSION_INCOMPATIBLE`.
+ */
+export function createConvertToComponentCommand(
+  doc: SceneDocument,
+  objectId: string,
+  type: string,
+  version: number,
+  params: SceneParams,
+  registry: ParametricComponentRegistry,
+): Command {
+  const id = requireObjectId(objectId, 'objectId');
+  const target = findObject(doc, id);
+  if (target.kind !== 'solid') {
+    throw new SceneError(
+      'ERR_SCENE_INVALID_OBJECT',
+      `El objeto "${id}" no es un sólido libre: solo los sólidos se convierten en componentes.`,
+      { objectId: id },
+    );
+  }
+  const geometry = target.geometry;
+  if (geometry.source !== 'sketch') {
+    throw new SceneError(
+      'ERR_SCENE_CONVERSION_INCOMPATIBLE',
+      `El sólido "${id}" no tiene geometría de croquis (fuente "${geometry.source}"): su forma no es demostrable.`,
+      { objectId: id },
+    );
+  }
+  const solidPrism = canonicalSketchPrism(geometry);
+  if (solidPrism === null) {
+    throw new SceneError(
+      'ERR_SCENE_CONVERSION_INCOMPATIBLE',
+      `El croquis de "${id}" no es un rectángulo axial en el plano ground: la equivalencia no es demostrable.`,
+      { objectId: id },
+    );
+  }
+
+  // Valida registro, versión y params (UNKNOWN_COMPONENT / PARAMS_OUT_OF_RANGE)
+  // y construye las piezas deterministas del componente.
+  const frozenParams = deepFreeze(assertParams(params, 'params'));
+  const build = buildComponent(registry, id, type, version, frozenParams);
+
+  const componentPrism = canonicalBuildPrism(build);
+  if (componentPrism === null || !prismsEqual(solidPrism, componentPrism)) {
+    throw new SceneError(
+      'ERR_SCENE_CONVERSION_INCOMPATIBLE',
+      `La construcción de "${type}" no reproduce la geometría del sólido "${id}" (se esperaba una única caja en min [${solidPrism.minMm.join(', ')}] con tamaño [${solidPrism.sizeMm.join(', ')}]).`,
+      { objectId: id, type },
+    );
+  }
+
+  const previous: SolidObject = target;
+  const next: ComponentInstance = deepFreeze({
+    id,
+    kind: 'component' as const,
+    name: target.name,
+    type,
+    version,
+    transform: target.transform,
+    materialId: target.materialId,
+    params: frozenParams,
+  });
+
+  return {
+    id: commandId('convert-to-component', id, { type, version, params: frozenParams }),
+    kind: 'convert-to-component',
+    label: `Convertir "${target.name}" en ${type}`,
+    apply(current) {
+      const object = findObject(current, id);
+      if (!deepEqual(object, previous)) {
+        throw preconditionError(id, 'convert-to-component');
+      }
+      return withObject(current, id, next);
+    },
+    revert(current) {
+      const object = findObject(current, id);
+      if (!deepEqual(object, next)) {
+        throw preconditionError(id, 'convert-to-component');
+      }
+      return withObject(current, id, previous);
     },
   };
 }

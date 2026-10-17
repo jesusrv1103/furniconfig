@@ -13,7 +13,12 @@ import type {
   Sketch2D,
   SolidObject,
 } from '../src/types/document.js';
-import type { ComponentRegistry } from '../src/types/component.js';
+import { createComponentRegistry, defineComponent } from '../src/components.js';
+import type {
+  ComponentRegistry,
+  ParametricComponentDef,
+  ParametricComponentRegistry,
+} from '../src/types/component.js';
 
 /** Material base: 'material-1'. */
 export const baseMaterial: SceneMaterial = {
@@ -117,3 +122,93 @@ export function patchObject<T extends SceneObject>(
 ): Record<string, unknown> {
   return { ...object, ...patch };
 }
+
+// ---------------------------------------------------------------------------
+// FASE-4B-D: definiciones completas con build() (componentes paramétricos)
+// ---------------------------------------------------------------------------
+
+/** Entero ≥ 1 estricto para los builds de prueba (lanza si no lo es). */
+export function numberParam(
+  params: Readonly<Record<string, unknown>>,
+  key: string,
+): number {
+  const value = params[key];
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    throw new Error(`El parámetro "${key}" debe ser un entero ≥ 1.`);
+  }
+  return value;
+}
+
+/**
+ * Definición completa tipo placa: **una única caja**
+ * `[widthMm, heightMm, thicknessMm]` en el origen local. Es el caso
+ * demostrablemente convertible del paso 10 (una caja comprobable).
+ */
+export const plateComponentDef: ParametricComponentDef = defineComponent({
+  type: 'furniconfig.plate',
+  version: 1,
+  paramsSchema: {
+    widthMm: { kind: 'number', min: 1, max: 100_000 },
+    heightMm: { kind: 'number', min: 1, max: 100_000 },
+    thicknessMm: { kind: 'number', min: 1, max: 10_000 },
+  },
+  build(params) {
+    return {
+      parts: [
+        {
+          kind: 'box',
+          partId: 'plate',
+          role: 'plate',
+          sizeMm: [
+            numberParam(params, 'widthMm'),
+            numberParam(params, 'heightMm'),
+            numberParam(params, 'thicknessMm'),
+          ],
+          positionMm: [0, 0, 0],
+        },
+      ],
+    };
+  },
+});
+
+/**
+ * Definición multi-pieza con cilindro (estante + barra): sirve para
+ * verificar que las conversiones no demostrables se rechazan y que los
+ * cilindros conservan eje/longitud/diámetro (sin simplificar a caja).
+ */
+export const unitComponentDef: ParametricComponentDef = defineComponent({
+  type: 'furniconfig.unit',
+  version: 1,
+  paramsSchema: {
+    widthMm: { kind: 'number', min: 1, max: 100_000 },
+    rodDiameterMm: { kind: 'number', min: 1, max: 200 },
+  },
+  build(params) {
+    const width = numberParam(params, 'widthMm');
+    const diameter = numberParam(params, 'rodDiameterMm');
+    return {
+      parts: [
+        {
+          kind: 'box',
+          partId: 'shelf',
+          role: 'shelf',
+          sizeMm: [width, 400, 400],
+          positionMm: [0, 0, 0],
+        },
+        {
+          kind: 'cylinder',
+          partId: 'rod',
+          role: 'hanging-rod',
+          axis: 'x',
+          lengthMm: width,
+          diameterMm: diameter,
+          positionMm: [0, 380, 380],
+        },
+      ],
+    };
+  },
+});
+
+/** Registro completo de pruebas: placa (caja única) + unidad (multi-pieza). */
+export const fullComponentRegistry: ParametricComponentRegistry =
+  createComponentRegistry([plateComponentDef, unitComponentDef]);
