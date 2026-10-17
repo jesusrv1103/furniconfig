@@ -1,0 +1,288 @@
+/**
+ * FASE-4C-A — estilos de la pantalla del modelador.
+ *
+ * Identidad propia y claramente distinta del configurador:
+ * barra superior oscura, lienzo amplio y panel lateral
+ * sobrio. Todo bajo prefijo `.modeler-*` para no tocar una
+ * sola regla de `styles.css` (configurador intacto).
+ *
+ * Prioridades (§7): área de dibujo máxima, sin controles
+ * saturados, legible en resoluciones de escritorio y
+ * pantallas estrechas (el panel pasa debajo del lienzo).
+ */
+
+.modeler-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg, #f4f5f7);
+  color: var(--text, #1f2430);
+}
+
+/* --- Barra superior (identidad oscura) ------------------- */
+
+.modeler-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 16px);
+  padding: 0 var(--space-4, 16px);
+  height: 52px;
+  flex: 0 0 auto;
+  background: #1f2430;
+  color: #f4f5f7;
+  border-bottom: 1px solid #11151d;
+}
+
+.modeler-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-brand-name {
+  font-weight: 650;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+}
+
+.modeler-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+}
+
+.modeler-badge--units {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.modeler-doc-state {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #c3c8d1;
+}
+
+.modeler-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex: 0 0 auto;
+}
+
+.modeler-engine {
+  font-size: 12px;
+  color: #c3c8d1;
+  border: 1px solid #3b4252;
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.modeler-engine[data-status='ready'] {
+  color: #86efac;
+  border-color: #1a7f37;
+}
+
+.modeler-engine[data-status='error'] {
+  color: #fca5a5;
+  border-color: #b91c1c;
+}
+
+.modeler-back {
+  color: #ffffff;
+  background: #2563eb;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm, 6px);
+  padding: 7px 12px;
+}
+
+.modeler-back:hover {
+  background: #1d4ed8;
+}
+
+/* --- Cuerpo: panel lateral + lienzo ---------------------- */
+
+.modeler-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.modeler-sidebar {
+  flex: 0 0 264px;
+  width: 264px;
+  overflow-y: auto;
+  background: #ffffff;
+  border-right: 1px solid var(--border, #d8dce3);
+  padding: var(--space-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+.modeler-sidebar h2 {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted, #6b7280);
+}
+
+.modeler-sidebar section {
+  border-bottom: 1px solid var(--border, #d8dce3);
+  padding-bottom: var(--space-4, 16px);
+}
+
+.modeler-sidebar section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.modeler-view-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-view-buttons button {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 8px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: var(--radius-sm, 6px);
+  background: #ffffff;
+  color: var(--text, #1f2430);
+  cursor: pointer;
+}
+
+.modeler-view-buttons button:hover {
+  border-color: #9aa0ab;
+}
+
+.modeler-view-buttons button[aria-pressed='true'] {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #ffffff;
+}
+
+.modeler-fit-button {
+  grid-column: 1 / -1;
+}
+
+.modeler-hint {
+  margin: var(--space-2, 8px) 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted, #6b7280);
+}
+
+.modeler-placeholder {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted, #6b7280);
+  background: #f4f5f7;
+  border: 1px dashed var(--border, #d8dce3);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px;
+}
+
+.modeler-doc-details {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.modeler-doc-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-doc-details dt {
+  color: var(--muted, #6b7280);
+}
+
+.modeler-doc-details dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* --- Lienzo 3D ------------------------------------------- */
+
+.modeler-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.modeler-scene {
+  position: absolute;
+  inset: 0;
+}
+
+.modeler-scene canvas {
+  display: block;
+}
+
+.modeler-scene-legend {
+  position: absolute;
+  left: var(--space-3, 12px);
+  bottom: var(--space-3, 12px);
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border, #d8dce3);
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+  pointer-events: none;
+}
+
+/* --- Estado de error (imposible, pero honesto) ----------- */
+
+.modeler-root--error {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3, 12px);
+  padding: var(--space-4, 16px);
+  text-align: center;
+}
+
+/* --- Adaptación a resoluciones estrechas ----------------- */
+
+@media (max-width: 860px) {
+  .modeler-body {
+    flex-direction: column-reverse;
+  }
+
+  .modeler-sidebar {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 42vh;
+    border-right: none;
+    border-top: 1px solid var(--border, #d8dce3);
+  }
+
+  .modeler-doc-state {
+    display: none;
+  }
+}
