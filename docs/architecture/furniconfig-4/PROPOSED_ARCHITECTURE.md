@@ -292,19 +292,32 @@ desconocidas → error **antes de escribir**.
 Responsabilidad: objeto con parámetros que **regenera** su geometría
 (paso 10 del MVP).
 
-```ts
-interface ParametricComponentDef {
-  readonly type: string;                // p.ej. 'furniconfig.wardrobe'
-  readonly version: 1;
-  readonly paramsSchema: Readonly<Record<string, ParamSpec>>;  // min/max/paso
-  build(params: ComponentParams): SceneGeometryRef;
-}
-```
+> **Implementado (FASE-4B-D)**: el contrato real difiere del bosquejo
+> original y vive en `types/component.ts` + `components.ts`
+> (`defineComponent`/`createComponentRegistry`/`buildComponent`):
+>
+> ```ts
+> interface ParametricComponentDef extends ComponentDefRef {
+>   readonly type: string;                // p.ej. 'furniconfig.wardrobe'
+>   readonly version: number;             // ≥ 1; un solo version por type
+>   readonly paramsSchema?: Readonly<Record<string, ComponentParamSpec>>;
+>   build(params: Readonly<Record<string, unknown>>): ComponentBuild;
+> }
+> ```
+>
+> `build()` devuelve `ComponentBuild { parts: ComponentPart[] }` con
+> **cajas y cilindros** paramétricos (no un `SceneGeometryRef`, que sigue
+> reservado a la caché de kernel, aún no autorizada). Los ids de pieza se
+> namespaced con el id del objeto (`objeto::pieza`), estables entre
+> regeneraciones. `paramsSchema` es opcional: los componentes que delegan
+> límites en otro contrato (p. ej. `WARDROBE_LIMITS`) no duplican rangos.
+> La geometría derivada **nunca se almacena** en `SceneDocument`.
 
 **Puente con el mueble existente**: un componente paramétrico puede
-**delegar** a `geometry-core` (p. ej. `type: 'furniconfig.wardrobe'` envuelve
-`WardrobeConfig` y emite sus `Panel[]` como objetos de escena). Así el clóset
-vive dentro del modelador sin modificar su motor (ver
+**delegar** a `geometry-core` (ver `furniconfig.wardrobe` en
+`apps/web/src/lib/modeler/components/wardrobe.ts`, FASE-4B-D: envuelve
+`WardrobeConfig` íntegro y emite sus piezas 1:1 como `ComponentPart`). Así
+el clóset vive dentro del modelador sin modificar su motor (ver
 `MIGRATION_STRATEGY.md`).
 
 ### 3.10 Renderer Adapter — `apps/web/src/lib/modeler/renderer-adapter.ts`

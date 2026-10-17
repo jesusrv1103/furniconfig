@@ -1,15 +1,17 @@
 # SCENE_DOCUMENT — Modelo del documento de escena (FASE-4A)
 
-> **Estado (FASE-4B-B)**: los contratos de §3, la validación de §4 (salvo lo
+> **Estado (FASE-4B-D)**: los contratos de §3, la validación de §4 (salvo lo
 > indicado), la selección por objeto, el **Command System con Undo/Redo**
-> (§3.4, `command.ts` + `commands.ts`) y la **serialización en
-> `SceneEnvelope`** (§3.5, `serialize.ts`) están **implementados** en
-> `packages/modeler-core` (paquete puro, sin Three.js/DOM). **No** está
-> completada la arquitectura total de 4B: faltan el kernel en Web Worker
-> (4B-C, incluida la `geometryCache` del sobre) y el registro completo de
-> componentes con `build()` (4B-D). Las invariantes **I7 e I8** requieren la
-> integración del kernel y siguen **pendientes**. Complementa
-> `PROPOSED_ARCHITECTURE.md` §3.1–§3.8.
+> (§3.4, `command.ts` + `commands.ts`, incluida la conversión a componente
+> `convert-to-component`), la **serialización en `SceneEnvelope`**
+> (§3.5, `serialize.ts`) y el **registro de componentes completos con
+> `build()`** (`components.ts`: `defineComponent`/`buildComponent`) están
+> **implementados** en `packages/modeler-core` (paquete puro, sin
+> Three.js/DOM). El kernel en Web Worker se implementó en 4B-C y su consumo
+> sin UI (servicio de regeneración) en 4B-D (D4a); la integración en UI del
+> modelador sigue **pendiente** (4B-D D4b / Fase 4C), por lo que las
+> invariantes **I7 e I8** siguen **pendientes**. Complementa
+> `PROPOSED_ARCHITECTURE.md` §3.1–§3.9.
 
 ## 1. Propósito
 
@@ -134,7 +136,8 @@ interface Sketch2D {
 
 Contratos en `PROPOSED_ARCHITECTURE.md` §3.7; código en
 `packages/modeler-core/src/command.ts` (tipos + historial) y
-`src/commands.ts` (las 7 fábricas). Diseño:
+`src/commands.ts` (las 8 fábricas; la octava, `createConvertToComponentCommand`,
+llegó en FASE-4B-D y se describe abajo). Diseño:
 
 - **Comandos, no documentos completos**: cada fábrica captura solo el delta
   para revertir (valor previo; en `remove-object`, el objeto íntegro y su
@@ -165,6 +168,17 @@ Contratos en `PROPOSED_ARCHITECTURE.md` §3.7; código en
   inmutables (I3).
 - Historiales **independientes** del configurador de clóset (RISKS R-06):
   este sistema no toca `WardrobeConfig` ni `apps/web`.
+- **FASE-4B-D — `convert-to-component`**: convierte un `SolidObject` en un
+  `ComponentInstance` **conservando id, nombre, transformación y material**,
+  solo cuando la equivalencia geométrica es **demostrable**: el croquis
+  debe ser un rectángulo axial exacto en el plano `ground` (prisma
+  canónico, mm exactos) y `build(params)` del componente registrado debe
+  producir **una única caja** con el mismo prisma canónico. Cualquier caso
+  no demostrable (otro plano, otra forma, multi-pieza, geometría de fuente
+  kernel, tamaños distintos) se rechaza con
+  `ERR_SCENE_CONVERSION_INCOMPATIBLE`: **no** se inventan parámetros ni se
+  aproxima geometría. `revert` restaura exactamente el `SolidObject`
+  capturado (por referencia, ya congelado).
 
 ### 3.5 SceneEnvelope — serialización (implementada, FASE-4B-B)
 
@@ -206,7 +220,9 @@ Contratos en `PROPOSED_ARCHITECTURE.md` §3.8; código en
   **opcional** con la identidad mínima (`version` + `paramsSchema`). Con
   registro se valida tipo/versión/rango (`ERR_SCENE_UNKNOWN_COMPONENT`,
   `ERR_SCENE_PARAMS_OUT_OF_RANGE`); sin él, solo estructura. El registro
-  completo con `build()` llega en 4B-D.
+  completo con `build()` llegó en 4B-D (`components.ts`: un
+  `ParametricComponentRegistry` es asignable estructuralmente a
+  `ComponentRegistry`, por lo que este contrato no cambió).
 - **Implementado**: la salida se reconstruye campo a campo (claves
   desconocidas descartadas), las claves de `params` se copian con
   `Object.defineProperty` (sin contaminación de prototipos) y el documento
@@ -229,6 +245,7 @@ Códigos propuestos (union propio, mínimo para el MVP):
 | `ERR_SCENE_COMMAND_CONFLICT` (4B-B) | Precondición de comando incumplida (§3.4); el historial no se altera |
 | `ERR_SCENE_ENVELOPE_INVALID` (4B-B) | Sobre malformado: JSON, marcador o documento ausente/no-objeto (§3.5) |
 | `ERR_SCENE_ENVELOPE_VERSION` (4B-B) | Versión de sobre desconocida; sin migración silenciosa (§3.5) |
+| `ERR_SCENE_CONVERSION_INCOMPATIBLE` (4B-D) | La conversión sólido → componente no es demostrablemente equivalente (§3.4); nunca se aproxima |
 
 > Los valores de rango (máximos, holguras) **no se inventan**: los que
 > dependan de carpintería se marcan PROVISIONAL en `docs/product-rules.md`
@@ -283,6 +300,52 @@ Nuevo documento:  SceneDocument ──validateSceneDocument───▶ SceneObj
 - Sus `Panel[]` se convierten en objetos de escena por el mismo molde de
   `panels-to-mesh.ts` (sin geometría inventada, regla 10).
 - Un documento puede contener **0..n** clósets además de sólidos libres.
+
+> **Implementado (4B-D)**: la definición `furniconfig.wardrobe` v1 vive en
+> la capa de composición `apps/web/src/lib/modeler/components/wardrobe.ts`
+> (`modeler-core` sigue sin dependencias runtime). `build()` encadena
+> `validateWardrobeConfig` → `calculateGeometry` → `ComponentPart` 1:1:
+> `Panel`/`Door` → `box`; `HangingRod`/`DoorHandle` → `cylinder` (eje,
+> longitud y diámetro exactos, sin simplificar a caja); `DrawerAssembly` no
+> añade piezas porque sus `partIds` son paneles ya emitidos. Cada pieza
+> conserva además sus **asociaciones funcionales** (auditoría 4B-D §2):
+> `moduleId` en todas; `hingeSide`/`leafIndex`/`leafCount` en puertas
+> (recalculan `doorOpeningTransform(door, ángulo)` para animar sin volver
+> al motor); `doorId` en tiradores; `assemblyId`/`assemblyIndex` en paneles
+> de cajón. Estos datos existen solo en la salida del motor (no en
+> `params`), por lo que se estampan en `ComponentPart`. **Sin
+> `paramsSchema` declarado**: los límites siguen viviendo únicamente en
+> `WARDROBE_LIMITS` (`geometry-core`); el motor valida al construir.
+>
+> Decisión de medición: `ComponentPart` admite números finitos en mm, no
+> solo enteros, porque el motor emite legítimamente medio milímetro al
+> centrar barras (p. ej. `z: 277.5` en un fondo de 600 mm). **Preservar el
+> valor exacto** del motor prima sobre redondear (una aproximación rompería
+> la equivalencia geométrica); I1 sigue rigiendo el documento persistente,
+> y las piezas derivadas nunca se almacenan en él.
+
+### 6.1 Política de precisión (expresa, auditoría 4B-D §5)
+
+1. **`SceneDocument` — mm enteros.** El documento persistente mantiene la
+   política vigente I1: todas sus entradas geométricas (`pointsMm`,
+   `extrusionMm`, `transform.positionMm`, etc.) son milímetros enteros,
+   validados por `validateSceneDocument`.
+2. **`ComponentPart` — mm finitos.** La geometría derivada en memoria sí
+   admite coordenadas y tamaños finitos fraccionarios generados por
+   `geometry-core` (p. ej. `positionMm.z = 277.5` al centrar una barra en
+   un fondo de 600 mm); `ComponentPart` los **preserva exactos**.
+3. **Sin redondeo silencioso.** La geometría calculada jamás se redondea ni
+   aproxima al convertirla a piezas: cualquier redondeo rompería la
+   equivalencia geométrica exigida a la conversión (§5) y la fidelidad de
+   la escena renderizada. Si una política de cuantización llega a exigirse
+   para piezas derivadas, será una decisión explícita y versionada (ver
+   también I8, cuantización en la frontera del kernel).
+4. **Los derivados no se persisten todavía.** Ni `ComponentBuild`/`ComponentPart`
+   ni las mallas del kernel se escriben en `SceneDocument`, `SceneEnvelope`
+   ni almacenamiento alguno: se recalculan determinísticamente en cada
+   apertura (I2/I3, `SceneGeometryService`). **R-19** (§RISKS.md) mantiene
+   documentado el riesgo de que una futura persistencia de derivados deba
+   resolver la fracción de milímetro junto con la política de cuantización.
 
 ## 7. Ejemplo ilustrativo (no es una prueba)
 

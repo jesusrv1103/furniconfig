@@ -33,7 +33,17 @@ export type SceneErrorCode =
   /** `SceneEnvelope` malformado: no es JSON, no es un registro, marcador o documento ausente/incorrecto. */
   | 'ERR_SCENE_ENVELOPE_INVALID'
   /** Versión de `SceneEnvelope` desconocida. Rechazo sin migración silenciosa. */
-  | 'ERR_SCENE_ENVELOPE_VERSION';
+  | 'ERR_SCENE_ENVELOPE_VERSION'
+  // --- Añadido en FASE-4B-D (conversión a componente paramétrico) ---
+  /**
+   * La conversión de sólido libre a componente paramétrico **no puede
+   * demostrarse equivalente**: el croquis no es un rectángulo axial en el
+   * plano `ground`, la construcción del componente no produce una única
+   * caja comprobable, o las geometrías canónicas no coinciden exactamente
+   * (mm enteros). La conversión se rechaza sin aproximarse nunca
+   * (documentado en `SCENE_DOCUMENT.md` §3.7).
+   */
+  | 'ERR_SCENE_CONVERSION_INCOMPATIBLE';
 
 /**
  * Error con código estable del núcleo del modelador, siguiendo el patrón de

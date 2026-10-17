@@ -21,7 +21,9 @@ asíncrona de Manifold en un Web Worker dedicado (`src/worker/`), que es la ruta
 > largas en worker) queda **implementada como infraestructura** y **medida en
 > Chromium real**: el escenario que congeló el navegador (gap rAF ≈ 1 699,9 ms
 > en el hilo principal) baja a **16,8 ms** con worker, con salida geométrica
-> idéntica (8 480 triángulos). El editor aún no se integra (4B-D).
+> idéntica (8 480 triángulos). El editor aún no se integra; el primer
+> consumidor sin UI llegó en 4B-D (`SceneGeometryService`, en la capa de
+> composición de `apps/web`), el cableado en pantalla queda para D4b/4C.
 
 ## Aislamiento
 
@@ -238,7 +240,7 @@ futura; **C** queda descartada. La medición completa está en
 `experiments/results/4b1-quantization.json` y
 `docs/architecture/furniconfig-4/QUANTIZATION.md`.
 
-Nada de esto se integra todavía en el editor principal (Fase 4B-D).
+Nada de esto se integra todavía en el editor principal (D4b/Fase 4C).
 
 ## Fuera de alcance (no hacer en esta fase)
 

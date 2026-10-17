@@ -50,6 +50,18 @@ diseño antiguo dentro del modelador, y será explícita y reversible.
   **delega** en `calculateGeometry`. Un usuario del modelador puede insertar
   un clóset y editarlo con las herramientas actuales.
 
+> **Actualizado (FASE-4B-D)**: el contrato `ParametricComponentDef` +
+> `buildComponent` está **implementado** en `modeler-core` (D1) y la
+> definición `furniconfig.wardrobe` v1 (params = `WardrobeConfig` íntegro,
+> construcción 1:1 sobre `validateWardrobeConfig` → `calculateGeometry`)
+> vive en la capa de composición `apps/web/src/lib/modeler/components/`
+> (D2). La conversión de sólidos libres a componente con equivalencia
+> demostrable (`createConvertToComponentCommand`) y el servicio de
+> regeneración asíncrona sin UI (`SceneGeometryService`) también están
+> implementados (D3/D4a). **Quedan para 4C/4D**: insertar el clóset desde
+> la UI del modelador, el cableado del servicio con el worker en pantalla
+> (D4b) y la vuelta atrás modelador → configurador.
+
 ## 4. Estrategia de versionado
 
 | Artefacto | Constante | Regla de bump |
@@ -87,6 +99,14 @@ geometry-core (intacto) genera Panel[] → objetos de escena → misma malla vis
   documento contiene **exactamente un** `furniconfig.wardrobe` y ningún
   sólido libre; si no, se informa (mensaje explícito, sin migración
   sorpresa).
+
+> **Implementado (FASE-4B-D, paso parcial)**: la transformación pura
+> `openDesignAsSceneDocument(record)`
+> (`apps/web/src/lib/modeler/open-design.ts`) materializa el envoltorio:
+> crea el `SceneDocument` nuevo con el `WardrobeConfig` como `params`
+> exactos, sin tocar el registro ni persistir nada. El disparador "Abrir en
+> el modelador" y la persistencia del documento nuevo quedan para la
+> Fase 4C (UI); la vuelta atrás sigue pendiente.
 
 ## 6. Importación / exportación
 
