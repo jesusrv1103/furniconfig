@@ -44,6 +44,15 @@ diseño antiguo dentro del modelador, y será explícita y reversible.
 - El configurador actual permanece por defecto (ADR de usabilidad: no
   obligar a migrar).
 
+> **Actualizado (FASE-4C-B)**: la pantalla `/modeler` existe y ya
+> implementa el flujo de **modelado libre** (4C-A: escena, vistas y
+> herramientas; 4C-B: dibujo de rectángulos con cotas exactas,
+> extrusión a sólido, selección, edición de cotas y eliminación, con
+> la geometría derivada en el Worker del kernel). Documentación y
+> limitaciones: `MODELER_4C.md`. **Quedan para las fases siguientes de
+> 4C/4D**: Undo/Redo visual, booleanos, componentes en la UI del
+> modelador, persistencia del documento y la vuelta al configurador.
+
 ### Fase 4D — Componentes paramétricos (futuro)
 
 - `furniconfig.wardrobe` se registra como `ParametricComponentDef` que

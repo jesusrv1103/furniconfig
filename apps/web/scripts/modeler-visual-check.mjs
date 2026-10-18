@@ -14,9 +14,16 @@
  * 4. Navegación al configurador y regreso (enlace, atrás y
  *    adelante del navegador).
  * 5. Ausencia de errores de consola, de página y respuestas
- *    404/5xx.
+ *    404/5xx (acumulados durante TODAS las secciones, incluido
+ *    el modelado libre de la7).
  * 6. Correcta visualización en resolución de escritorio
  *    (1440×900, sin desplazamiento horizontal).
+ * 7. Modelado libre (4C-B): herramientas, dibujo con LMB y
+ *    cotas en vivo con snap, cotas exactas por campo,
+ *    cancelación con Escape, extrusión con generación real del
+ *    Worker (bajo demanda), selección por clic sobre el sólido
+ *    (proyección determinista vía `__modelerProject`),
+ *    edición de cotas, deselección en vacío y eliminación.
  *
  * Guarda evidencia reproducible (capturas + informe.json) en
  * /tmp/opencode/4c-a.
@@ -396,6 +403,204 @@ try {
   await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
   await page.waitForTimeout(600); // asentamiento: cualquier error React asíncrono debe haberse emitido ya
 
+  // --- 7. Modelado libre (4C-B: B5/B6) ----------------------
+  // Dibujo de rectángulo con LMB, cotas en vivo con snap,
+  // cotas exactas por campo, cancelación con Escape, extrusión
+  // con generación real del Worker, selección por clic sobre el
+  // sólido (proyección determinista), edición de cotas,
+  // deselección en vacío y eliminación. El remontaje anterior
+  // garantiza documento vacío y herramienta "Seleccionar".
+
+  await page.getByRole('button', { name: 'Rectángulo' }).click();
+  const rectPressed = await page
+    .getByRole('button', { name: 'Rectángulo' })
+    .getAttribute('aria-pressed');
+  const drawHint = await page.locator('[data-modeler-tools] .modeler-hint').innerText();
+  check(
+    '7a. herramienta Rectángulo activa con pista de dibujo',
+    rectPressed === 'true' && drawHint.includes('Izquierdo: dibujar rectángulo'),
+    drawHint.slice(0, 40),
+  );
+
+  const sceneBox = (
+    await page.locator('[data-modeler-scene] canvas').boundingBox()
+  ) ?? { x: 0, y: 0, width: 800, height: 600 };
+  const dragStartX = sceneBox.x + sceneBox.width * 0.35;
+  const dragStartY = sceneBox.y + sceneBox.height * 0.55;
+  await page.mouse.move(dragStartX, dragStartY);
+  await page.mouse.down();
+  await page.mouse.move(dragStartX + 80, dragStartY + 40, { steps: 8 });
+  await page.mouse.move(dragStartX + 240, dragStartY + 130, { steps: 12 });
+  const liveCotas = (await page.locator('[data-modeler-draw-hint]').innerText()).trim();
+  const cotasMatch = /^(\d+) × (\d+) mm$/.exec(liveCotas);
+  check(
+    '7b. cotas en vivo durante el arrastre (snap múltiplo de 100 mm)',
+    cotasMatch !== null &&
+      Number(cotasMatch[1]) > 0 &&
+      Number(cotasMatch[2]) > 0 &&
+      Number(cotasMatch[1]) % 100 === 0 &&
+      Number(cotasMatch[2]) % 100 === 0,
+    liveCotas,
+  );
+  await page.mouse.up();
+
+  await page.waitForSelector('[data-modeler-pending]');
+  const droppedWidth = Number(
+    await page.locator('[data-modeler-field="pending-width"]').inputValue(),
+  );
+  check(
+    '7c. al soltar nace el croquis pendiente con el ancho reflejado',
+    droppedWidth > 0,
+    `ancho=${droppedWidth}`,
+  );
+
+  await page.locator('[data-modeler-field="pending-width"]').fill('1200');
+  await page.locator('[data-modeler-field="pending-depth"]').fill('600');
+  await page.locator('[data-modeler-field="pending-height"]').fill('100');
+  const pending = await page.evaluate(() => window.__modeler.getPending());
+  const pendingUs = pending.sketch.pointsMm.map((point) => point[0]);
+  const pendingVs = pending.sketch.pointsMm.map((point) => point[1]);
+  const pendingWidth = Math.max(...pendingUs) - Math.min(...pendingUs);
+  const pendingDepth = Math.max(...pendingVs) - Math.min(...pendingVs);
+  check(
+    '7d. cotas exactas aplicadas al croquis (1200×600 y altura100)',
+    pendingWidth === 1200 && pendingDepth === 600 && pending.extrusionMm === 100,
+    `${pendingWidth}×${pendingDepth}×${pending.extrusionMm}`,
+  );
+
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  const pendingAfterEscape = await page.locator('[data-modeler-pending]').count();
+  check('7e. Escape cancela el croquis pendiente', pendingAfterEscape === 0);
+
+  // Escape a MITAD del arrastre: la suelta no debe crear croquis.
+  await page.mouse.move(dragStartX, dragStartY);
+  await page.mouse.down();
+  await page.mouse.move(dragStartX + 150, dragStartY + 90, { steps: 8 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const pendingAfterCancel = await page.locator('[data-modeler-pending]').count();
+  check(
+    '7f. Escape durante el arrastre cancela el gesto (suelta sin croquis)',
+    pendingAfterCancel === 0,
+  );
+
+  // Nuevo dibujo con cotas exactas y extrusión real.
+  await page.mouse.move(dragStartX, dragStartY);
+  await page.mouse.down();
+  await page.mouse.move(dragStartX + 240, dragStartY + 130, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForSelector('[data-modeler-pending]');
+  await page.locator('[data-modeler-field="pending-width"]').fill('1200');
+  await page.locator('[data-modeler-field="pending-depth"]').fill('600');
+  await page.locator('[data-modeler-field="pending-height"]').fill('100');
+  await page.locator('[data-modeler-extrude]').click();
+
+  await page.waitForSelector('[data-modeler-object="solid-1"]');
+  // La generación es asíncrona (Worker bajo demanda): se espera
+  // a que el estado pase a "ready" (timeout generoso por el
+  // arranque WASM del primer dibujo).
+  await page
+    .waitForFunction(
+      () => window.__modeler.getStates()['solid-1']?.status === 'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  const states7g = await page.evaluate(() => window.__modeler.getStates());
+  const engineAfterExtrude = await page.locator('[data-modeler-engine]').innerText();
+  check(
+    '7g. Extruir crea el sólido y la generación termina "Listo" con motor "listo"',
+    states7g['solid-1']?.status === 'ready' && engineAfterExtrude.includes('listo'),
+    `estado=${states7g['solid-1']?.status ?? 'ausente'}`,
+  );
+  await shootStable(page, '07-solido-extruido');
+
+  // Selección por clic sobre el sólido (proyección determinista).
+  await page.getByRole('button', { name: 'Seleccionar' }).click();
+  const doc7h = await page.evaluate(() => window.__modeler.getDocument());
+  const solid7h = doc7h.objects.find((object) => object.kind === 'solid');
+  const points7h = solid7h.geometry.sketch.pointsMm;
+  const center7h = {
+    x:
+      (Math.min(...points7h.map((point) => point[0])) +
+        Math.max(...points7h.map((point) => point[0]))) /
+      2,
+    z:
+      (Math.min(...points7h.map((point) => point[1])) +
+        Math.max(...points7h.map((point) => point[1]))) /
+      2,
+    y: solid7h.geometry.extrusionMm / 2,
+  };
+  const screen7h = await page.evaluate(
+    (point) => window.__modelerProject([point.x, point.y, point.z]),
+    center7h,
+  );
+  await page.mouse.click(screen7h.x, screen7h.y);
+  await page.waitForTimeout(200);
+  const props7h = await page.locator('[data-modeler-props]').innerText();
+  const selected7h = await page.evaluate(() => window.__modeler.getSelection());
+  check(
+    '7h. clic sobre el sólido lo selecciona (propiedades y lista)',
+    props7h.includes('Sólido 1') && selected7h?.anchor === 'solid-1',
+    `anchor=${selected7h?.anchor ?? 'null'}`,
+  );
+
+  // Edición de cotas del seleccionado: documento y lista reactivos.
+  await page.locator('[data-modeler-field="selection-width"]').fill('900');
+  await page.waitForTimeout(200);
+  const doc7i = await page.evaluate(() => window.__modeler.getDocument());
+  const solid7i = doc7i.objects.find((object) => object.kind === 'solid');
+  const us7i = solid7i.geometry.sketch.pointsMm.map((point) => point[0]);
+  const width7i = Math.max(...us7i) - Math.min(...us7i);
+  const row7i = await page
+    .locator('[data-modeler-object="solid-1"]')
+    .innerText();
+  check(
+    '7i. editar el ancho del seleccionado actualiza documento y lista',
+    width7i === 900 && row7i.includes('900 × 600 × 100 mm'),
+    `ancho=${width7i}`,
+  );
+
+  // Clic en el vacío (cielo) → deselección (clickGuard incluido).
+  await page.mouse.click(sceneBox.x + sceneBox.width * 0.5, sceneBox.y + 30);
+  await page.waitForTimeout(200);
+  const selected7j = await page.evaluate(() => window.__modeler.getSelection());
+  const props7j = await page.locator('[data-modeler-props]').innerText();
+  check(
+    '7j. clic en el vacío deselecciona',
+    selected7j === null && props7j.includes('Selecciona un sólido'),
+    `anchor=${selected7j?.anchor ?? 'null'}`,
+  );
+
+  // Eliminación del sólido (selección vía lista).
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(200);
+  const rows7k = await page.locator('[data-modeler-object]').count();
+  const doc7k = await page.evaluate(() => window.__modeler.getDocument());
+  check(
+    '7k. Eliminar retira el sólido (lista y documento vacíos)',
+    rows7k === 0 && doc7k.objects.length === 0,
+    `filas=${rows7k} objetos=${doc7k.objects.length}`,
+  );
+
+  // 7l — Ciclo de vida de BufferGeometry (auditoría §2): tras editar
+  // cotas (7i, la malla se sustituye) y eliminar (7k, desmontaje),
+  // TODO lo adoptado debe estar dispuesto (cero fugas). Verifica en
+  // navegador real la celosía React `useSolidGeometry`; la lógica
+  // pura `retainSolidGeometry` cubre la unitaria.
+  const geometryStats = await page.evaluate(() =>
+    window.__modeler.getGeometryStats(),
+  );
+  check(
+    '7l. geometrías liberadas tras editar y eliminar (cero fugas)',
+    geometryStats.created >= 2 && geometryStats.disposed === geometryStats.created,
+    `creadas=${geometryStats.created} liberadas=${geometryStats.disposed}`,
+  );
+  await shootStable(page, '08-tras-eliminar');
+
   // --- 5. Sin errores de consola/página --------------------
   check(
     '5a. sin errores de consola',
@@ -443,7 +648,7 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A',
+        fase: '4C-A + 4C-B',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,

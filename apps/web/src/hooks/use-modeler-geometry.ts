@@ -1,5 +1,5 @@
 /**
- * FASE-4C-A — hook de lifecycle del motor geométrico.
+ * FASE-4C-A/B — hook de lifecycle del motor geométrico.
  *
  * Envuelve `ModelerGeometryRuntime` para React:
  *
@@ -7,9 +7,13 @@
  *   limpieza: con `StrictMode` (montaje → limpieza → montaje)
  *   se crea-dispone-crea y queda UN runtime vivo; nunca hay
  *   dos Workers.
- * - `ensureKernel()` es el único camino de creación del Worker
- *   y en 4C-A **nada lo invoca** (la escena vacía no calcula
- *   Manifold): el estado permanece `idle`.
+ * - `ensureKernel()` es el único camino de creación del Worker;
+ *   en 4C-B lo invoca `useSceneGeometry` antes del PRIMER
+ *   sólido (la escena vacía sigue sin tocar el Worker).
+ * - El reinicio interno del Worker (`onRestart` del kernel)
+ *   notifica `restarting` al runtime; la pantalla devuelve el
+ *   motor a `ready` vía `useSceneGeometry` cuando el worker
+ *   vuelve a publicar resultados (sin sondeos ni timers).
  * - El hook no retiene estado tras desmontar: la limpieza
  *   termina el kernel y anula la referencia.
  */
@@ -29,9 +33,15 @@ export interface UseModelerGeometry {
   readonly status: GeometryKernelStatus;
   /**
    * Crea el Worker bajo demanda y resuelve con el kernel listo.
-   * En 4C-A no se usa; 4C-B lo llamará antes del primer cálculo.
+   * Lo invoca el coordinador de `useSceneGeometry` ante el
+   * primer sólido (nunca al abrir la pantalla).
    */
   ensureKernel(): Promise<AsyncGeometryKernel>;
+  /**
+   * Devuelve el motor a `ready` tras un reinicio (lo invoca
+   * `useSceneGeometry` cuando el worker vuelve a publicar).
+   */
+  notifyReady(): void;
 }
 
 export function useModelerGeometry(): UseModelerGeometry {
@@ -39,13 +49,17 @@ export function useModelerGeometry(): UseModelerGeometry {
   const runtimeRef = useRef<ModelerGeometryRuntime | null>(null);
 
   useEffect(() => {
-    const runtime = new ModelerGeometryRuntime({
-      createKernel: createModelerWorkerKernel,
+    let runtime: ModelerGeometryRuntime | null = null;
+    runtime = new ModelerGeometryRuntime({
+      createKernel: () =>
+        createModelerWorkerKernel({
+          onRestart: () => runtime?.notifyRestarting(),
+        }),
       onStatusChange: setStatus,
     });
     runtimeRef.current = runtime;
     return () => {
-      runtime.dispose();
+      runtime?.dispose();
       if (runtimeRef.current === runtime) {
         runtimeRef.current = null;
       }
@@ -62,5 +76,9 @@ export function useModelerGeometry(): UseModelerGeometry {
     return runtime.ensureKernel();
   }, []);
 
-  return { status, ensureKernel };
+  const notifyReady = useCallback((): void => {
+    runtimeRef.current?.notifyReady();
+  }, []);
+
+  return { status, ensureKernel, notifyReady };
 }

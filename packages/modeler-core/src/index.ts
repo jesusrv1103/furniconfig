@@ -101,6 +101,12 @@ export {
 } from './commands.js';
 
 export {
+  setSketchDimension,
+  sketchDimensionMm,
+  type SketchDimension,
+} from './sketch-dimension.js';
+
+export {
   SCENE_FORMAT,
   SCENE_FORMAT_VERSION,
   serializeScene,

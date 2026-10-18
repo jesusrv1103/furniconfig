@@ -1,11 +1,14 @@
 /**
- * FASE-4C-A §3, §7 y §8 — chrome del modelador (renderToString).
+ * FASE-4C-A/B — chrome del modelador (renderToString).
  *
  * Verifica: identidad "FurniConfig Modeler", enlace de vuelta
  * al configurador, indicadores de unidades/documento/estado
- * del motor, controles de vista funcionales (aria-pressed),
- * ausencia de botones inactivos en las secciones-reserva y
- * accesibilidad básica (roles, labels, secciones vinculadas).
+ * del motor (las5 etiquetas honestas), controles de vista y
+ * herramientas funcionales (aria-pressed), ausencia de botones
+ * deshabilitados, panel del croquis pendiente, lista de
+ * objetos con estados, panel de propiedades (edición, error con
+ * reintento, eliminar) y accesibilidad básica (roles, labels,
+ * secciones vinculadas).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -18,94 +21,274 @@ function renderShell(
   overrides: Partial<ModelerShellProps> = {},
 ): string {
   const props: ModelerShellProps = {
-    document: { name: 'Escena sin título', objectCount: 0, gridStepMm: 10 },
+    document: { name: 'Escena sin título', objectCount: 0, gridStepMm: 100 },
     engineStatus: 'idle',
     view: 'isometric',
     onViewChange: () => undefined,
     onFit: () => undefined,
+    tool: 'select',
+    onToolChange: () => undefined,
+    pendingSketch: null,
+    objects: [],
+    selection: null,
     children: <div data-testid="escena" />,
     ...overrides,
   };
-  // React SSR marca los cortes de texto con `<!-- -->`.
-  return renderToString(<ModelerShell {...props} />).replace(
-    /<!-- -->/g,
-    '',
+  // React SSR maquetado: marcado puro sin dependencias de DOM.
+  return renderToString(<ModelerShell {...props} />);
+}
+
+function slice(haystack: string, start: string, end: string): string {
+  return haystack.slice(
+    haystack.indexOf(start) === -1 ? 0 : haystack.indexOf(start),
+    end === '-1' || end === ''
+      ? haystack.length
+      : haystack.indexOf(end) === -1
+        ? haystack.length
+        : haystack.indexOf(end),
   );
 }
 
 describe('ModelerShell (chrome del modelador)', () => {
-  it('muestra la identidad y el badge de unidades mm', () => {
+  it('renderiza identidad, enlace de vuelta y badge de mm', () => {
     const html = renderShell();
     expect(html).toContain('FurniConfig Modeler');
-    expect(html).toContain('milímetros');
-    expect(html).toMatch(/class="modeler-badge[^"]*"[^>]*>\s*mm\s*</);
-  });
-
-  it('el enlace de vuelta apunta al configurador (#/)', () => {
-    const html = renderShell();
     expect(html).toContain('href="#/"');
     expect(html).toContain('Volver al configurador');
+    expect(html).toContain('data-modeler-units');
+    expect(html).toContain('>mm<');
   });
 
-  it('refleja el estado del documento (nombre, objetos y paso)', () => {
+  it('muestra el estado del documento honesto (objetos y rejilla)', () => {
     const html = renderShell({
-      document: { name: 'Taller', objectCount: 3, gridStepMm: 10 },
+      document: { name: 'Escena sin título', objectCount: 3, gridStepMm: 100 },
     });
-    expect(html).toContain('Taller');
     expect(html).toContain('3 objetos');
-    expect(html).toContain('paso de rejilla 10 mm');
+    expect(html).toContain('rejilla');
+    expect(html).toContain('100 mm');
   });
 
-  it('estado del motor honesto: idle = en reposo, sin cálculos', () => {
-    const html = renderShell({ engineStatus: 'idle' });
-    expect(html).toContain('data-status="idle"');
-    expect(html).toContain('en reposo (sin cálculos)');
-    const ready = renderShell({ engineStatus: 'ready' });
-    expect(ready).toContain('data-status="ready"');
+  it('las5 etiquetas del motor geométrico son coherentes con su estado', () => {
+    const cases = [
+      ['idle', 'en reposo (sin cálculos)'],
+      ['initializing', 'iniciando…'],
+      ['ready', 'listo'],
+      ['restarting', 'reiniciando…'],
+      ['error', 'error del worker'],
+    ] as const;
+    for (const [status, label] of cases) {
+      const html = renderShell({ engineStatus: status });
+      expect(html).toContain(`data-status="${status}"`);
+      expect(html).toContain(label);
+    }
   });
 
-  it('los controles de vista reflejan la vista activa (aria-pressed)', () => {
+  it('controles de vista: aria-pressed correcto y Ajustar accionable', () => {
     const html = renderShell({ view: 'front' });
-    expect(html).toContain('Isométrica');
-    expect(html).toContain('Frontal');
-    expect(html).toContain('Lateral');
-    expect(html).toContain('Ajustar');
-    // Solo las3 vistas son toggles (aria-pressed): "Ajustar" es
-    // una acción puntual y no lleva estado pulsado.
-    const pressed = [...html.matchAll(/aria-pressed="(true|false)"/g)].map(
+    const section = slice(html, 'data-modeler-view', 'Herramientas');
+    const pressed = [...section.matchAll(/aria-pressed="(\w+)"/g)].map(
       (match) => match[1],
     );
     expect(pressed).toEqual(['false', 'true', 'false']);
+    expect(section).toContain('Isométrica');
+    expect(section).toContain('Frontal');
+    expect(section).toContain('Lateral');
+    expect(section).toContain('Ajustar');
   });
 
-  it('las secciones-reserva NO contienen botones inactivos', () => {
-    const html = renderShell();
-    const toolsSection = html.slice(
-      html.indexOf('data-modeler-tools-placeholder'),
-      html.indexOf('data-modeler-props-placeholder'),
+  it('herramientas: dos botones reales con aria-pressed (sin placeholders)', () => {
+    const html = renderShell({ tool: 'rectangle' });
+    const section = slice(html, 'data-modeler-tools', 'data-modeler-objects');
+    expect(section).not.toContain('Todavía no hay herramientas');
+    const pressed = [...section.matchAll(/aria-pressed="(\w+)"/g)].map(
+      (match) => match[1],
     );
-    expect(toolsSection).not.toContain('<button');
-    expect(html).toContain('Todavía no hay herramientas activas');
-    // en total, SOLO los4 botones funcionales de vista
-    expect((html.match(/<button/g) ?? []).length).toBe(4);
+    expect(pressed).toEqual(['false', 'true']);
+    expect(section).toContain('Seleccionar');
+    expect(section).toContain('Rectángulo');
+    expect(section).toContain('Izquierdo: dibujar rectángulo');
   });
 
-  it('accesibilidad básica: landmarks, labels y secciones vinculadas', () => {
+  it('pista de la herramienta activa coherente con el modo selección', () => {
+    const html = renderShell({ tool: 'select' });
+    expect(html).toContain('Clic para seleccionar');
+  });
+
+  it('ningún botón está deshabilitado (sin botones muertos)', () => {
+    const html = renderShell({
+      tool: 'rectangle',
+      pendingSketch: {
+        widthText: '1200',
+        depthText: '600',
+        heightText: '100',
+        onWidthChange: () => undefined,
+        onDepthChange: () => undefined,
+        onHeightChange: () => undefined,
+        onExtrude: () => undefined,
+        onCancel: () => undefined,
+      },
+      objects: [
+        {
+          id: 'solid-1',
+          name: 'Sólido 1',
+          dimsText: '1200 × 600 × 100 mm',
+          status: 'error',
+          selected: true,
+          onSelect: () => undefined,
+        },
+      ],
+      selection: {
+        name: 'Sólido 1',
+        widthText: '1200',
+        depthText: '600',
+        heightText: '100',
+        onWidthChange: () => undefined,
+        onDepthChange: () => undefined,
+        onHeightChange: () => undefined,
+        status: 'error',
+        errorMessage: 'invalid-input',
+        onRetry: () => undefined,
+        onDelete: () => undefined,
+      },
+    });
+    expect(html).not.toContain('disabled');
+  });
+
+  it('panel del croquis pendiente: campos y acciones Extruir/Cancelar', () => {
+    const html = renderShell({
+      pendingSketch: {
+        widthText: '1200',
+        depthText: '600',
+        heightText: '100',
+        onWidthChange: () => undefined,
+        onDepthChange: () => undefined,
+        onHeightChange: () => undefined,
+        onExtrude: () => undefined,
+        onCancel: () => undefined,
+      },
+    });
+    const section = slice(html, 'data-modeler-pending', 'data-modeler-objects');
+    expect(section).toContain('Croquis sin extruir');
+    expect(section).toContain('data-modeler-field="pending-width"');
+    expect(section).toContain('data-modeler-field="pending-depth"');
+    expect(section).toContain('data-modeler-field="pending-height"');
+    expect(section).toContain('value="1200"');
+    expect(section).toContain('data-modeler-extrude');
+    expect(section).toContain('Extruir');
+    expect(section).toContain('Cancelar croquis');
+  });
+
+  it('sin croquis pendiente no existe la sección (sin estados fingidos)', () => {
     const html = renderShell();
-    expect(html).toContain('aria-label="Panel del modelador"');
-    expect(html).toContain('aria-label="Área de modelado 3D"');
-    expect(html).toContain('role="status"');
-    expect(html).toContain('role="group"');
-    expect(html).toContain('aria-labelledby="modeler-view-heading"');
-    expect(html).toContain('aria-labelledby="modeler-tools-heading"');
-    expect(html).toContain('aria-labelledby="modeler-props-heading"');
-    expect(html).toContain(
-      'aria-label="Volver al configurador de clósets"',
-    );
+    expect(html).not.toContain('data-modeler-pending');
+    expect(html).toContain('Dibuja un rectángulo y extrúyelo');
   });
 
-  it('renderiza el área3D recibida por children', () => {
+  it('lista de objetos con nombre, cotas y estado de generación', () => {
+    const html = renderShell({
+      objects: [
+        {
+          id: 'solid-1',
+          name: 'Sólido 1',
+          dimsText: '1200 × 600 × 100 mm',
+          status: 'pending',
+          selected: false,
+          onSelect: () => undefined,
+        },
+        {
+          id: 'solid-2',
+          name: 'Sólido 2',
+          dimsText: '300 × 300 × 40 mm',
+          status: 'ready',
+          selected: true,
+          onSelect: () => undefined,
+        },
+      ],
+    });
+    const section = slice(html, 'data-modeler-objects', 'data-modeler-props');
+    expect(section).toContain('Sólido 1');
+    expect(section).toContain('1200 × 600 × 100 mm');
+    expect(section).toContain('Generando…');
+    expect(section).toContain('Listo');
+    expect(section).toContain('data-modeler-object="solid-2"');
+    expect(section).toContain('aria-pressed="true"');
+  });
+
+  it('propiedades sin selección: texto informativo (no sección-reserva)', () => {
+    const html = renderShell();
+    const section = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(section).toContain('Selecciona un sólido');
+    expect(section).not.toContain('próximamente');
+  });
+
+  it('propiedades con selección: campos editables, estado, error y acciones', () => {
+    const html = renderShell({
+      selection: {
+        name: 'Sólido 1',
+        widthText: '1200',
+        depthText: '600',
+        heightText: '100',
+        onWidthChange: () => undefined,
+        onDepthChange: () => undefined,
+        onHeightChange: () => undefined,
+        status: 'error',
+        errorMessage: 'invalid-input',
+        onRetry: () => undefined,
+        onDelete: () => undefined,
+      },
+    });
+    const section = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(section).toContain('Sólido 1');
+    expect(section).toContain('data-modeler-field="selection-width"');
+    expect(section).toContain('data-modeler-field="selection-depth"');
+    expect(section).toContain('data-modeler-field="selection-height"');
+    expect(section).toContain('value="600"');
+    expect(section).toContain('data-modeler-selection-status');
+    expect(section).toContain('data-status="error"');
+    expect(section).toContain('invalid-input');
+    expect(section).toContain('data-modeler-retry');
+    expect(section).toContain('data-modeler-delete');
+    expect(section).toContain('Eliminar');
+  });
+
+  it('sin error de kernel no se muestra Reintentar (solo Eliminar)', () => {
+    const html = renderShell({
+      selection: {
+        name: 'Sólido 1',
+        widthText: '1',
+        depthText: '1',
+        heightText: '1',
+        onWidthChange: () => undefined,
+        onDepthChange: () => undefined,
+        onHeightChange: () => undefined,
+        status: 'ready',
+        errorMessage: null,
+        onRetry: () => undefined,
+        onDelete: () => undefined,
+      },
+    });
+    const section = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(section).not.toContain('data-modeler-retry');
+    expect(section).toContain('data-modeler-delete');
+  });
+
+  it('accesibilidad: secciones vinculadas a sus encabezados', () => {
+    const html = renderShell();
+    for (const heading of [
+      'modeler-view-heading',
+      'modeler-tools-heading',
+      'modeler-objects-heading',
+      'modeler-props-heading',
+      'modeler-doc-heading',
+    ]) {
+      expect(html).toContain(`id="${heading}"`);
+      expect(html).toContain(`aria-labelledby="${heading}"`);
+    }
+  });
+
+  it('renderiza el área de escena (children)', () => {
     const html = renderShell();
     expect(html).toContain('data-testid="escena"');
+    expect(html).toContain('data-modeler-viewport');
   });
 });
