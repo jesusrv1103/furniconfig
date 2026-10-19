@@ -29,8 +29,10 @@ import {
   createSetExtrusionCommand,
   createSetSketchCommand,
   validateSceneDocument,
+  type Command,
   type SceneDocument,
   type SceneMaterial,
+  type SceneObject,
   type Sketch2D,
 } from '@furniconfig/modeler-core';
 
@@ -95,6 +97,59 @@ function withDefaultMaterial(document: SceneDocument): SceneDocument {
 }
 
 /**
+ * FASE-4C-C — objeto sólido nuevo con IDs deterministas (I4).
+ *
+ * Compartido por `applySceneAction('add-solid')` y por el flujo de
+ * comandos de la pantalla (`buildSolidAddCommand`): id
+ * `solid-N` siguiente, nombre `Sólido N`, origen en el suelo,
+ * material por defecto.
+ */
+export function buildSolidObject(
+  document: SceneDocument,
+  sketch: Sketch2D,
+  extrusionMm: number,
+): SceneObject {
+  const id = nextSolidId(document);
+  const number = id.slice('solid-'.length);
+  return {
+    id,
+    kind: 'solid',
+    name: `Sólido ${number}`,
+    transform: { positionMm: [0, 0, 0] },
+    geometry: {
+      source: 'sketch',
+      sketch,
+      extrusionMm,
+    },
+    materialId: DEFAULT_SCENE_MATERIAL.id,
+  };
+}
+
+/**
+ * FASE-4C-C — comando `add-object` para un nuevo sólido del
+ * croquis pendiente (ruta del historial visual).
+ *
+ * El comando se construye sobre `history.present` (precondiciones
+ * del comando contra el documento vigente); la ejecución pertenece
+ * a `use-modeler-history.dispatch`. NOTA: el documento debe
+ * contener ya `DEFAULT_SCENE_MATERIAL` (la semilla de la pantalla
+ * lo incluye); si faltara, la validación posterior rechaza y la UI
+ * conserva el historial intacto (nunca un documento a medias).
+ *
+ * @throws SceneError si la fábrica rechaza el objeto.
+ */
+export function buildSolidAddCommand(
+  document: SceneDocument,
+  sketch: Sketch2D,
+  extrusionMm: number,
+): Command {
+  return createAddObjectCommand(
+    document,
+    buildSolidObject(document, sketch, extrusionMm),
+  );
+}
+
+/**
  * Aplica una acción sobre el documento y devuelve el NUEVO
  * documento validado (congelado), o `null` si la acción es
  * inválida (precondiciones del comando o validación final).
@@ -109,20 +164,10 @@ export function applySceneAction(
     switch (action.type) {
       case 'add-solid': {
         const base = withDefaultMaterial(document);
-        const id = nextSolidId(document);
-        const number = id.slice('solid-'.length);
-        next = createAddObjectCommand(base, {
-          id,
-          kind: 'solid',
-          name: `Sólido ${number}`,
-          transform: { positionMm: [0, 0, 0] },
-          geometry: {
-            source: 'sketch',
-            sketch: action.sketch,
-            extrusionMm: action.extrusionMm,
-          },
-          materialId: DEFAULT_SCENE_MATERIAL.id,
-        }).apply(base);
+        next = createAddObjectCommand(
+          base,
+          buildSolidObject(base, action.sketch, action.extrusionMm),
+        ).apply(base);
         break;
       }
       case 'set-sketch':
