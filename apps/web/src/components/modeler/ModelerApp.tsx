@@ -24,14 +24,19 @@
  * objeto. Abrir la pantalla en escena vacía NO crea el Worker.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   SCENE_LIMITS,
   createEmptySceneDocument,
+  createRemoveObjectCommand,
+  createRenameCommand,
+  createSetExtrusionCommand,
+  createSetSketchCommand,
   resolveObjectSelection,
   setSketchDimension,
   sketchDimensionMm,
+  type Command,
   type SceneDocument,
   type SelectionState,
   type Sketch2D,
@@ -48,15 +53,22 @@ import { ModelerScene } from './ModelerScene.js';
 import { useModelerGeometry } from '../../hooks/use-modeler-geometry.js';
 import { useSceneGeometry } from '../../hooks/use-scene-geometry.js';
 import {
+  useModelerHistory,
+  type ModelerHistory,
+} from '../../hooks/use-modeler-history.js';
+import {
   createCameraControlsState,
   requestFit,
   requestView,
   type ModelerCameraControlsState,
 } from '../../lib/modeler/camera-controls.js';
 import {
+  DEFAULT_SCENE_MATERIAL,
   applySceneAction,
+  buildSolidAddCommand,
   nextSolidId,
 } from '../../lib/modeler/document-actions.js';
+import { historyShortcut } from '../../lib/modeler/history-shortcuts.js';
 import type { CameraView } from '../../lib/camera-views.js';
 import type { ModelerTool } from '../../lib/modeler/drawing.js';
 import { geometryLifecycle } from './use-solid-geometry.js';
@@ -85,14 +97,35 @@ function parseMm(text: string): number | null {
   return Number.isSafeInteger(value) && value >= 1 ? value : null;
 }
 
+/**
+ * Semilla del historial (C1): documento vacío con rejilla inicial y
+ * el material por defecto YA presente (los sólidos lo referencian;
+ * así el comando `add-object` valida contra `history.present` sin
+ * necesidad de tocar el historial fuera de comandos).
+ */
+function createSeedDocument(): SceneDocument {
+  const withGrid =
+    applySceneAction(createEmptySceneDocument(), {
+      type: 'set-grid-step',
+      gridStepMm: INITIAL_GRID_STEP_MM,
+    }) ?? createEmptySceneDocument();
+  if (
+    withGrid.materials.some(
+      (material) => material.id === DEFAULT_SCENE_MATERIAL.id,
+    )
+  ) {
+    return withGrid;
+  }
+  return { ...withGrid, materials: [...withGrid.materials, DEFAULT_SCENE_MATERIAL] };
+}
+
 export function ModelerApp(): ReactNode {
-  const [document, setDocument] = useState<SceneDocument>(
-    () =>
-      applySceneAction(createEmptySceneDocument(), {
-        type: 'set-grid-step',
-        gridStepMm: INITIAL_GRID_STEP_MM,
-      }) ?? createEmptySceneDocument(),
-  );
+  // C1 — FUENTE ÚNICA DE VERDAD: el documento visible es
+  // `history.present` (CommandHistory de modeler-core). No existe
+  // un `SceneDocument` paralelo ni un `setDocument`.
+  const seedDocument = useMemo(createSeedDocument, []);
+  const history = useModelerHistory(seedDocument);
+  const document = history.document;
   const [tool, setTool] = useState<ModelerTool>('select');
   const [camera, setCamera] = useState<ModelerCameraControlsState>(
     createCameraControlsState,
@@ -107,11 +140,16 @@ export function ModelerApp(): ReactNode {
     depth: '',
     height: String(DEFAULT_EXTRUSION_MM),
   });
-  const [selectionTexts, setSelectionTexts] = useState({
-    width: '',
-    depth: '',
-    height: '',
-  });
+  /** Feedback aria-live del último deshacer/rehacer (C3). */
+  const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  /**
+   * Selección previa a una eliminación (C4): si el usuario deshace
+   * el borrado, el objeto restaurado recupera su selección. Se
+   * descarta al ejecutar un comando nuevo o al elegir otra
+   * selección explícita (nunca resucita selecciones contra el
+   * deseo del usuario).
+   */
+  const selectionStashRef = useRef<SelectionState | null>(null);
 
   const geometry = useModelerGeometry();
   const sceneGeometry = useSceneGeometry(document, geometry);
@@ -132,30 +170,32 @@ export function ModelerApp(): ReactNode {
     };
   }, [document, selection]);
 
-  // Sincroniza los campos con el objeto recién seleccionado (solo
-  // al cambiar el id: editar cotas no debe pisar lo tecleado).
-  const selectedId = selection?.anchor ?? null;
+  // C4 — Selección SIEMPRE coherente con el documento vigente: una
+  // referencia a un objeto inexistente se anula (eliminación o
+  // redo), y el undo de una eliminación restaura la selección
+  // previa guardada. Los campos de propiedades se derivan del
+  // documento (sin estado de texto paralelo: el borrador vive en
+  // cada campo con confirmación).
   useEffect(() => {
-    if (selectedId === null) {
-      setSelectionTexts({ width: '', depth: '', height: '' });
+    if (selection === null) {
+      const stash = selectionStashRef.current;
+      if (stash !== null && stash.anchor !== null) {
+        const restored = document.objects.some(
+          (object) => object.id === stash.anchor,
+        );
+        if (restored) {
+          setSelection(
+            resolveObjectSelection(document, { objectId: stash.anchor }),
+          );
+        }
+      }
       return;
     }
-    const object = document.objects.find((entry) => entry.id === selectedId);
-    if (object === undefined || object.kind !== 'solid') {
-      return;
-    }
-    if (object.geometry.source !== 'sketch') {
-      return;
-    }
-    setSelectionTexts({
-      width: String(sketchDimensionMm(object.geometry.sketch, 'widthMm')),
-      depth: String(sketchDimensionMm(object.geometry.sketch, 'depthMm')),
-      height: String(object.geometry.extrusionMm),
+    const resolved = resolveObjectSelection(document, {
+      objectId: selection.anchor,
     });
-    // `document` se omite a propósito: solo cambia el texto al
-    // cambiar de objeto seleccionado.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
+    if (resolved === null) setSelection(null);
+  }, [document, selection]);
 
   // Escape cancela el croquis pendiente (operación incompleta).
   useEffect(() => {
@@ -166,6 +206,66 @@ export function ModelerApp(): ReactNode {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  // -------------------------------------------------------------------------
+  // Historial visual (C1/C3): dispatch + Undo/Redo + atajos
+  // -------------------------------------------------------------------------
+
+  // La pasarela de atajos necesita la referencia viva del historial
+  // (patrón de `use-editor-history`): el listener se registra una
+  // sola vez y se limpia al desmontar.
+  const historyRef = useRef(history);
+  historyRef.current = history;
+
+  const runDispatch = useCallback(
+    (command: Command): ReturnType<ModelerHistory['dispatch']> => {
+      const change = historyRef.current.dispatch(command);
+      if (change !== null) {
+        selectionStashRef.current = null; // comando nuevo: fin del "restaurar"
+        setHistoryMessage(null);
+      }
+      return change;
+    },
+    [],
+  );
+
+  const handleUndo = useCallback(() => {
+    const change = historyRef.current.undo();
+    if (change === null) return;
+    setHistoryMessage(`Deshecho: ${change.label}`);
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const change = historyRef.current.redo();
+    if (change === null) return;
+    setHistoryMessage(`Rehecho: ${change.label}`);
+  }, []);
+
+  // Ctrl/Cmd+Z y Ctrl/Cmd+Shift+Z (C3): fuera de campos de texto,
+  // una pulsación = una operación (sin `event.repeat`).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target;
+      const shortcut = historyShortcut(
+        {
+          key: event.key,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+          repeat: event.repeat,
+        },
+        target instanceof HTMLElement
+          ? { tagName: target.tagName, isContentEditable: target.isContentEditable }
+          : null,
+      );
+      if (shortcut === null) return;
+      event.preventDefault();
+      if (shortcut === 'undo') handleUndo();
+      else handleRedo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
 
   // -------------------------------------------------------------------------
   // Acciones de la interfaz (todas puras vía comandos)
@@ -184,6 +284,7 @@ export function ModelerApp(): ReactNode {
 
   const handlePickObject = useCallback(
     (objectId: string | null) => {
+      selectionStashRef.current = null; // selección explícita: fin de "restaurar"
       setSelection(
         objectId === null
           ? null
@@ -222,21 +323,25 @@ export function ModelerApp(): ReactNode {
   const handleExtrude = useCallback(() => {
     if (pendingSketch === null) return;
     const objectId = nextSolidId(document);
-    const next = applySceneAction(document, {
-      type: 'add-solid',
-      sketch: pendingSketch,
-      extrusionMm: pendingExtrusionMm,
-    });
-    if (next === null) return;
-    setDocument(next);
+    let change: ReturnType<ModelerHistory['dispatch']>;
+    try {
+      change = runDispatch(
+        buildSolidAddCommand(document, pendingSketch, pendingExtrusionMm),
+      );
+    } catch {
+      // Fábrica del comando rechazó: historial intacto.
+      change = null;
+    }
+    if (change === null) return;
     setPendingSketch(null);
-    setSelection(resolveObjectSelection(next, { objectId }));
-  }, [document, pendingSketch, pendingExtrusionMm]);
+    setSelection(resolveObjectSelection(change.document, { objectId }));
+  }, [document, pendingSketch, pendingExtrusionMm, runDispatch]);
 
+  // Edición de cotas: CONFIRMACIÓN (Enter/blur/change del campo) =
+  // UNA entrada de historial; el no-op de `executeCommand` descarta
+  // repeticiones (Enter seguido de blur → una sola entrada).
   const handleSelectionDimension = useCallback(
     (dimension: SketchDimension, text: string) => {
-      const key = dimension === 'widthMm' ? 'width' : 'depth';
-      setSelectionTexts((prev) => ({ ...prev, [key]: text }));
       const value = parseMm(text);
       if (value === null || selectedObject === null) return;
       try {
@@ -245,22 +350,18 @@ export function ModelerApp(): ReactNode {
           dimension,
           value,
         );
-        const next = applySceneAction(document, {
-          type: 'set-sketch',
-          objectId: selectedObject.id,
-          sketch,
-        });
-        if (next !== null) setDocument(next);
+        runDispatch(
+          createSetSketchCommand(document, selectedObject.id, sketch),
+        );
       } catch {
         // Fuera de límites: se conserva el último valor válido.
       }
     },
-    [document, selectedObject],
+    [document, selectedObject, runDispatch],
   );
 
   const handleSelectionHeight = useCallback(
     (text: string) => {
-      setSelectionTexts((prev) => ({ ...prev, height: text }));
       const value = parseMm(text);
       if (
         value === null ||
@@ -269,26 +370,33 @@ export function ModelerApp(): ReactNode {
       ) {
         return;
       }
-      const next = applySceneAction(document, {
-        type: 'set-extrusion',
-        objectId: selectedObject.id,
-        extrusionMm: value,
-      });
-      if (next !== null) setDocument(next);
+      runDispatch(
+        createSetExtrusionCommand(document, selectedObject.id, value),
+      );
     },
-    [document, selectedObject],
+    [document, selectedObject, runDispatch],
+  );
+
+  /** Renombrar (C2): nombre vacío → fábrica `SceneError` → no-op. */
+  const handleRename = useCallback(
+    (text: string) => {
+      if (selectedObject === null) return;
+      runDispatch(createRenameCommand(document, selectedObject.id, text));
+    },
+    [document, selectedObject, runDispatch],
   );
 
   const handleDelete = useCallback(() => {
     if (selectedObject === null) return;
-    const next = applySceneAction(document, {
-      type: 'remove-object',
-      objectId: selectedObject.id,
-    });
-    if (next === null) return;
-    setDocument(next);
+    const change = runDispatch(
+      createRemoveObjectCommand(document, selectedObject.id),
+    );
+    if (change === null) return;
+    // Captura POST-éxito: si se deshace, la selección vuelve con el
+    // objeto (efecto de reconciliación C4).
+    selectionStashRef.current = selection;
     setSelection(null);
-  }, [document, selectedObject]);
+  }, [document, selectedObject, runDispatch, selection]);
 
   const handleViewChange = useCallback((view: CameraView) => {
     setCamera((prev) => requestView(prev, view));
@@ -349,10 +457,18 @@ export function ModelerApp(): ReactNode {
     selectedObject === null
       ? null
       : {
+          // Derivados del documento (fuente única): undo/redo y
+          // renombrar actualizan el panel sin estado de texto paralelo.
           name: selectedObject.name,
-          widthText: selectionTexts.width,
-          depthText: selectionTexts.depth,
-          heightText: selectionTexts.height,
+          nameText: selectedObject.name,
+          onNameChange: handleRename,
+          widthText: String(
+            sketchDimensionMm(selectedObject.sketch, 'widthMm'),
+          ),
+          depthText: String(
+            sketchDimensionMm(selectedObject.sketch, 'depthMm'),
+          ),
+          heightText: String(selectedObject.extrusionMm),
           onWidthChange: (text) => handleSelectionDimension('widthMm', text),
           onDepthChange: (text) => handleSelectionDimension('depthMm', text),
           onHeightChange: handleSelectionHeight,
@@ -380,6 +496,10 @@ export function ModelerApp(): ReactNode {
               status: state.status,
               revision: state.revision,
               errorMessage: state.errorMessage,
+              // Huellas (4C-C): la malla aplicada debe corresponder
+              // al estado vigente (nunca geometría obsoleta).
+              fingerprint: state.fingerprint,
+              appliedFingerprint: state.appliedFingerprint,
             },
           ]),
         ),
@@ -391,11 +511,21 @@ export function ModelerApp(): ReactNode {
           : { sketch: pendingSketch, extrusionMm: pendingExtrusionMm },
       /** Ciclo de vida de BufferGeometry (auditoría §2, check visual 7l). */
       getGeometryStats: () => ({ ...geometryLifecycle }),
+      /** Historial visual (4C-C) para verificación visual. */
+      getHistory: () => ({
+        canUndo: history.canUndo,
+        canRedo: history.canRedo,
+        undoLabel: history.undoLabel,
+        redoLabel: history.redoLabel,
+        past: history.pastLength,
+        future: history.futureLength,
+        message: historyMessage,
+      }),
     };
     return () => {
       delete target.__modeler;
     };
-  }, [document, tool, selection, sceneGeometry]);
+  }, [document, tool, selection, sceneGeometry, history, historyMessage]);
 
   return (
     <ModelerShell
@@ -410,6 +540,15 @@ export function ModelerApp(): ReactNode {
       onFit={handleFit}
       tool={tool}
       onToolChange={setTool}
+      history={{
+        canUndo: history.canUndo,
+        canRedo: history.canRedo,
+        undoLabel: history.undoLabel,
+        redoLabel: history.redoLabel,
+        message: historyMessage,
+      }}
+      onUndo={handleUndo}
+      onRedo={handleRedo}
       pendingSketch={pendingPanel}
       objects={objectRows}
       selection={selectionPanel}

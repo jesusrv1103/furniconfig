@@ -1,8 +1,9 @@
-# MODELER_4C — Modelador libre: estado tras la FASE-4C-B
+# MODELER_4C — Modelador libre: estado tras la FASE-4C-B y 4C-C
 
-> **Estado (FASE-4C-B)**: primera implementación funcional del flujo de
-> modelado libre: **dibujar rectángulo → cotas exactas → extruir →
-> seleccionar → editar → eliminar**. La pantalla existe desde la
+> **Estado (FASE-4C-B + 4C-C)**: flujo de modelado libre funcional:
+> **dibujar rectángulo → cotas exactas → extruir → seleccionar →
+> editar → renombrar → eliminar → DESHACER/REHACER** (historial
+> visual conectado al `CommandHistory` de `modeler-core`, §10). La pantalla existe desde la
 > FASE-4A (`ModelerApp`, ruta `/modeler`, enlace de vuelta al
 > configurador). **NO es un CAD completo**: las limitaciones están
 > enumeradas en §9. Complementa `SCENE_DOCUMENT.md` (contrato del
@@ -138,8 +139,6 @@ render de `StrictMode` en dev no los infla.
 - **Sin operaciones booleanas** (unión/resta/intersección) — los
   comandos `box`/CSG del kernel no están cableados a la UI y su
   orientación requiere revisión (§4).
-- **Sin Undo/Redo visual** (el `CommandHistory` de `modeler-core` no
-  está conectado a la pantalla).
 - **Sin componentes en la UI**: no se puede insertar un clóset desde el
   modelador (4D) ni volver a editar un diseño del configurador desde el
   modelador.
@@ -150,21 +149,71 @@ render de `StrictMode` en dev no los infla.
   operaciones de desplazamiento vertical.
 - Sin snap a ángulos, guías ni construcción asistida.
 
-## 10. Verificación
+## 10. Historial visual y edición consistente (4C-C)
+
+- **Fuente única de verdad**: el documento visible es
+  `history.present` del `CommandHistory` de `modeler-core`
+  (`use-modeler-history.ts`); no existe un `SceneDocument` paralelo
+  ni un `setDocument` en la pantalla. Límite PROVISIONAL de **100**
+  operaciones conservado.
+- **Toda edición pasa por comandos existentes** (`add-object`,
+  `set-sketch`, `set-extrusion`, `remove-object`, `rename`); la
+  semilla incluye ya el material por defecto para que `add-object`
+  valide contra `history.present`. No-op → `executeCommand` devuelve
+  la MISMA referencia (sin entrada); conflicto de precondición
+  (`SceneError`) → capturado, historial intacto. Un comando nuevo
+  tras undo descarta el futuro (§C2).
+- **Edición con confirmación** (`CommitField`): borrador local en el
+  campo; toda interacción manual se confirma en **Enter** y **blur**
+  (y en el evento nativo `change` que el navegador dispara al salir
+  con el valor modificado). El tecleo (un carácter por evento), el
+  **pegado** (`insertFromPaste`) y el **autocompletado**
+  (`insertReplacementText`) son borrador: nunca una entrada por tecla
+  ni confirmaciones fuera de Enter/blur. Única excepción: un RELLENO
+  COMPLETO de golpe (`insertText` con `data` multicaracter — dictado,
+  `setValue`, `fill()` de las herramientas de tests) se confirma de
+  inmediato por ser una edición completa. Enter seguido de blur
+  deduplica por no-op → UNA entrada por edición (sondas de la
+  auditoría en `/tmp/opencode/4c-c/audit-commitfield.mjs`).
+- **Undo/Redo visual**: botones en la barra superior (estado
+  habilitado/deshabilitado, etiqueta de lo que harían y feedback
+  `aria-live`), atajos `Ctrl/Cmd+Z` y `Ctrl/Cmd+Shift+Z` (sin
+  `event.repeat`, guardado dentro de INPUT/TEXTAREA/SELECT/
+  contentEditable: el campo conserva su deshacer nativo). Los
+  botones NO se bloquean mientras el Worker calcula.
+- **Selección consistente** (C4): se reconcilia con
+  `resolveObjectSelection` en cada cambio de documento; eliminar
+  deselecciona, el undo de una eliminación restaura la selección
+  previa (stash), renombrar y editar cotas la conservan. Sin
+  referencias a objetos inexistentes.
+- **Regeneración** (C5): `history.present` alimenta el coordinador
+  existente (sin cambios en `regeneration.ts` ni en el kernel-adapter);
+  los deshaceres/rehaceres rapidos publican solo la revisión vigente
+  (gating por revisión/huella) y liberan la geometría sustituida.
+  En dev con `StrictMode` la evidencia honesta de cero fugas es
+  **escena vacía → `created === disposed`** (checks 7l y 7v).
+- Historiales **independientes** por módulo: el modelador usa
+  `use-modeler-history`; el configurador sigue con
+  `use-editor-history` (sin estado compartido).
+
+## 11. Verificación
 
 - **Unitaria** (`npm test`): suites de modelador — `drawing`,
   `sketch-dimension`, `mesh-to-renderable`, `document-actions`,
-  `scene-geometry-coordinator` (concurrencia), `ground-sketch-kernel`
-  (orientación/volumen firmado), `use-solid-geometry` (recursos),
-  `modeler-shell` (chrome) — junto al resto de la batería.
-- **Visuales** (`npm run test:visual:modeler`): checks de la sección
-  1 (chrome 4C-A) y **7a–7l** (flujo libre completo, incluida la
-  liberación de geometrías), en Chromium real. El configurador
-  conserva sus200 checks intactos (`npm run test:visual`).
+  `scene-geometry-coordinator` (concurrencia + historial §7.13–15),
+  `ground-sketch-kernel` (orientación/volumen firmado),
+  `use-solid-geometry` (recursos), `use-modeler-history` (semántica
+  del historial), `history-shortcuts` (guard de atajos),
+  `modeler-shell` (chrome + controles de historial).
+- **Visuales** (`npm run test:visual:modeler`): **48 checks** —
+  sección 1 (chrome 4C-A), **7a–7l** (flujo libre, 4C-B) y **7m–7v**
+  (historial visual: undo/redo por botón y atajo, renombrar, una
+  edición = una entrada, selección coherente, vuelta exacta en
+  ráfaga y cero fugas al final). El configurador conserva sus200
+  checks intactos (`npm run test:visual`).
 
-## 11. Qué queda (fuera de 4C-B)
+## 12. Qué queda (fuera de 4C-C)
 
-- Undo/Redo conectado a la pantalla.
 - Booleanos (y con ellos, revisar la adaptación de orientación de §4).
 - Componentes paramétricos en la UI del modelador y la vuelta
   modelador → configurador (`MIGRATION_STRATEGY.md` §3, Fase 4D).

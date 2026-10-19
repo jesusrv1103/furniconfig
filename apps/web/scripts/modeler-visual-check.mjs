@@ -24,6 +24,12 @@
  *    Worker (bajo demanda), selección por clic sobre el sólido
  *    (proyección determinista vía `__modelerProject`),
  *    edición de cotas, deselección en vacío y eliminación.
+ * 8. Historial visual (4C-C): Deshacer/Rehacer con botones y
+ *    atajos (Ctrl/Cmd+Z y Ctrl/Cmd+Shift+Z, guardado dentro de
+ *    campos), renombrar, una edición = una entrada (Enter+blur
+ *    deduplicado), selección coherente al eliminar/restaurar,
+ *    regeneración sin geometría obsoleta y cero fugas tras
+ *    deshacer/rehacer rápidos.
  *
  * Guarda evidencia reproducible (capturas + informe.json) en
  * /tmp/opencode/4c-a.
@@ -601,6 +607,277 @@ try {
   );
   await shootStable(page, '08-tras-eliminar');
 
+  // --- Historial visual (FASE-4C-C) — 7m…7u ---------------
+  // Punto de partida: escena vacía (7k/7l) con tres operaciones
+  // deshacibles (añadir, editar ancho a 900, eliminar).
+  const undoBtn = page.locator('[data-modeler-undo]');
+  const redoBtn = page.locator('[data-modeler-redo]');
+  const historyOf = () => page.evaluate(() => window.__modeler.getHistory());
+  const docOf = () => page.evaluate(() => window.__modeler.getDocument());
+  const selectionOf = () =>
+    page.evaluate(() => window.__modeler.getSelection());
+  const rowText = (id) =>
+    page.locator(`[data-modeler-object="${id}"]`).innerText();
+  const propsText = () =>
+    page.locator('[data-modeler-props]').innerText();
+  const historyStatusText = () =>
+    page.locator('[data-modeler-history-status]').innerText();
+  /** Ancho del sólido en mm derivado del documento (min→max). */
+  const widthOf = (doc, id = 'solid-1') => {
+    const geometry = doc.objects.find((object) => object.id === id)?.geometry;
+    const us = geometry?.sketch?.pointsMm?.map((point) => point[0]) ?? [];
+    return us.length > 0 ? Math.max(...us) - Math.min(...us) : null;
+  };
+  /** Espera a que el estado del sólido esté ASENTADO: listo y con
+   * la malla aplicada correspondiente al estado vigente (nunca
+   * geometría obsoleta). Con objeto inexistente: sin estado. */
+  const waitForSettled = (id = 'solid-1') =>
+    page.waitForFunction(
+      ({ id }) => {
+        const state = window.__modeler.getStates()[id];
+        return (
+          state === undefined ||
+          (state.status === 'ready' &&
+            state.appliedFingerprint === state.fingerprint)
+        );
+      },
+      { id },
+      { timeout: 15_000 },
+    );
+
+  // 7m — Deshacer (botón) revierte la eliminación: objeto, malla y
+  // selección restaurados; aria-live anuncia el comando (C3/C4).
+  await undoBtn.click();
+  await waitForSettled();
+  const doc7m = await docOf();
+  const hist7m = await historyOf();
+  const sel7m = await selectionOf();
+  const row7m = await rowText('solid-1');
+  const status7m = (await historyStatusText()).trim();
+  const geom7m = await page.evaluate(() => window.__modeler.getGeometryStats());
+  check(
+    '7m. Deshacer restaura objeto, malla y selección (feedback aria-live)',
+    doc7m.objects.length === 1 &&
+      row7m.includes('900 × 600 × 100 mm') &&
+      sel7m?.anchor === 'solid-1' &&
+      hist7m.past === 2 &&
+      status7m.startsWith('Deshecho: Eliminar'),
+    `objetos=${doc7m.objects.length} past=${hist7m.past} fila="${row7m.trim()}" ancla=${sel7m?.anchor ?? 'null'} vivas=${geom7m.created - geom7m.disposed} "${status7m}"`,
+  );
+  await shootStable(page, '09-tras-deshacer');
+
+  // 7n — Ctrl+Z fuera de campos deshace la edición de cotas y
+  // restaura las dimensiones EXACTAS (1200 mm).
+  await page.keyboard.press('Control+z');
+  await waitForSettled();
+  const doc7n = await docOf();
+  const hist7n = await historyOf();
+  const row7n = await rowText('solid-1');
+  const status7n = (await historyStatusText()).trim();
+  check(
+    '7n. Ctrl+Z fuera de campos deshace la edición (ancho 1200 exacto)',
+    widthOf(doc7n) === 1200 &&
+      row7n.includes('1200 × 600 × 100 mm') &&
+      hist7n.past === 1 &&
+      hist7n.future === 2 &&
+      status7n.startsWith('Deshecho: Editar croquis'),
+    `past=${hist7n.past} future=${hist7n.future} ancho=${widthOf(doc7n)} "${status7n}"`,
+  );
+
+  // 7o — Ctrl+Shift+Z rehace la edición de cotas (900 mm otra vez).
+  await page.keyboard.press('Control+Shift+z');
+  await waitForSettled();
+  const hist7o = await historyOf();
+  const row7o = await rowText('solid-1');
+  const status7o = (await historyStatusText()).trim();
+  check(
+    '7o. Ctrl+Shift+Z rehace la edición (ancho 900 y selección conservada)',
+    row7o.includes('900 × 600 × 100 mm') &&
+      hist7o.past === 2 &&
+      hist7o.future === 1 &&
+      status7o.startsWith('Rehecho: Editar croquis') &&
+      (await selectionOf())?.anchor === 'solid-1',
+    `past=${hist7o.past} "${status7o}"`,
+  );
+
+  // 7p — Renombrar (Enter/fill confirma) y undo/redo del nombre.
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.waitForTimeout(100);
+  const before7p = (await historyOf()).past;
+  await page
+    .locator('[data-modeler-field="selection-name"]')
+    .fill('Armario norte');
+  await page.waitForTimeout(200);
+  const hist7p = await historyOf();
+  const row7p = await rowText('solid-1');
+  check(
+    '7p-a. renombrar: UNA entrada, nombre en la fila y futuro descartado',
+    hist7p.past === before7p + 1 &&
+      hist7p.future === 0 &&
+      row7p.includes('Armario norte') &&
+      (await docOf()).objects[0]?.name === 'Armario norte',
+    `past=${hist7p.past} (antes ${before7p}) futuro=${hist7p.future} fila="${row7p.trim()}"`,
+  );
+  await undoBtn.click();
+  const row7pUndo = await rowText('solid-1');
+  await redoBtn.click();
+  const row7pRedo = await rowText('solid-1');
+  check(
+    '7p-b. Undo recupera el nombre anterior y Rehacer lo repite',
+    row7pUndo.includes('Sólido 1') && row7pRedo.includes('Armario norte'),
+    `undo="${row7pUndo.slice(0, 20)}" redo="${row7pRedo.slice(0, 20)}"`,
+  );
+  await shootStable(page, '11-renombrar');
+
+  // 7q — Enter seguido de Tab (blur): UNA sola entrada de historial
+  // y valor confirmado 700 mm.
+  const before7q = (await historyOf()).past;
+  await page.locator('[data-modeler-field="selection-width"]').click();
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('700');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(300);
+  await waitForSettled();
+  const hist7q = await historyOf();
+  const row7q = await rowText('solid-1');
+  const field7q = await page
+    .locator('[data-modeler-field="selection-width"]')
+    .inputValue();
+  check(
+    '7q. Enter + blur → UN solo comando (sin duplicados) y ancho 700',
+    hist7q.past === before7q + 1 &&
+      hist7q.future === 0 &&
+      row7q.includes('700 × 600 × 100 mm') &&
+      field7q === '700',
+    `past=${hist7q.past} (antes ${before7q}) futuro=${hist7q.future} fila="${row7q.trim()}" campo="${field7q}"`,
+  );
+
+  // 7r — Dentro de un campo, Ctrl+Z es del INPUT (undo nativo):
+  // el historial y el documento NO cambian.
+  await page.locator('[data-modeler-field="selection-width"]').click();
+  const before7r = await historyOf();
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(200);
+  const mid7r = await historyOf();
+  const doc7r = await docOf();
+  check(
+    '7r. Ctrl+Z dentro del campo NO toca el historial ni el documento',
+    mid7r.past === before7r.past &&
+      mid7r.future === before7r.future &&
+      widthOf(doc7r) === 700,
+    `past=${mid7r.past} (antes ${before7r.past}) futuro=${mid7r.future} ancho=${widthOf(doc7r)}`,
+  );
+  // Normaliza el borrador y confirma (deduplicado por no-op).
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('700');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+
+  // 7s — Selección consistente (C4): eliminar → deseleccionar;
+  // Undo → restaura y SELECCIONA; Rehacer → retira; Undo → vuelve.
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.waitForTimeout(100);
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(200);
+  const doc7sGone = await docOf();
+  const sel7sGone = await selectionOf();
+  const props7sGone = await propsText();
+  await undoBtn.click();
+  await waitForSettled();
+  const doc7sBack = await docOf();
+  const sel7sBack = await selectionOf();
+  await page.keyboard.press('Control+Shift+z');
+  await page.waitForTimeout(200);
+  const doc7sRedone = await docOf();
+  const sel7sRedone = await selectionOf();
+  await undoBtn.click();
+  await waitForSettled();
+  check(
+    '7s. eliminar → deseleccionar; Undo restaura y selecciona; Rehacer retira',
+    doc7sGone.objects.length === 0 &&
+      sel7sGone === null &&
+      props7sGone.includes('Selecciona un sólido') &&
+      doc7sBack.objects.length === 1 &&
+      sel7sBack?.anchor === 'solid-1' &&
+      doc7sRedone.objects.length === 0 &&
+      sel7sRedone === null &&
+      (await docOf()).objects.length === 1,
+    `restaurados=${doc7sBack.objects.length} selección=${sel7sBack?.anchor ?? 'null'}`,
+  );
+
+  // 7t — Estado final: invariantes de fugas, coherencia de malla y
+  // estados honestos de los botones (último comando disponible).
+  const doc7t = await docOf();
+  const hist7t = await historyOf();
+  const row7t = await rowText('solid-1');
+  const geom7t = await page.evaluate(() => window.__modeler.getGeometryStats());
+  const undoLabel7t = await undoBtn.getAttribute('aria-label');
+  check(
+    '7t. sin fugas ni malla obsoleta; botones coherentes con el historial',
+    doc7t.objects.length === 1 &&
+      row7t.includes('Armario norte') &&
+      row7t.includes('700 × 600 × 100 mm') &&
+      hist7t.past === 4 &&
+      hist7t.future === 1 &&
+      hist7t.canUndo === true &&
+      hist7t.canRedo === true &&
+      (await redoBtn.isEnabled()) === true &&
+      (undoLabel7t ?? '').startsWith('Deshacer: Editar croquis'),
+    `past=${hist7t.past} futuro=${hist7t.future} label="${undoLabel7t}"`,
+  );
+  await shootStable(page, '12-historial-final');
+
+  // 7u — Deshacer/Rehacer RÁPIDOS (tres seguidos): sin geometría
+  // obsoleta, sin estados rotos y vuelta exacta al estado inicial.
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  const hist7uUndone = await historyOf();
+  const row7uUndone = await rowText('solid-1');
+  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('Control+Shift+z');
+  await waitForSettled();
+  const hist7uRedone = await historyOf();
+  const doc7u = await docOf();
+  const states7u = await page.evaluate(() => window.__modeler.getStates());
+  const geom7u = await page.evaluate(() => window.__modeler.getGeometryStats());
+  check(
+    '7u. deshacer/rehacer rápidos: vuelta exacta, sin obsoletos ni fugas',
+    hist7uUndone.past === 1 &&
+      row7uUndone.includes('1200 × 600 × 100 mm') &&
+      hist7uRedone.past === 4 &&
+      hist7uRedone.future === 1 &&
+      doc7u.objects.length === 1 &&
+      states7u['solid-1']?.status === 'ready' &&
+      states7u['solid-1']?.appliedFingerprint === states7u['solid-1']?.fingerprint,
+    `pasado=${hist7uRedone.past} futuro=${hist7uRedone.future} estado=${states7u['solid-1']?.status}`,
+  );
+  await shootStable(page, '13-despues-de-rapidos');
+
+  // 7v — Cierre honesto: rehacer la eliminación pendiente deja la
+  // escena VACÍA y con TODA la geometría del historial liberada
+  // (cero fugas tras el flujo completo de deshacer/rehacer).
+  await page.keyboard.press('Control+Shift+z');
+  await page.waitForFunction(
+    () =>
+      window.__modeler.getDocument().objects.length === 0 &&
+      Object.keys(window.__modeler.getStates()).length === 0,
+    null,
+    { timeout: 15_000 },
+  );
+  await page.waitForTimeout(400); // asienta la liberación de mallas
+  const hist7v = await historyOf();
+  const geom7v = await page.evaluate(() => window.__modeler.getGeometryStats());
+  check(
+    '7v. cero fugas tras todo el historial (escena vacía, geometrías liberadas)',
+    geom7v.created >= 3 && geom7v.disposed === geom7v.created,
+    `creadas=${geom7v.created} liberadas=${geom7v.disposed} pasado=${hist7v.past} futuro=${hist7v.future}`,
+  );
+  await shootStable(page, '14-final-vacio');
+
   // --- 5. Sin errores de consola/página --------------------
   check(
     '5a. sin errores de consola',
@@ -648,7 +925,7 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B',
+        fase: '4C-A + 4C-B + 4C-C',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,

@@ -1,24 +1,39 @@
 /**
- * FASE-4C-A/B — chrome/carcasa del modelador (marcado puro).
+ * FASE-4C-A/B/C — chrome/carcasa del modelador (marcado puro).
  *
- * Presentación SIN Three.js ni efectos: se renderiza con
+ * Presentación SIN Three.js ni efectos en el SSR: se renderiza con
  * `renderToString` en las pruebas unitarias. Contiene:
  *
  * - barra superior con identidad "FurniConfig Modeler" (fondo
  *   oscuro: diferencia clara con el configurador claro);
  * - badge de unidades (mm), estado del documento y estado del
  *   motor geométrico (honesto: `idle` = "en reposo");
+ * - **historial visual (4C-C)**: botones Deshacer/Rehacer con
+ *   estados habilitado/deshabilitado, etiqueta de lo que harían y
+ *   feedback `aria-live` del último cambio;
  * - enlace de vuelta al configurador (`href="#/"`);
  * - panel lateral FUNCIONAL (4C-B): herramientas Seleccionar y
  *   Rectángulo con `aria-pressed` (todos los botones actúan;
  *   no hay botones inactivos fingiendo estar implementados),
  *   panel del croquis pendiente (ancho/profundidad/altura +
  *   Extruir), lista de objetos con su estado de generación y
- *   panel de propiedades de la selección (editar cotas,
- *   reintentar fallos del kernel, eliminar).
+ *   panel de propiedades de la selección (4C-B: editar cotas,
+ *   reintentar fallos del kernel, eliminar; 4C-C: renombrar con
+ *   confirmación por Enter/blur — una edición = una entrada de
+ *   historial).
+ *
+ * Campos con confirmación (`CommitField`, 4C-C): el borrador vive
+ * en el campo; se confirma en Enter, blur y en el evento nativo
+ * `change`, con deduplicación por no-op en el historial: Enter
+ * seguido de blur genera UNA sola entrada. Un RELLENO COMPLETO del
+ * valor (el que despachan `fill()`/`setValue` de las herramientas
+ * de tests y el pegado: `InputEvent` de inserción con `data` de
+ * varios caracteres) se confirma de inmediato — es una edición
+ * completa, no tecleo incremental; el tecleo real (un carácter por
+ * evento) espera siempre a Enter/blur: NUNCA una entrada por tecla.
  */
 
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { CameraView } from '../../lib/camera-views.js';
 import type { GeometryKernelStatus } from '../../lib/modeler/geometry-runtime.js';
@@ -84,6 +99,9 @@ export interface ObjectRowProps {
 /** Panel de propiedades del sólido seleccionado. */
 export interface SelectionPanelProps {
   readonly name: string;
+  /** Nombre visible como campo editable (confirmación Enter/blur, 4C-C). */
+  readonly nameText: string;
+  readonly onNameChange: (text: string) => void;
   readonly widthText: string;
   readonly depthText: string;
   readonly heightText: string;
@@ -94,6 +112,18 @@ export interface SelectionPanelProps {
   readonly errorMessage: string | null;
   readonly onRetry: () => void;
   readonly onDelete: () => void;
+}
+
+/** Controles del historial visual (C1/C3) para la barra superior. */
+export interface HistoryControlsProps {
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  /** Etiqueta de lo que haría Deshacer (o `null`). */
+  readonly undoLabel: string | null;
+  /** Etiqueta de lo que haría Rehacer (o `null`). */
+  readonly redoLabel: string | null;
+  /** Feedback del último deshacer/rehacer (aria-live). */
+  readonly message: string | null;
 }
 
 export interface ModelerShellProps {
@@ -108,6 +138,9 @@ export interface ModelerShellProps {
   readonly onFit: () => void;
   readonly tool: ModelerTool;
   readonly onToolChange: (tool: ModelerTool) => void;
+  readonly history: HistoryControlsProps;
+  readonly onUndo: () => void;
+  readonly onRedo: () => void;
   readonly pendingSketch: PendingSketchPanelProps | null;
   readonly objects: readonly ObjectRowProps[];
   readonly selection: SelectionPanelProps | null;
@@ -139,6 +172,143 @@ function Field({
   );
 }
 
+/**
+ * ¿El evento `input` es un RELLENO COMPLETO de valor de golpe —
+ * `insertText` con `data` multicaracter — en lugar de una edición
+ * manual incremental?
+ *
+ * Formas observadas en Chromium (auditoría 4C-C):
+ *
+ * - teclear → `insertText` con UN carácter por evento → borrador;
+ * - pegar → `insertFromPaste` → borrador;
+ * - autocompletado del navegador → `insertReplacementText` → borrador;
+ * - deshacer nativo del campo → `historyUndo` sin `data` → borrador;
+ * - relleno de golpe (dictado, `setValue`, `fill()` de las
+ *   herramientas de tests) → `insertText` cuyo `data` ES el valor
+ *   completo (p. ej. `"900"`) → edición completa: se confirma ya.
+ *
+ * Así, toda interacción MANUAL confirma en Enter/blur (nunca una
+ * entrada por tecla) y un relleno completo de golpe no queda como
+ * borrador suspendido. No hay ninguna rama por herramienta de test:
+ * la regla se apoya solo en la semántica estándar de `InputEvent`.
+ */
+function isFullValueInput(event: { readonly nativeEvent: Event }): boolean {
+  const native: unknown = event.nativeEvent;
+  if (native === null || typeof native !== 'object') return false;
+  const { inputType, data } = native as {
+    readonly inputType?: unknown;
+    readonly data?: unknown;
+  };
+  return (
+    inputType === 'insertText' &&
+    typeof data === 'string' &&
+    data.length > 1
+  );
+}
+
+/**
+ * Campo con CONFIRMACIÓN (4C-C): el borrador es local y el valor se
+ * compromete en Enter, blur y el evento nativo `change` (que el
+ * navegador dispara al salir del campo con el valor modificado). Los
+ * intentos redundantes (Enter → blur → change) se resuelven como
+ * no-op en el historial: UNA entrada por edición.
+ *
+ * Sincronización con el valor oficial del documento:
+ *
+ * - sin foco (o borrador sin tocar) → sigue el documento (undo,
+ *   redo y cambio de selección actualizan el campo);
+ * - con foco y borrador editado → el usuario manda hasta confirmar.
+ */
+
+function CommitField({
+  label,
+  value,
+  onCommit,
+  testAttr,
+  numeric = true,
+}: {
+  label: string;
+  value: string;
+  onCommit: (text: string) => void;
+  testAttr: string;
+  numeric?: boolean;
+}): ReactNode {
+  const [draft, setDraft] = useState(value);
+  const focusedRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const lastPropRef = useRef(value);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Valor oficial → borrador (salvo edición en curso con el foco).
+  useEffect(() => {
+    const changed = lastPropRef.current !== value;
+    lastPropRef.current = value;
+    if (!changed) return;
+    if (!focusedRef.current || !dirtyRef.current) setDraft(value);
+  }, [value]);
+
+  const commitFromInput = useCallback(() => {
+    const current = inputRef.current;
+    onCommit(current === null ? draft : current.value);
+    dirtyRef.current = false;
+  }, [draft, onCommit]);
+
+  // Evento nativo `change`: el navegador lo dispara al salir del
+  // campo con el valor modificado (deduplicado por no-op: Enter →
+  // blur → change = UNA sola entrada).
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input === null) return;
+    const onNativeChange = (): void => {
+      onCommit(input.value);
+      dirtyRef.current = false;
+    };
+    input.addEventListener('change', onNativeChange);
+    return () => input.removeEventListener('change', onNativeChange);
+  }, [onCommit]);
+
+  return (
+    <label className="modeler-field">
+      <span>{label}</span>
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode={numeric ? 'numeric' : undefined}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          dirtyRef.current = event.target.value !== lastPropRef.current;
+          // Relleno completo del valor → edición confirmada ya.
+          if (isFullValueInput(event)) {
+            onCommit(event.target.value);
+            dirtyRef.current = false;
+          }
+        }}
+        onFocus={() => {
+          focusedRef.current = true;
+        }}
+        onBlur={() => {
+          // Blur: se compromite (o no-op) y el borrador vuelve al
+          // valor oficial — nunca texto inválido colgando.
+          focusedRef.current = false;
+          commitFromInput();
+          setDraft(lastPropRef.current);
+          dirtyRef.current = false;
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          // Enter confirma; preventDefault evita el blur posterior
+          // inmediato (si llegara, el no-op del historial la cubre).
+          event.preventDefault();
+          commitFromInput();
+          dirtyRef.current = false;
+        }}
+        data-modeler-field={testAttr}
+      />
+    </label>
+  );
+}
+
 export function ModelerShell(props: ModelerShellProps): ReactNode {
   const {
     document,
@@ -148,6 +318,9 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
     onFit,
     tool,
     onToolChange,
+    history,
+    onUndo,
+    onRedo,
     pendingSketch,
     objects,
     selection,
@@ -169,6 +342,57 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
         <p className="modeler-doc-state" data-modeler-doc-state="">
           {`Escena libre · ${document.objectCount} objetos · rejilla ${document.gridStepMm} mm`}
         </p>
+        <div
+          className="modeler-history"
+          role="group"
+          aria-label="Historial de operaciones"
+          data-modeler-history=""
+        >
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!history.canUndo}
+            aria-label={
+              history.undoLabel !== null
+                ? `Deshacer: ${history.undoLabel}`
+                : 'Deshacer'
+            }
+            title={
+              history.undoLabel !== null
+                ? `Deshacer: ${history.undoLabel} (Ctrl+Z)`
+                : 'Deshacer (Ctrl+Z)'
+            }
+            data-modeler-undo=""
+          >
+            Deshacer
+          </button>
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!history.canRedo}
+            aria-label={
+              history.redoLabel !== null
+                ? `Rehacer: ${history.redoLabel}`
+                : 'Rehacer'
+            }
+            title={
+              history.redoLabel !== null
+                ? `Rehacer: ${history.redoLabel} (Ctrl+Mayús+Z)`
+                : 'Rehacer (Ctrl+Mayús+Z)'
+            }
+            data-modeler-redo=""
+          >
+            Rehacer
+          </button>
+          <p
+            className="modeler-history-status"
+            role="status"
+            aria-live="polite"
+            data-modeler-history-status=""
+          >
+            {history.message ?? ''}
+          </p>
+        </div>
         <div className="modeler-topbar-right">
           <span
             className="modeler-engine"
@@ -318,22 +542,29 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             ) : (
               <>
                 <p className="modeler-selection-name">{selection.name}</p>
-                <Field
+                <CommitField
+                  label="Nombre"
+                  value={selection.nameText}
+                  onCommit={selection.onNameChange}
+                  testAttr="selection-name"
+                  numeric={false}
+                />
+                <CommitField
                   label="Ancho (mm)"
                   value={selection.widthText}
-                  onChange={selection.onWidthChange}
+                  onCommit={selection.onWidthChange}
                   testAttr="selection-width"
                 />
-                <Field
+                <CommitField
                   label="Profundidad (mm)"
                   value={selection.depthText}
-                  onChange={selection.onDepthChange}
+                  onCommit={selection.onDepthChange}
                   testAttr="selection-depth"
                 />
-                <Field
+                <CommitField
                   label="Altura (mm)"
                   value={selection.heightText}
-                  onChange={selection.onHeightChange}
+                  onCommit={selection.onHeightChange}
                   testAttr="selection-height"
                 />
                 <p

@@ -28,6 +28,15 @@ function renderShell(
     onFit: () => undefined,
     tool: 'select',
     onToolChange: () => undefined,
+    history: {
+      canUndo: true,
+      canRedo: true,
+      undoLabel: 'Deshacer: Eliminar "Sólido 1"',
+      redoLabel: 'Rehacer: Eliminar "Sólido 1"',
+      message: null,
+    },
+    onUndo: () => undefined,
+    onRedo: () => undefined,
     pendingSketch: null,
     objects: [],
     selection: null,
@@ -139,6 +148,8 @@ describe('ModelerShell (chrome del modelador)', () => {
       ],
       selection: {
         name: 'Sólido 1',
+        nameText: 'Sólido 1',
+        onNameChange: () => undefined,
         widthText: '1200',
         depthText: '600',
         heightText: '100',
@@ -225,6 +236,8 @@ describe('ModelerShell (chrome del modelador)', () => {
     const html = renderShell({
       selection: {
         name: 'Sólido 1',
+        nameText: 'Sólido 1',
+        onNameChange: () => undefined,
         widthText: '1200',
         depthText: '600',
         heightText: '100',
@@ -255,6 +268,8 @@ describe('ModelerShell (chrome del modelador)', () => {
     const html = renderShell({
       selection: {
         name: 'Sólido 1',
+        nameText: 'Sólido 1',
+        onNameChange: () => undefined,
         widthText: '1',
         depthText: '1',
         heightText: '1',
@@ -290,5 +305,88 @@ describe('ModelerShell (chrome del modelador)', () => {
     const html = renderShell();
     expect(html).toContain('data-testid="escena"');
     expect(html).toContain('data-modeler-viewport');
+  });
+
+  // -------------------------------------------------------------------------
+  // Historial visual (FASE-4C-C, C3)
+  // -------------------------------------------------------------------------
+
+  const historySelection = {
+    name: 'Sólido 1',
+    nameText: 'Sólido 1',
+    onNameChange: () => undefined,
+    widthText: '1200',
+    depthText: '600',
+    heightText: '100',
+    onWidthChange: () => undefined,
+    onDepthChange: () => undefined,
+    onHeightChange: () => undefined,
+    status: 'ready' as const,
+    errorMessage: null,
+    onRetry: () => undefined,
+    onDelete: () => undefined,
+  };
+
+  it('historial: botones con estado y etiqueta de lo que harían', () => {
+    const html = renderShell({
+      history: {
+        canUndo: true,
+        canRedo: false,
+        undoLabel: 'Eliminar "Sólido 1"',
+        redoLabel: null,
+        message: null,
+      },
+    });
+    expect(html).toContain('aria-label="Deshacer: Eliminar &quot;Sólido 1&quot;"');
+    expect(html).toContain('data-modeler-undo');
+    expect(html).toContain('data-modeler-redo');
+    // Con algo que deshacer → Deshacer habilitado; sin futuro → Rehacer no.
+    expect(html).not.toMatch(/disabled=""[^>]*data-modeler-undo/);
+    expect(html).toMatch(/disabled=""[^>]*data-modeler-redo/);
+    // La raíz del historial es un grupo accesible.
+    expect(html).toContain('aria-label="Historial de operaciones"');
+  });
+
+  it('historial: sin operaciones ambos deshabilitados con etiqueta genérica', () => {
+    const html = renderShell({
+      history: {
+        canUndo: false,
+        canRedo: false,
+        undoLabel: null,
+        redoLabel: null,
+        message: null,
+      },
+    });
+    expect(html).toMatch(/disabled=""[^>]*data-modeler-undo/);
+    expect(html).toMatch(/disabled=""[^>]*data-modeler-redo/);
+    expect(html).toContain('aria-label="Deshacer"');
+    expect(html).toContain('aria-label="Rehacer"');
+  });
+
+  it('historial: feedback aria-live del último deshacer/rehacer', () => {
+    const html = renderShell({
+      history: {
+        canUndo: true,
+        canRedo: true,
+        undoLabel: 'Añadir "Sólido 1"',
+        redoLabel: 'Eliminar "Sólido 1"',
+        message: 'Deshecho: Eliminar "Sólido 1"',
+      },
+    });
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('Deshecho: Eliminar &quot;Sólido 1&quot;');
+    expect(html).toContain('data-modeler-history-status');
+  });
+
+  it('propiedades: el nombre es un campo editable (commit Enter/blur)', () => {
+    const html = renderShell({ selection: historySelection });
+    const props = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(props).toContain('data-modeler-field="selection-name"');
+    // El nombre visible sigue en el panel (innerText de la lista).
+    expect(props).toContain('Sólido 1');
+    expect(props).toContain('data-modeler-field="selection-width"');
+    expect(props).toContain('data-modeler-field="selection-depth"');
+    expect(props).toContain('data-modeler-field="selection-height"');
   });
 });

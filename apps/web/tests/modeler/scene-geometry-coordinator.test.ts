@@ -23,14 +23,24 @@ import {
   type MeasureResult,
 } from '@furniconfig/kernel-adapter';
 import {
+  createCommandHistory,
   createEmptySceneDocument,
+  createRemoveObjectCommand,
+  createSetSketchCommand,
+  type CommandHistory,
   type SceneDocument,
 } from '@furniconfig/modeler-core';
 
 import {
   applySceneAction,
+  buildSolidAddCommand,
   nextSolidId,
 } from '../../src/lib/modeler/document-actions.js';
+import {
+  dispatchHistoryCommand,
+  redoHistory,
+  undoHistory,
+} from '../../src/hooks/use-modeler-history.js';
 import { rectangleSketchFromCorners } from '../../src/lib/modeler/drawing.js';
 import {
   SceneGeometryCoordinator,
@@ -649,5 +659,255 @@ describe('SceneGeometryCoordinator (B4)', () => {
     // Y la ref tardía se liberó igualmente (cero huérfanas).
     expect(harness.kernel.disposedRefs).toHaveLength(1);
     expect(harness.kernel.liveRefs.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Historial visual × regeneración (FASE-4C-C, §7.13–15)
+// ---------------------------------------------------------------------------
+
+/** Semilla con material y rejilla, SIN objetos (como la pantalla). */
+function historySeed(): SceneDocument {
+  const base = docWithRect(1200, 600);
+  return { ...base, objects: [] };
+}
+
+function sketchOf(widthMm: number, depthMm: number) {
+  const value = rectangleSketchFromCorners([0, 0], [widthMm, depthMm]);
+  if (value === null) throw new Error('croquis de fixture inválido');
+  return value;
+}
+
+function mustHistory<T>(value: T | null): T {
+  if (value === null) throw new Error('operación de historial no ejecutó');
+  return value;
+}
+
+function boundsWidthX(mesh: NonNullable<SolidGeometryState['mesh']>): number {
+  // Convención de escena: metros en X (ancho). Redondeo a mm enteros.
+  return Math.round((mesh.boundsM.max[0] - mesh.boundsM.min[0]) * 1000);
+}
+
+describe('Historial visual × regeneración (4C-C, §7.13–15)', () => {
+  it('§7.13 undo con el Worker ocupado: lo obsoleto se descarta y gana la revisión vigente', async () => {
+    const harness = createHarness();
+    const h0 = createCommandHistory(historySeed());
+    const h1 = mustHistory(
+      dispatchHistoryCommand(
+        h0,
+        buildSolidAddCommand(h0.present, sketchOf(1200, 600), 100),
+      ),
+    );
+    harness.coordinator.setDocument(h1.present);
+    await flush();
+    expect(harness.lastStates().get('solid-1')?.status).toBe('ready');
+
+    // Cambio de cotas con la respuesta EN VUELO (sin clave cancelable:
+    // simula un cálculo que llegará tarde).
+    harness.kernel.deferNextFromSketchCancelless = true;
+    const h2 = mustHistory(
+      dispatchHistoryCommand(
+        h1,
+        createSetSketchCommand(h1.present, 'solid-1', sketchOf(800, 500)),
+      ),
+    );
+    harness.coordinator.setDocument(h2.present);
+    await flush();
+    expect(harness.lastStates().get('solid-1')?.status).toBe('pending');
+
+    // Undo del usuario mientras el cálculo sigue en vuelo: los botones
+    // NO se bloquean por operaciones asíncronas (§C3).
+    const h3 = mustHistory(undoHistory(h2));
+    harness.coordinator.setDocument(h3.present);
+    await flush();
+    await flush();
+    expect(harness.lastStates().get('solid-1')?.status).toBe('ready');
+    const restoredMesh = harness.lastStates().get('solid-1')?.mesh;
+    if (restoredMesh === null || restoredMesh === undefined) {
+      throw new Error('sin malla tras el undo');
+    }
+    expect(boundsWidthX(restoredMesh)).toBe(1200); // medidas DESHECHAS
+
+    // La respuesta del cálculo obsoleto llega AHORA: se descarta.
+    const late = harness.kernel.cancellessWait;
+    if (late === null) throw new Error('sin petición tardía');
+    harness.kernel.cancellessWait = null;
+    late.resolve(undefined);
+    await flush();
+    await flush();
+    expect(harness.coordinator.stats.service?.droppedStale ?? 0).toBeGreaterThanOrEqual(1);
+    const stateAfterLate = harness.lastStates().get('solid-1');
+    expect(stateAfterLate?.status).toBe('ready');
+    const lateMesh = stateAfterLate?.mesh;
+    if (lateMesh === null || lateMesh === undefined) {
+      throw new Error('la respuesta tardía borró la malla vigente');
+    }
+    expect(boundsWidthX(lateMesh)).toBe(1200); // NUNCA geometría obsoleta
+
+    // Rehacer: se regenera con las medidas rehechas.
+    const h4 = mustHistory(redoHistory(h3));
+    harness.coordinator.setDocument(h4.present);
+    await flush();
+    await flush();
+    const redoneMesh = harness.lastStates().get('solid-1')?.mesh;
+    if (redoneMesh === null || redoneMesh === undefined) {
+      throw new Error('sin malla tras el redo');
+    }
+    expect(harness.lastStates().get('solid-1')?.status).toBe('ready');
+    expect(boundsWidthX(redoneMesh)).toBe(800);
+    expect(harness.kernel.liveRefs.size).toBe(0);
+    expect(harness.coordinator.stats.service?.pending).toBe(0);
+  });
+
+  it('§7.14 reinicio del Worker durante undo/redo: la escena vigente se reconstruye', async () => {
+    const harness = createHarness();
+    const h0 = createCommandHistory(historySeed());
+    const h1 = mustHistory(
+      dispatchHistoryCommand(
+        h0,
+        buildSolidAddCommand(h0.present, sketchOf(1200, 600), 100),
+      ),
+    );
+    harness.coordinator.setDocument(h1.present);
+    await flush();
+    expect(harness.lastStates().get('solid-1')?.status).toBe('ready');
+
+    // Undo (escena vacía) y reinicio del motor.
+    const h2 = mustHistory(undoHistory(h1));
+    harness.coordinator.setDocument(h2.present);
+    await flush();
+    expect(harness.lastStates().size).toBe(0);
+    const callsBeforeRestart = harness.kernel.fromSketchCalls.length;
+    harness.coordinator.notifyEngineStatus('restarting');
+
+    // Rehacer tras el reinicio: el objeto restaurado recupera su
+    // geometría (parámetros = verdad persistente).
+    const h3 = mustHistory(redoHistory(h2));
+    harness.coordinator.setDocument(h3.present);
+    await flush();
+    expect(harness.kernel.fromSketchCalls.length).toBeGreaterThan(
+      callsBeforeRestart,
+    );
+    expect(harness.lastStates().get('solid-1')?.status).toBe('ready');
+    expect(harness.recovered()).toBe(1);
+    expect(harness.kernel.liveRefs.size).toBe(0);
+  });
+
+  it('§7.15 veinte operaciones de historial → ninguna referencia retenida', async () => {
+    const harness = createHarness();
+    let history = createCommandHistory(historySeed());
+    const pairs = 10; // 10 × (crear + eliminar) = 20 operaciones
+    for (let index = 0; index < pairs; index += 1) {
+      const widthMm = 1000 + index * 10;
+      history = mustHistory(
+        dispatchHistoryCommand(
+          history,
+          buildSolidAddCommand(history.present, sketchOf(widthMm, 500), 100),
+        ),
+      );
+      harness.coordinator.setDocument(history.present);
+      await flush();
+      expect(harness.lastStates().get('solid-1')?.status).toBe('ready');
+
+      history = mustHistory(
+        dispatchHistoryCommand(
+          history,
+          createRemoveObjectCommand(history.present, 'solid-1'),
+        ),
+      );
+      harness.coordinator.setDocument(history.present);
+      await flush();
+      expect(harness.lastStates().size).toBe(0);
+    }
+    expect(history.past).toHaveLength(20);
+    // Cero fugas: cada ref creada fue dispuesta y nada queda en vuelo.
+    expect(harness.kernel.disposedRefs).toHaveLength(
+      harness.kernel.fromSketchCalls.length,
+    );
+    expect(harness.kernel.liveRefs.size).toBe(0);
+    expect(harness.kernel.pendingByKey.size).toBe(0);
+    expect(harness.coordinator.stats.service?.liveRefs).toBe(0);
+    expect(harness.coordinator.stats.service?.pending).toBe(0);
+    expect(harness.coordinator.stats.service?.failures).toBe(0);
+  });
+
+  it('§7.16 eliminar y restaurar durante la regeneración: cancelaciones consecutivas y ready final', async () => {
+    const harness = createHarness();
+    harness.kernel.deferNextFromSketch = true; // todas las peticiones, en vuelo
+    const cancelKey = 'regenerar:solid-1'; // regenerationCancelKey('solid-1')
+
+    let history = createCommandHistory(historySeed());
+    history = mustHistory(
+      dispatchHistoryCommand(
+        history,
+        buildSolidAddCommand(history.present, sketchOf(1200, 600), 100),
+      ),
+    );
+    harness.coordinator.setDocument(history.present);
+    await flush(); // R1 en vuelo con clave de cancelación
+    expect(harness.lastStates().get('solid-1')?.status).toBe('pending');
+
+    // 1.ª eliminación con la regeneración EN VUELO → 1.ª cancelación.
+    history = mustHistory(
+      dispatchHistoryCommand(
+        history,
+        createRemoveObjectCommand(history.present, 'solid-1'),
+      ),
+    );
+    harness.coordinator.setDocument(history.present);
+    await flush();
+    expect(harness.lastStates().size).toBe(0);
+
+    // Restauración (undo) DURANTE la regeneración → nueva en vuelo.
+    history = mustHistory(undoHistory(history));
+    harness.coordinator.setDocument(history.present);
+    await flush();
+    expect(harness.lastStates().get('solid-1')?.status).toBe('pending');
+
+    // 2.ª eliminación en vuelo → 2.ª cancelación CONSECUTIVA.
+    history = mustHistory(
+      dispatchHistoryCommand(
+        history,
+        createRemoveObjectCommand(history.present, 'solid-1'),
+      ),
+    );
+    harness.coordinator.setDocument(history.present);
+    await flush();
+    const canceladas = harness.kernel.cancelCalls.filter(
+      (key) => key === cancelKey,
+    );
+    expect(canceladas.length).toBeGreaterThanOrEqual(2);
+
+    // Restauración final y resolución del ÚLTIMO cálculo.
+    history = mustHistory(undoHistory(history));
+    harness.coordinator.setDocument(history.present);
+    await flush();
+    const lastWait = harness.kernel.pendingByKey.get(cancelKey);
+    if (lastWait === undefined) throw new Error('sin petición final en vuelo');
+    harness.kernel.pendingByKey.delete(cancelKey);
+    lastWait.resolve(undefined);
+    await flush();
+    await flush();
+
+    // Recuperación de `ready` con la malla aplicada vigente.
+    const state = harness.lastStates().get('solid-1');
+    expect(state?.status).toBe('ready');
+    expect(state?.appliedFingerprint).toBe(state?.fingerprint);
+
+    // Cero resultados obsoletos publicados y cero fallos.
+    expect(harness.coordinator.stats.service?.droppedStale).toBe(0);
+    expect(harness.coordinator.stats.service?.failures).toBe(0);
+    for (const value of harness.lastStates().values()) {
+      expect(value.status).not.toBe('error');
+    }
+
+    // Cero huérfanas: solo el último cálculo creó ref (los
+    // cancelados se anulan ANTES de crearla) y esa ref ya se liberó.
+    expect(harness.kernel.fromSketchCalls).toHaveLength(3);
+    expect(harness.kernel.disposedRefs).toHaveLength(1);
+    expect(harness.kernel.liveRefs.size).toBe(0);
+    expect(harness.kernel.pendingByKey.size).toBe(0);
+    expect(harness.coordinator.stats.service?.liveRefs).toBe(0);
+    expect(harness.coordinator.stats.service?.pending).toBe(0);
   });
 });
