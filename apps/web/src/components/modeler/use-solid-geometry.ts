@@ -17,7 +17,11 @@
  * Los contadores miden la ADOPCIÓN (comprometida por el effect),
  * no la construcción: el doble render de `StrictMode` en dev puede
  * descartar geometrías nunca montadas (basura GC, sin contador y
- * sin fugas de GPU). Invariante visible: `disposed === created`.
+ * sin fugas de GPU) y su doble EFECTO (adopt → release → adopt)
+ * queda rearma por `retainSolidGeometry`: el release de
+ * sustitución o desmontaje dispone de verdad la geometría que el
+ * renderer ha vuelto a subir (corrección de recursos 4C-D).
+ * Invariante visible: `disposed === created`.
  *
  * La creación vive en `createSolidBufferGeometry`
  * (`lib/modeler/mesh-to-renderable.ts`); este módulo solo añade el
@@ -40,9 +44,14 @@ export const geometryLifecycle = { created: 0, disposed: 0 };
 /** Geometría retenida con adopción y liberación idempotentes. */
 export interface RetainedGeometry {
   readonly geometry: BufferGeometry;
-  /** La asume el ciclo de vida del componente (contabiliza `created`). */
+  /**
+   * La asenta como vigente (contabiliza `created`). NO-op solo
+   * mientras siga vigente; tras un `release` vuelve a armarla: el
+   * ciclo estricto de montaje (`adopt → release → adopt`) no deja
+   * la retención muerta.
+   */
   adopt: () => void;
-  /** Libera la geometría (contabiliza `disposed`, un solo `dispose`). */
+  /** Libera la geometría (contabiliza `disposed`, un solo `dispose` por adopción vigente). */
   release: () => void;
 }
 
@@ -50,16 +59,27 @@ export interface RetainedGeometry {
  * Crea la geometría de `mesh` y devuelve su manejador. Pura
  * respecto a DOM y React (solo objetos Three.js); NO contabiliza
  * hasta que se llama a `adopt()`.
+ *
+ * Estado único `released` (= «sin adopción vigente»). Con
+ * `StrictMode` (dev) el efecto de montaje se ejecuta dos veces
+ * (`adopt → release → adopt`): el `release` intermedio dispone la
+ * geometría ANTES de que el renderer la suba a GPU, y el `adopt`
+ * final la rearma para que el `release` definitivo (sustitución de
+ * malla o desmontaje: eliminación, Undo/Redo, regeneración,
+ * navegación fuera del modelador) vuelva a disponerla — si no, los
+ * búferes que el renderer ha vuelto a subir quedarían huérfanos
+ * (prueba «montaje estricto» de `use-solid-geometry.test.ts`).
+ * Cada `created` se empareja con exactamente un `disposed`;
+ * `release` sin adopción vigente es no-op (nada que liberar).
  */
 export function retainSolidGeometry(mesh: SolidMeshRenderData): RetainedGeometry {
   const geometry = createSolidBufferGeometry(mesh);
-  let adopted = false;
-  let released = false;
+  let released = true;
   return {
     geometry,
     adopt: () => {
-      if (adopted || released) return;
-      adopted = true;
+      if (!released) return;
+      released = false;
       geometryLifecycle.created += 1;
     },
     release: () => {

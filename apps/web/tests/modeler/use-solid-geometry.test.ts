@@ -7,9 +7,14 @@
  * - `adopt()` contabiliza `created` UNA sola vez (idempotente);
  * - `release()` emite el evento `dispose` de Three.js, contabiliza
  *   `disposed` y es idempotente (nunca un doble dispose);
+ * - **montaje estricto** (`adopt → release → adopt → release`):
+ *   CADA `release` dispone de verdad (2 eventos `dispose`), sin
+ *   referencias zombie ni búferes huérfanos (corrección de recursos);
+ * - `release()` sin adopción vigente es no-op (sin contadores);
  * - cada retención es independiente (liberar una no toca a otra);
  * - la entrada `SolidMeshRenderData` no se muta;
- * - invariante sin fugas: `disposed === created` al cerrar todo.
+ * - invariante sin fugas: `disposed === created` (verificado en el
+ *   `afterEach` de cada prueba, sin rebalanceo).
  *
  * La celosía React (`useSolidGeometry`: adopt al montar, release al
  * sustituir y al desmontar) se verifica en navegador real con el
@@ -49,8 +54,10 @@ interface BufferGeometryLike {
 }
 
 afterEach(() => {
-  // Los contadores son de módulo: se dejan limpios para la siguiente test.
-  geometryLifecycle.created = geometryLifecycle.disposed;
+  // Sin rebalanceo: cada ciclo del suite debe cerrar
+  // `created === disposed` por sí solo (evidencia de que no quedan
+  // recursos huérfanos ni pares sin acoplar).
+  expect(geometryLifecycle.created).toBe(geometryLifecycle.disposed);
 });
 
 describe('retainSolidGeometry (retención y liberación de BufferGeometry)', () => {
@@ -103,16 +110,48 @@ describe('retainSolidGeometry (retención y liberación de BufferGeometry)', () 
     expect(geometryLifecycle.disposed).toBe(disposedBefore + 1);
   });
 
-  it('release() sin adopt() previa no contabiliza created (solo disposed)', () => {
-    // Simula el descarte de una geometría nunca montada (doble render
-    // de StrictMode): se libera sin haber sido adoptada.
-    const retained = retainSolidGeometry(meshFixture('ghost'));
+  it('montaje estricto (adopt→release→adopt→release): CADA release dispone de verdad', () => {
+    // Secuencia REAL de StrictMode en dev (montaje → limpieza →
+    // remontaje) seguida del release definitivo (sustitución de la
+    // malla o desmontaje: eliminación, Undo/Redo, regeneración,
+    // navegación fuera del modelador). El renderer sube la
+    // geometría a GPU DESPUÉS del dispose intermedio: si el remontaje
+    // no rearmara la retención, el release final no dispondría nada
+    // y los búferes re-subidos quedarían huérfanos.
+    const retained = retainSolidGeometry(meshFixture('solid-1'));
+    const tracker = trackDisposals(retained.geometry);
     const createdBefore = geometryLifecycle.created;
+    const disposedBefore = geometryLifecycle.disposed;
+
+    retained.adopt(); // montaje 1
+    retained.adopt(); // idempotente (sin doble conteo)
+    retained.release(); // limpieza estricta → dispose #1
+    retained.adopt(); // remontaje estricto: debe REARMAR
+    retained.adopt(); // idempotente
+    retained.release(); // sustitución/desmontaje real → dispose #2
+    retained.release(); // idempotente: sin tercer dispose
+
+    expect(tracker.count()).toBe(2);
+    expect(geometryLifecycle.created - createdBefore).toBe(2);
+    expect(geometryLifecycle.disposed - disposedBefore).toBe(2);
+    expect(geometryLifecycle.created).toBe(geometryLifecycle.disposed);
+  });
+
+  it('release() sin adopción vigente no contamina (ni contadores ni eventos)', () => {
+    // Una retención nunca adoptada no tiene nada que liberar: el
+    // release es no-op honesto. La geometría fantasma descartada por
+    // el doble render de StrictMode nunca se RETIENE (nadie llama a
+    // adopt ni release: es basura GC sin contador).
+    const retained = retainSolidGeometry(meshFixture('ghost'));
+    const tracker = trackDisposals(retained.geometry);
+    const createdBefore = geometryLifecycle.created;
+    const disposedBefore = geometryLifecycle.disposed;
 
     retained.release();
 
+    expect(tracker.count()).toBe(0);
     expect(geometryLifecycle.created).toBe(createdBefore);
-    expect(geometryLifecycle.disposed).toBe(createdBefore + 1);
+    expect(geometryLifecycle.disposed).toBe(disposedBefore);
   });
 
   it('las retenciones son independientes (liberar una no afecta a otra)', () => {
