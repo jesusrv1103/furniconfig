@@ -31,11 +31,31 @@
  * - **Liberación**: `dispose()` cancela y dispone el servicio;
  *   los `KernelRef` los libera el propio servicio en su `finally`
  *   (cero fugas, verificado por sus `stats.liveRefs`).
+ *
+ * FASE-4C-D — componentes paramétricos (clósets):
+ *
+ * - **Derivación en el coordinador**: `buildComponent` es síncrono
+ *   y puro, así que los componentes se derivan AQUÍ y no en el
+ *   servicio (que necesita el kernel en su constructor): su estado
+ *   vive en `componentStates`, un mapa SEPARADO de `states`, con
+ *   gating por huella (mismas params → misma referencia de piezas
+ *   → la escena no recrea geometría) y errores `SceneError` como
+ *   estado honesto con `retry`.
+ * - **Sin Worker para clósets**: el servicio solo se crea con
+ *   sólidos presentes (invariante de 4C-B intacto): una escena
+ *   exclusivamente de componentes NUNCA invoca `ensureKernel`.
+ *   Los resultados `component-parts` del servicio (si convive con
+ *   sólidos) se ignoran: la fuente única de piezas es el
+ *   coordinador.
  */
 
 import type { AsyncGeometryKernel } from '@furniconfig/kernel-adapter';
 import {
+  SceneError,
+  buildComponent,
   createComponentRegistry,
+  type ComponentInstance,
+  type ComponentPart,
   type ParametricComponentRegistry,
   type SceneDocument,
 } from '@furniconfig/modeler-core';
@@ -69,6 +89,24 @@ export interface SolidGeometryState {
   readonly errorMessage: string | null;
 }
 
+/**
+ * Estado de derivación de un componente paramétrico para la UI
+ * (FASE-4C-D). Análogo de `SolidGeometryState` pero con `parts`
+ * en lugar de `mesh`: mapa de estados SEPARADO (§4 del mandate).
+ */
+export interface ComponentGeometryState {
+  readonly objectId: string;
+  readonly revision: number;
+  readonly status: SolidGeometryStatus;
+  /** Huella de los params vigentes del componente. */
+  readonly fingerprint: string;
+  /** Huella de las piezas ya materializadas (null si ninguna). */
+  readonly appliedFingerprint: string | null;
+  /** Piezas derivadas (null hasta la primera publicación o en error). */
+  readonly parts: readonly ComponentPart[] | null;
+  readonly errorMessage: string | null;
+}
+
 export interface SceneGeometryCoordinatorStats {
   readonly revision: number;
   readonly published: number;
@@ -94,6 +132,8 @@ export class SceneGeometryCoordinator {
   readonly #components: ParametricComponentRegistry;
 
   #states = new Map<string, SolidGeometryState>();
+  #componentStates = new Map<string, ComponentGeometryState>();
+  #componentRevision = 0;
   #service: SceneGeometryService | null = null;
   #kernelPromise: Promise<AsyncGeometryKernel> | null = null;
   #document: SceneDocument | null = null;
@@ -121,6 +161,11 @@ export class SceneGeometryCoordinator {
 
   get states(): ReadonlyMap<string, SolidGeometryState> {
     return this.#states;
+  }
+
+  /** Estados de componentes (4C-D): mapa SEPARADO de los sólidos. */
+  get componentStates(): ReadonlyMap<string, ComponentGeometryState> {
+    return this.#componentStates;
   }
 
   get stats(): SceneGeometryCoordinatorStats {
@@ -181,6 +226,38 @@ export class SceneGeometryCoordinator {
       changed = true;
     }
 
+    // Componentes (4C-D): derivación síncrona en el coordinador —
+    // sin servicio, sin Worker y sin ventana asíncrona en la que
+    // publicar geometría obsoleta. Huella sin cambios → misma
+    // referencia de `parts` → la escena no recrea geometría.
+    const components = document.objects.filter(
+      (object) => object.kind === 'component',
+    );
+    const componentIds = new Set(components.map((object) => object.id));
+    for (const objectId of [...this.#componentStates.keys()]) {
+      if (!componentIds.has(objectId)) {
+        this.#componentStates.delete(objectId);
+        changed = true;
+      }
+    }
+    for (const object of components) {
+      if (object.kind !== 'component') continue;
+      const fingerprint = objectFingerprint(object);
+      const previous = this.#componentStates.get(object.id);
+      if (
+        previous !== undefined &&
+        previous.status === 'ready' &&
+        previous.fingerprint === fingerprint
+      ) {
+        continue; // mismas params → mismas piezas (sin recrear nada)
+      }
+      this.#componentStates.set(
+        object.id,
+        this.#deriveComponentState(object, fingerprint, previous),
+      );
+      changed = true;
+    }
+
     if (changed) this.#notify();
 
     if (this.#service !== null) {
@@ -230,6 +307,18 @@ export class SceneGeometryCoordinator {
    */
   retry(_objectId?: string): void {
     if (this.#disposed) return;
+    // Componentes (4C-D): su derivación no depende del kernel, así
+    // que se reintenta aquí directamente (los que ya están `ready`
+    // no se tocan: huella vigente = piezas vigentes).
+    for (const object of this.#document?.objects ?? []) {
+      if (object.kind !== 'component') continue;
+      const state = this.#componentStates.get(object.id);
+      if (state === undefined || state.status !== 'error') continue;
+      this.#componentStates.set(
+        object.id,
+        this.#deriveComponentState(object, objectFingerprint(object), state),
+      );
+    }
     for (const [objectId, state] of this.#states) {
       if (state.status === 'error') {
         this.#states.set(objectId, {
@@ -260,12 +349,60 @@ export class SceneGeometryCoordinator {
     this.#service?.dispose();
     this.#service = null;
     this.#states.clear();
+    this.#componentStates.clear();
     this.#document = null;
   }
 
   // -------------------------------------------------------------------------
   // Internos
   // -------------------------------------------------------------------------
+
+  /**
+   * Deriva las piezas de un componente SIN Worker (`buildComponent`
+   * es puro y síncrono). Un fallo (`SceneError` de registro, versión
+   * o params) deja el estado en `error` conservando las piezas
+   * anteriores si existían (la escena sigue mostrando lo último
+   * válido mientras el panel expone el mensaje).
+   */
+  #deriveComponentState(
+    object: ComponentInstance,
+    fingerprint: string,
+    previous: ComponentGeometryState | undefined,
+  ): ComponentGeometryState {
+    this.#componentRevision += 1;
+    try {
+      const build = buildComponent(
+        this.#components,
+        object.id,
+        object.type,
+        object.version,
+        object.params ?? {},
+      );
+      return {
+        objectId: object.id,
+        revision: this.#componentRevision,
+        status: 'ready',
+        fingerprint,
+        appliedFingerprint: fingerprint,
+        parts: build.parts,
+        errorMessage: null,
+      };
+    } catch (error) {
+      const message =
+        error instanceof SceneError || error instanceof Error
+          ? error.message
+          : 'Error desconocido al derivar el componente.';
+      return {
+        objectId: object.id,
+        revision: this.#componentRevision,
+        status: 'error',
+        fingerprint,
+        appliedFingerprint: previous?.appliedFingerprint ?? null,
+        parts: previous?.parts ?? null,
+        errorMessage: message,
+      };
+    }
+  }
 
   #ensureService(): void {
     if (this.#disposed || this.#service !== null || this.#kernelPromise !== null) {
@@ -330,8 +467,11 @@ export class SceneGeometryCoordinator {
       return;
     }
     if (result.kind === 'component-parts') {
-      // Sin superficie de UI de componentes en 4C-B: se ignora
-      // honestamente (ningún sólido espera esta variante).
+      // 4C-D: la derivación de componentes vive en el COORDINADOR
+      // (sincronía pura, sin Worker); si el servicio convive con
+      // sólidos también deriva componentes y aquí se IGNORAN
+      // deliberadamente — la fuente única de `parts` es
+      // `componentStates`. Ningún sólido espera esta variante.
       return;
     }
     // solid-mesh: si la malla aplicada ya corresponde a la

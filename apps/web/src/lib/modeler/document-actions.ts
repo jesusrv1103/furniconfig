@@ -23,18 +23,30 @@
  * acciones de UI — la pantalla no cambia.
  */
 
+import { validateWardrobeConfig, type WardrobeConfig } from '@furniconfig/geometry-core';
 import {
+  SceneError,
   createAddObjectCommand,
   createRemoveObjectCommand,
   createSetExtrusionCommand,
   createSetSketchCommand,
   validateSceneDocument,
   type Command,
+  type ComponentInstance,
+  type MmPoint3,
   type SceneDocument,
   type SceneMaterial,
+  type SceneParams,
   type SceneObject,
   type Sketch2D,
 } from '@furniconfig/modeler-core';
+
+import { DEFAULT_CONFIG } from '../config.js';
+import {
+  WARDROBE_COMPONENT_TYPE,
+  WARDROBE_COMPONENT_VERSION,
+  parseWardrobeParams,
+} from './components/wardrobe.js';
 
 /**
  * Material por defecto de los sólidos dibujados.
@@ -146,6 +158,117 @@ export function buildSolidAddCommand(
   return createAddObjectCommand(
     document,
     buildSolidObject(document, sketch, extrusionMm),
+  );
+}
+
+const COMPONENT_ID_PATTERN = /^component-(\d+)$/;
+
+/**
+ * FASE-4C-D — siguiente id determinista `component-N` (I4, sin
+ * UUID): máximo numérico existente + 1 (espejo de `nextSolidId`).
+ * Los ids que no siguen el patrón se ignoran; los `solid-N` no
+ * interfieren (prefijo distinto) y el resultado nunca colisiona
+ * con un objeto ya presente.
+ */
+export function nextComponentId(document: SceneDocument): string {
+  let max = 0n;
+  for (const object of document.objects) {
+    const match = COMPONENT_ID_PATTERN.exec(object.id);
+    if (match === null) continue;
+    const digits = match[1];
+    if (digits === undefined) continue;
+    const n = BigInt(digits);
+    if (n > max) max = n;
+  }
+  return `component-${max + 1n}`;
+}
+
+/**
+ * FASE-4C-D — posición para INSERTAR un clóset: al lado del último
+ * clóset de la escena en +X con 200 mm de separación, redondeada
+ * hacia arriba a múltiplos de 10 mm (mm enteros, I1, y alineado a
+ * la rejilla por defecto). Escena sin clósets → origen `[0, 0, 0]`
+ * (suelo). Solo considera clósets: los sólidos libres se dibujan a
+ * mano y no condicionan la inserción (posiciones deterministas y
+ * sin solape entre clósets consecutivos).
+ */
+export function nextWardrobePosition(document: SceneDocument): MmPoint3 {
+  const WARDROBE_GAP_MM = 200;
+  const GRID_MM = 10;
+  let maxRightMm = Number.NEGATIVE_INFINITY;
+  for (const object of document.objects) {
+    if (object.kind !== 'component') continue;
+    if (object.type !== WARDROBE_COMPONENT_TYPE) continue;
+    const widthMm = parseWardrobeParams(object.params)?.dimensions.widthMm;
+    if (widthMm === undefined) continue;
+    const rightMm = object.transform.positionMm[0] + widthMm;
+    if (rightMm > maxRightMm) maxRightMm = rightMm;
+  }
+  if (!Number.isFinite(maxRightMm)) return [0, 0, 0];
+  return [
+    Math.ceil((maxRightMm + WARDROBE_GAP_MM) / GRID_MM) * GRID_MM,
+    0,
+    0,
+  ];
+}
+
+/**
+ * FASE-4C-D — instancia de clóset con `DEFAULT_CONFIG` (o los
+ * params indicados) VALIDADOS POR EL MOTOR antes de crearla:
+ * `validateWardrobeConfig` es la fuente única de reglas (nunca se
+ * duplican `WARDROBE_LIMITS`). El `params` guardado es
+ * `validation.config` (la normalizada por el validador): lo que el
+ * motor aceptó es exactamente lo que la derivación revalidará.
+ *
+ * @throws SceneError `ERR_SCENE_PARAMS_OUT_OF_RANGE` si los params
+ * no son un `WardrobeConfig` v1 válido (nunca inserta un
+ * componente que la derivación rechazaría).
+ */
+export function buildWardrobeObject(
+  document: SceneDocument,
+  config: WardrobeConfig = DEFAULT_CONFIG,
+): ComponentInstance {
+  const validation = validateWardrobeConfig(config);
+  if (!validation.ok) {
+    const first = validation.errors[0];
+    throw new SceneError(
+      'ERR_SCENE_PARAMS_OUT_OF_RANGE',
+      `Clóset no insertable: ${first?.message ?? 'configuración inválida'}`,
+      { component: WARDROBE_COMPONENT_TYPE, field: first?.field ?? 'config' },
+    );
+  }
+  const id = nextComponentId(document);
+  const number = id.slice('component-'.length);
+  return {
+    kind: 'component',
+    id,
+    name: `Clóset ${number}`,
+    type: WARDROBE_COMPONENT_TYPE,
+    version: WARDROBE_COMPONENT_VERSION,
+    transform: { positionMm: nextWardrobePosition(document) },
+    materialId: DEFAULT_SCENE_MATERIAL.id,
+    // Precedente de `open-design.ts`: interfaz (sin índice) sobre
+    // `SceneParams` de valores anidados; el validador garantiza la
+    // forma exacta del contrato v1.
+    params: validation.config as unknown as SceneParams,
+  };
+}
+
+/**
+ * FASE-4C-D — comando `add-object` para un nuevo clóset
+ * (inversible vía `CommandHistory`, igual que los sólidos).
+ * Construido sobre `history.present`; la ejecución pertenece a
+ * `use-modeler-history.dispatch`.
+ *
+ * @throws SceneError si los params o el comando son inválidos.
+ */
+export function buildWardrobeAddCommand(
+  document: SceneDocument,
+  config: WardrobeConfig = DEFAULT_CONFIG,
+): Command {
+  return createAddObjectCommand(
+    document,
+    buildWardrobeObject(document, config),
   );
 }
 

@@ -47,6 +47,7 @@ import {
   defineComponent,
   type ComponentPart,
   type ParametricComponentDef,
+  type SceneParams,
 } from '@furniconfig/modeler-core';
 
 /** Tipo registrado del clóset (estable: es la clave del documento). */
@@ -167,6 +168,22 @@ function wardrobeParamsToConfig(
     );
   }
   return validation.config;
+}
+
+/**
+ * Lee los `params` de una instancia como `WardrobeConfig` v1
+ * validado por el motor, o `null` si no lo son (componente de otro
+ * tipo o params corruptos). Único lector de params para la UI del
+ * modelador (4C-D): NO duplica reglas — la validación es del motor.
+ */
+export function parseWardrobeParams(
+  params: SceneParams | undefined,
+): WardrobeConfig | null {
+  try {
+    return wardrobeParamsToConfig(params ?? {});
+  } catch {
+    return null;
+  }
 }
 
 /**

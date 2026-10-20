@@ -37,9 +37,11 @@ function renderShell(
     },
     onUndo: () => undefined,
     onRedo: () => undefined,
+    onInsertWardrobe: () => undefined,
     pendingSketch: null,
     objects: [],
     selection: null,
+    wardrobe: null,
     children: <div data-testid="escena" />,
     ...overrides,
   };
@@ -139,6 +141,7 @@ describe('ModelerShell (chrome del modelador)', () => {
       objects: [
         {
           id: 'solid-1',
+          kind: 'solid',
           name: 'Sólido 1',
           dimsText: '1200 × 600 × 100 mm',
           status: 'error',
@@ -192,7 +195,7 @@ describe('ModelerShell (chrome del modelador)', () => {
   it('sin croquis pendiente no existe la sección (sin estados fingidos)', () => {
     const html = renderShell();
     expect(html).not.toContain('data-modeler-pending');
-    expect(html).toContain('Dibuja un rectángulo y extrúyelo');
+    expect(html).toContain('Dibuja un rectángulo o inserta un clóset');
   });
 
   it('lista de objetos con nombre, cotas y estado de generación', () => {
@@ -200,6 +203,7 @@ describe('ModelerShell (chrome del modelador)', () => {
       objects: [
         {
           id: 'solid-1',
+          kind: 'solid',
           name: 'Sólido 1',
           dimsText: '1200 × 600 × 100 mm',
           status: 'pending',
@@ -208,6 +212,7 @@ describe('ModelerShell (chrome del modelador)', () => {
         },
         {
           id: 'solid-2',
+          kind: 'solid',
           name: 'Sólido 2',
           dimsText: '300 × 300 × 40 mm',
           status: 'ready',
@@ -388,5 +393,178 @@ describe('ModelerShell (chrome del modelador)', () => {
     expect(props).toContain('data-modeler-field="selection-width"');
     expect(props).toContain('data-modeler-field="selection-depth"');
     expect(props).toContain('data-modeler-field="selection-height"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FASE-4C-D — inserción y panel de clósets
+// ---------------------------------------------------------------------------
+
+function wardrobeFixture(
+  overrides: Partial<NonNullable<ModelerShellProps['wardrobe']>> = {},
+): NonNullable<ModelerShellProps['wardrobe']> {
+  const noop = () => undefined;
+  return {
+    name: 'Clóset 1',
+    nameText: 'Clóset 1',
+    onNameChange: noop,
+    params: {
+      widthText: '2400',
+      heightText: '2200',
+      depthText: '600',
+      onWidthChange: noop,
+      onHeightChange: noop,
+      onDepthChange: noop,
+      moduleCount: 3,
+      onModuleCountChange: noop,
+      modules: [
+        {
+          index: 0,
+          kind: 'shelves',
+          shelvesText: '3',
+          drawersText: null,
+          onKindChange: noop,
+          onShelvesChange: noop,
+          onDrawersChange: noop,
+        },
+        {
+          index: 1,
+          kind: 'hanging',
+          shelvesText: null,
+          drawersText: null,
+          onKindChange: noop,
+          onShelvesChange: noop,
+          onDrawersChange: noop,
+        },
+        {
+          index: 2,
+          kind: 'drawers',
+          shelvesText: null,
+          drawersText: '2',
+          onKindChange: noop,
+          onShelvesChange: noop,
+          onDrawersChange: noop,
+        },
+      ],
+      doorsEnabled: false,
+      onDoorsEnabledChange: noop,
+      doorLeaves: 1,
+      onDoorLeavesChange: noop,
+      doorHinge: 'left',
+      onDoorHingeChange: noop,
+      backPanelEnabled: true,
+      onBackPanelEnabledChange: noop,
+    },
+    status: 'ready',
+    errorMessage: null,
+    editError: null,
+    onRetry: noop,
+    onDelete: noop,
+    ...overrides,
+  };
+}
+
+describe('ModelerShell — 4C-D clósets', () => {
+  it('botón «Insertar clóset» presente y HABILITADO (acción real)', () => {
+    const html = renderShell();
+    expect(html).toContain('data-modeler-insert-wardrobe');
+    expect(html).toContain('Insertar clóset');
+    const section = slice(html, 'data-modeler-insert', 'data-modeler-objects');
+    expect(section).toContain('data-modeler-insert-wardrobe');
+    expect(section).not.toContain('disabled');
+  });
+
+  it('lista: chip de TIPO distingue componente («Clóset») de sólido', () => {
+    const html = renderShell({
+      objects: [
+        {
+          id: 'component-1',
+          kind: 'component',
+          name: 'Clóset 1',
+          dimsText: '2400 × 600 × 2200 mm',
+          status: 'ready',
+          selected: false,
+          onSelect: () => undefined,
+        },
+        {
+          id: 'solid-1',
+          kind: 'solid',
+          name: 'Sólido 1',
+          dimsText: '800 × 600 × 100 mm',
+          status: 'ready',
+          selected: false,
+          onSelect: () => undefined,
+        },
+      ],
+    });
+    expect(html).toContain('data-object-kind="component"');
+    expect(html).toContain('data-modeler-object-kind="component"');
+    expect(html).toContain('data-modeler-object-kind="solid"');
+    expect(html).toContain('>Clóset<');
+    expect(html).toContain('>Sólido<');
+  });
+
+  it('panel del clóset: dimensiones, módulos, puertas, panel trasero y errores', () => {
+    const html = renderShell({ wardrobe: wardrobeFixture() });
+    const props = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(props).toContain('data-modeler-field="wardrobe-name"');
+    expect(props).toContain('data-modeler-field="wardrobe-width"');
+    expect(props).toContain('data-modeler-field="wardrobe-height"');
+    expect(props).toContain('data-modeler-field="wardrobe-depth"');
+    expect(props).toContain('value="2400"');
+    expect(props).toContain('data-modeler-module-count');
+    expect(props).toContain('data-modeler-module-kind="0"');
+    expect(props).toContain('data-modeler-module-kind="2"');
+    expect(props).toContain('data-modeler-field="module-shelves-0"');
+    expect(props).toContain('data-modeler-field="module-drawers-2"');
+    expect(props).toContain('data-modeler-doors-enabled');
+    expect(props).toContain('data-modeler-back-panel');
+    // Puertas DESACTIVADAS → hojas y bisagra NO se muestran
+    // (nunca controles que no aplican, ni deshabilitados sin explicación).
+    expect(props).not.toContain('data-modeler-door-leaves');
+    expect(props).not.toContain('data-modeler-door-hinge');
+    expect(props).toContain('data-modeler-delete');
+  });
+
+  it('con puertas ACTIVADAS aparecen hojas y bisagra', () => {
+    const base = wardrobeFixture();
+    const params = base.params;
+    const html = renderShell({
+      wardrobe: wardrobeFixture({
+        params:
+          params === null
+            ? null
+            : { ...params, doorsEnabled: true, doorLeaves: 2, doorHinge: 'right' },
+      }),
+    });
+    const props = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(props).toContain('data-modeler-door-leaves');
+    expect(props).toContain('data-modeler-door-hinge');
+    expect(props).toContain('value="right"');
+  });
+
+  it('error de EDICIÓN visible y separado del error de generación', () => {
+    const html = renderShell({
+      wardrobe: wardrobeFixture({
+        editError: 'widthMm: fuera de rango (mínimo 400 mm).',
+      }),
+    });
+    expect(html).toContain('data-modeler-wardrobe-edit-error');
+    expect(html).toContain('fuera de rango');
+    expect(html).not.toContain('data-modeler-selection-error');
+  });
+
+  it('params ilegibles (`params: null`) → panel reducido sin campos inaplicados', () => {
+    const html = renderShell({ wardrobe: wardrobeFixture({ params: null }) });
+    const props = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(props).toContain('data-modeler-field="wardrobe-name"');
+    expect(props).not.toContain('wardrobe-width');
+    expect(props).not.toContain('data-modeler-module-count');
+    expect(props).toContain('data-modeler-delete');
+  });
+
+  it('sin selección ni clóset: el aviso menciona AMBOS objetos', () => {
+    const html = renderShell();
+    expect(html).toContain('Selecciona un sólido o un clóset');
   });
 });

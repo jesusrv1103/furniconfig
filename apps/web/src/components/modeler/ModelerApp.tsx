@@ -32,22 +32,29 @@ import {
   createRemoveObjectCommand,
   createRenameCommand,
   createSetExtrusionCommand,
+  createSetParamsCommand,
   createSetSketchCommand,
   resolveObjectSelection,
   setSketchDimension,
   sketchDimensionMm,
   type Command,
   type SceneDocument,
+  type SceneParams,
   type SelectionState,
   type Sketch2D,
   type SketchDimension,
 } from '@furniconfig/modeler-core';
+import {
+  validateWardrobeConfig,
+  type WardrobeConfig,
+} from '@furniconfig/geometry-core';
 
 import {
   ModelerShell,
   type ObjectRowProps,
   type PendingSketchPanelProps,
   type SelectionPanelProps,
+  type WardrobePanelProps,
 } from './ModelerShell.js';
 import { ModelerScene } from './ModelerScene.js';
 import { useModelerGeometry } from '../../hooks/use-modeler-geometry.js';
@@ -63,11 +70,34 @@ import {
   type ModelerCameraControlsState,
 } from '../../lib/modeler/camera-controls.js';
 import {
+  DEFAULT_DOOR_LEAVES,
+  DEFAULT_DRAWER_COUNT,
+  DEFAULT_SHELVES,
+  clearDoors,
+  setBackPanelEnabled,
+  setDimension,
+  setDoorsEnabled,
+  setDoorHingeSide,
+  setDoorLeaves,
+  setModuleCount,
+  setModuleDrawers,
+  setModuleKind,
+  setModuleShelves,
+} from '../../lib/config.js';
+import {
   DEFAULT_SCENE_MATERIAL,
   applySceneAction,
   buildSolidAddCommand,
+  buildWardrobeAddCommand,
+  nextComponentId,
   nextSolidId,
 } from '../../lib/modeler/document-actions.js';
+import {
+  WARDROBE_COMPONENT_TYPE,
+  parseWardrobeParams,
+} from '../../lib/modeler/components/wardrobe.js';
+import { wardrobeSceneRegistry } from '../../lib/modeler/open-design.js';
+import { partsGeometryLifecycle } from '../../lib/modeler/components/parts-to-mesh.js';
 import { historyShortcut } from '../../lib/modeler/history-shortcuts.js';
 import type { CameraView } from '../../lib/camera-views.js';
 import type { ModelerTool } from '../../lib/modeler/drawing.js';
@@ -143,6 +173,14 @@ export function ModelerApp(): ReactNode {
   /** Feedback aria-live del último deshacer/rehacer (C3). */
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   /**
+   * Rechazo de la ÚLTIMA edición de params de clóset (4C-D): error
+   * visible SIN tocar documento ni historial. Se limpia al cambiar
+   * de selección y en cada edición aceptada.
+   */
+  const [wardrobeEditError, setWardrobeEditError] = useState<string | null>(
+    null,
+  );
+  /**
    * Selección previa a una eliminación (C4): si el usuario deshace
    * el borrado, el objeto restaurado recupera su selección. Se
    * descarta al ejecutar un comando nuevo o al elegir otra
@@ -152,7 +190,11 @@ export function ModelerApp(): ReactNode {
   const selectionStashRef = useRef<SelectionState | null>(null);
 
   const geometry = useModelerGeometry();
-  const sceneGeometry = useSceneGeometry(document, geometry);
+  const sceneGeometry = useSceneGeometry(
+    document,
+    geometry,
+    wardrobeSceneRegistry,
+  );
 
   const selectedObject = useMemo(() => {
     if (selection === null || selection.anchor === null) return null;
@@ -167,6 +209,24 @@ export function ModelerApp(): ReactNode {
       name: object.name,
       sketch: object.geometry.sketch,
       extrusionMm: object.geometry.extrusionMm,
+    };
+  }, [document, selection]);
+
+  // Clóset seleccionado (4C-D): componente de tipo
+  // `furniconfig.wardrobe` con sus params leídos Y VALIDADOS por el
+  // motor (`config === null` = motor los rechaza: panel reducido a
+  // nombre/estado/eliminar, nunca campos que no aplican).
+  const selectedWardrobe = useMemo(() => {
+    if (selection === null || selection.anchor === null) return null;
+    const object = document.objects.find(
+      (entry) => entry.id === selection.anchor,
+    );
+    if (object === undefined || object.kind !== 'component') return null;
+    if (object.type !== WARDROBE_COMPONENT_TYPE) return null;
+    return {
+      id: object.id,
+      name: object.name,
+      config: parseWardrobeParams(object.params),
     };
   }, [document, selection]);
 
@@ -196,6 +256,12 @@ export function ModelerApp(): ReactNode {
     });
     if (resolved === null) setSelection(null);
   }, [document, selection]);
+
+  // El error de edición de clóset no sobrevive a un cambio de
+  // selección (el panel nuevo no tiene por qué heredarlo).
+  useEffect(() => {
+    setWardrobeEditError(null);
+  }, [selection]);
 
   // Escape cancela el croquis pendiente (operación incompleta).
   useEffect(() => {
@@ -337,6 +403,25 @@ export function ModelerApp(): ReactNode {
     setSelection(resolveObjectSelection(change.document, { objectId }));
   }, [document, pendingSketch, pendingExtrusionMm, runDispatch]);
 
+  /**
+   * D1 — Insertar clóset: id precalculado (mismo cálculo que la
+   * fábrica del comando → misma selección), inserción reversible
+   * vía `CommandHistory` y selección del componente recién creado.
+   */
+  const handleInsertWardrobe = useCallback(() => {
+    const objectId = nextComponentId(document);
+    let change: ReturnType<ModelerHistory['dispatch']>;
+    try {
+      change = runDispatch(buildWardrobeAddCommand(document));
+    } catch {
+      // Fábrica rechazó (params inválidos, id colisionado):
+      // historial intacto.
+      change = null;
+    }
+    if (change === null) return;
+    setSelection(resolveObjectSelection(change.document, { objectId }));
+  }, [document, runDispatch]);
+
   // Edición de cotas: CONFIRMACIÓN (Enter/blur/change del campo) =
   // UNA entrada de historial; el no-op de `executeCommand` descarta
   // repeticiones (Enter seguido de blur → una sola entrada).
@@ -386,17 +471,164 @@ export function ModelerApp(): ReactNode {
     [document, selectedObject, runDispatch],
   );
 
+  /** Eliminar por id (sólido o componente): misma ruta para ambos. */
+  const handleDeleteObject = useCallback(
+    (objectId: string) => {
+      const change = runDispatch(createRemoveObjectCommand(document, objectId));
+      if (change === null) return;
+      // Captura POST-éxito: si se deshace, la selección vuelve con el
+      // objeto (efecto de reconciliación C4).
+      selectionStashRef.current = selection;
+      setSelection(null);
+    },
+    [document, runDispatch, selection],
+  );
+
   const handleDelete = useCallback(() => {
     if (selectedObject === null) return;
-    const change = runDispatch(
-      createRemoveObjectCommand(document, selectedObject.id),
-    );
-    if (change === null) return;
-    // Captura POST-éxito: si se deshace, la selección vuelve con el
-    // objeto (efecto de reconciliación C4).
-    selectionStashRef.current = selection;
-    setSelection(null);
-  }, [document, selectedObject, runDispatch, selection]);
+    handleDeleteObject(selectedObject.id);
+  }, [selectedObject, handleDeleteObject]);
+
+  // -------------------------------------------------------------------------
+  // Edición paramétrica de clósets (D4): valida → construye params →
+  // UN `createSetParamsCommand` → regenera → la selección se mantiene
+  // (los params no tocan `selection`). Rechazo → error visible y
+  // documento + historial INTACTOS (nunca una entrada por tecla: los
+  // campos confirman en Enter/blur y los selectores al operar).
+  // -------------------------------------------------------------------------
+
+  const applyWardrobeParams = useCallback(
+    (updater: (config: WardrobeConfig) => WardrobeConfig): boolean => {
+      if (selectedWardrobe === null || selectedWardrobe.config === null) {
+        return false;
+      }
+      let candidate: WardrobeConfig;
+      try {
+        candidate = updater(selectedWardrobe.config);
+      } catch {
+        setWardrobeEditError('Entrada no válida para este campo.');
+        return false;
+      }
+      // El MOTOR valida (fuente única de reglas: sin duplicar
+      // WARDROBE_LIMITS): fuera de rango o inconsistente → error
+      // visible y NINGUNA mutación.
+      const validation = validateWardrobeConfig(candidate);
+      if (!validation.ok) {
+        const first = validation.errors[0];
+        setWardrobeEditError(
+          `${first?.field ?? 'configuración'}: ${first?.message ?? 'configuración inválida'}`,
+        );
+        return false;
+      }
+      const change = runDispatch(
+        createSetParamsCommand(
+          document,
+          selectedWardrobe.id,
+          // Precedente de `open-design.ts`: la interfaz es un
+          // `Record` de valores anidados; el validador garantiza
+          // que los params son un WardrobeConfig v1 completo.
+          validation.config as unknown as SceneParams,
+        ),
+      );
+      if (change === null) {
+        setWardrobeEditError('Comando rechazado: documento intacto.');
+        return false;
+      }
+      setWardrobeEditError(null);
+      return true;
+    },
+    [document, selectedWardrobe, runDispatch],
+  );
+
+  /** Dimensiones del clóset: texto → mm entero → validación del motor. */
+  const handleWardrobeDimension = useCallback(
+    (key: 'widthMm' | 'heightMm' | 'depthMm', text: string) => {
+      const value = parseMm(text);
+      if (value === null) {
+        setWardrobeEditError(
+          `${key === 'widthMm' ? 'Ancho' : key === 'heightMm' ? 'Alto' : 'Profundidad'}: entero en mm (mínimo 1).`,
+        );
+        return;
+      }
+      applyWardrobeParams((config) => setDimension(config, key, value));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeModuleCount = useCallback(
+    (count: number) => {
+      applyWardrobeParams((config) => setModuleCount(config, count));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeModuleKind = useCallback(
+    (index: number, kind: 'shelves' | 'hanging' | 'drawers') => {
+      applyWardrobeParams((config) => setModuleKind(config, index, kind));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeModuleShelves = useCallback(
+    (index: number, text: string) => {
+      const value = parseMm(text);
+      if (value === null) {
+        setWardrobeEditError('Entrepaños: entero en mm (mínimo 1).');
+        return;
+      }
+      applyWardrobeParams((config) => setModuleShelves(config, index, value));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeModuleDrawers = useCallback(
+    (index: number, text: string) => {
+      const value = parseMm(text);
+      if (value === null) {
+        setWardrobeEditError('Cajones: entero en mm (mínimo 1).');
+        return;
+      }
+      applyWardrobeParams((config) => setModuleDrawers(config, index, value));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeDoorsEnabled = useCallback(
+    (enabled: boolean) => {
+      applyWardrobeParams((config) => setDoorsEnabled(config, enabled));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeDoorLeaves = useCallback(
+    (leaves: 1 | 2) => {
+      applyWardrobeParams((config) => setDoorLeaves(config, leaves));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeDoorHinge = useCallback(
+    (hingeSide: 'left' | 'right') => {
+      applyWardrobeParams((config) => setDoorHingeSide(config, hingeSide));
+    },
+    [applyWardrobeParams],
+  );
+
+  const handleWardrobeBackPanel = useCallback(
+    (enabled: boolean) => {
+      applyWardrobeParams((config) => setBackPanelEnabled(config, enabled));
+    },
+    [applyWardrobeParams],
+  );
+
+  /** Renombrar clóset (mismo comando genérico que los sólidos). */
+  const handleWardrobeRename = useCallback(
+    (text: string) => {
+      if (selectedWardrobe === null) return;
+      runDispatch(createRenameCommand(document, selectedWardrobe.id, text));
+    },
+    [document, selectedWardrobe, runDispatch],
+  );
 
   const handleViewChange = useCallback((view: CameraView) => {
     setCamera((prev) => requestView(prev, view));
@@ -412,9 +644,35 @@ export function ModelerApp(): ReactNode {
       document.objects
         .filter(
           (object) =>
-            object.kind === 'solid' && object.geometry.source === 'sketch',
+            object.kind === 'component' ||
+            (object.kind === 'solid' && object.geometry.source === 'sketch'),
         )
-        .map((object) => {
+        .map((object): ObjectRowProps => {
+          const common = {
+            id: object.id,
+            name: object.name,
+            selected: selection?.anchor === object.id,
+            onSelect: () => {
+              setSelection(
+                resolveObjectSelection(document, { objectId: object.id }),
+              );
+            },
+          };
+          if (object.kind === 'component') {
+            // Fila de componente (4C-D): estado del mapa SEPARADO
+            // `componentStates` y cotas externas del clóset.
+            const state = sceneGeometry.componentStates.get(object.id);
+            const dims = parseWardrobeParams(object.params)?.dimensions;
+            return {
+              ...common,
+              kind: 'component',
+              dimsText:
+                dims === undefined
+                  ? 'params inválidos'
+                  : `${dims.widthMm} × ${dims.depthMm} × ${dims.heightMm} mm`,
+              status: state?.status ?? 'pending',
+            };
+          }
           if (object.kind !== 'solid') {
             throw new Error('objeto filtrado inválido');
           }
@@ -423,20 +681,16 @@ export function ModelerApp(): ReactNode {
           }
           const state = sceneGeometry.states.get(object.id);
           return {
-            id: object.id,
-            name: object.name,
+            ...common,
+            kind: 'solid',
             dimsText: `${sketchDimensionMm(object.geometry.sketch, 'widthMm')} × ${sketchDimensionMm(
               object.geometry.sketch,
               'depthMm',
             )} × ${object.geometry.extrusionMm} mm`,
             status: state?.status ?? 'pending',
-            selected: selection?.anchor === object.id,
-            onSelect: () => {
-              setSelection(resolveObjectSelection(document, { objectId: object.id }));
-            },
           };
         }),
-    [document, sceneGeometry.states, selection],
+    [document, sceneGeometry.states, sceneGeometry.componentStates, selection],
   );
 
   const pendingPanel: PendingSketchPanelProps | null =
@@ -480,6 +734,84 @@ export function ModelerApp(): ReactNode {
           onDelete: handleDelete,
         };
 
+  // Panel contextual del clóset (D4): propiedades derivadas del
+  // documento vigente (undo/redo lo actualizan sin estado paralelo).
+  const wardrobePanel: WardrobePanelProps | null =
+    selectedWardrobe === null
+      ? null
+      : {
+          name: selectedWardrobe.name,
+          nameText: selectedWardrobe.name,
+          onNameChange: handleWardrobeRename,
+          params:
+            selectedWardrobe.config === null
+              ? null
+              : {
+                  widthText: String(
+                    selectedWardrobe.config.dimensions.widthMm,
+                  ),
+                  heightText: String(
+                    selectedWardrobe.config.dimensions.heightMm,
+                  ),
+                  depthText: String(
+                    selectedWardrobe.config.dimensions.depthMm,
+                  ),
+                  onWidthChange: (text) =>
+                    handleWardrobeDimension('widthMm', text),
+                  onHeightChange: (text) =>
+                    handleWardrobeDimension('heightMm', text),
+                  onDepthChange: (text) =>
+                    handleWardrobeDimension('depthMm', text),
+                  moduleCount: selectedWardrobe.config.modules.length,
+                  onModuleCountChange: handleWardrobeModuleCount,
+                  modules: selectedWardrobe.config.modules.map(
+                    (module, index) => ({
+                      index,
+                      kind: module.kind,
+                      shelvesText:
+                        module.kind === 'shelves'
+                          ? String(module.shelves ?? DEFAULT_SHELVES)
+                          : null,
+                      drawersText:
+                        module.kind === 'drawers'
+                          ? String(module.drawers ?? DEFAULT_DRAWER_COUNT)
+                          : null,
+                      onKindChange: (kind: 'shelves' | 'hanging' | 'drawers') =>
+                        handleWardrobeModuleKind(index, kind),
+                      onShelvesChange: (text: string) =>
+                        handleWardrobeModuleShelves(index, text),
+                      onDrawersChange: (text: string) =>
+                        handleWardrobeModuleDrawers(index, text),
+                    }),
+                  ),
+                  doorsEnabled: selectedWardrobe.config.doors !== undefined,
+                  onDoorsEnabledChange: handleWardrobeDoorsEnabled,
+                  doorLeaves:
+                    selectedWardrobe.config.doors?.leaves ??
+                    DEFAULT_DOOR_LEAVES,
+                  onDoorLeavesChange: handleWardrobeDoorLeaves,
+                  doorHinge:
+                    selectedWardrobe.config.doors?.hingeSide ?? 'left',
+                  onDoorHingeChange: handleWardrobeDoorHinge,
+                  backPanelEnabled:
+                    selectedWardrobe.config.backPanel?.enabled ?? false,
+                  onBackPanelEnabledChange: handleWardrobeBackPanel,
+                },
+          status:
+            sceneGeometry.componentStates.get(selectedWardrobe.id)?.status ??
+            'pending',
+          errorMessage:
+            sceneGeometry.componentStates.get(selectedWardrobe.id)
+              ?.errorMessage ?? null,
+          editError: wardrobeEditError,
+          onRetry: () => sceneGeometry.retry(selectedWardrobe.id),
+          onDelete: () => {
+            if (selectedWardrobe !== null) {
+              handleDeleteObject(selectedWardrobe.id);
+            }
+          },
+        };
+
   // Depuración para las verificaciones visuales (patrón del
   // configurador con `__wardrobeConfigDebug`).
   useEffect(() => {
@@ -504,6 +836,28 @@ export function ModelerApp(): ReactNode {
           ]),
         ),
       getStats: () => sceneGeometry.stats,
+      /**
+       * Estados de componentes (4C-D): huellas + nº de piezas
+       * (la fuente de `parts` vive aquí, separada de los sólidos).
+       */
+      getComponentStates: () =>
+        Object.fromEntries(
+          [...sceneGeometry.componentStates.entries()].map(
+            ([id, state]) => [
+              id,
+              {
+                status: state.status,
+                revision: state.revision,
+                errorMessage: state.errorMessage,
+                fingerprint: state.fingerprint,
+                appliedFingerprint: state.appliedFingerprint,
+                parts: state.parts?.length ?? null,
+              },
+            ],
+          ),
+        ),
+      /** Ciclo de vida de las BufferGeometry de componentes (§8 prueba 13). */
+      getPartsGeometryStats: () => ({ ...partsGeometryLifecycle }),
       /** Croquis pendiente (UI, aún sin documento) para verificación visual. */
       getPending: () =>
         pendingSketch === null
@@ -549,9 +903,11 @@ export function ModelerApp(): ReactNode {
       }}
       onUndo={handleUndo}
       onRedo={handleRedo}
+      onInsertWardrobe={handleInsertWardrobe}
       pendingSketch={pendingPanel}
       objects={objectRows}
       selection={selectionPanel}
+      wardrobe={wardrobePanel}
     >
       <ModelerScene
         viewRequest={camera.request}
@@ -559,6 +915,7 @@ export function ModelerApp(): ReactNode {
         gridStepMm={document.gridStepMm}
         sceneDocument={document}
         solidStates={sceneGeometry.states}
+        componentStates={sceneGeometry.componentStates}
         selection={selection}
         pendingSketch={pendingSketch}
         onCreateSketch={handleCreateSketch}

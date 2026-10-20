@@ -30,6 +30,15 @@
  *    deduplicado), selección coherente al eliminar/restaurar,
  *    regeneración sin geometría obsoleta y cero fugas tras
  *    deshacer/rehacer rápidos.
+ * 9. Clósets inteligentes (4C-D): inserción con derivación
+ *    síncrona y chip «Clóset», render real (diff de píxeles),
+ *    posición/material v1, deselección en el cielo y SELECCIÓN
+ *    DESDE UNA PIEZA proyectada, edición de ancho con UNA entrada
+ *    de historial, entrada inválida → error visible sin mutar
+ *    documento/historial, puertas y módulos regenerando piezas,
+ *    Undo/Redo exactos de params, eliminar/restore, segundo
+ *    clóset posicionado con hueco 200 mm, mezcla con sólido y
+ *    paridad de ciclos de vida al vaciar la escena.
  *
  * Guarda evidencia reproducible (capturas + informe.json) en
  * /tmp/opencode/4c-a.
@@ -878,6 +887,379 @@ try {
   );
   await shootStable(page, '14-final-vacio');
 
+  // --- 9. Clósets inteligentes (FASE-4C-D) ------------------
+  // Base: escena vacía (7v) con el Worker YA arrancado (7g) — la
+  // ruta "solo clósets sin Worker" está cubierta por pruebas
+  // unitarias; aquí se valida en Chromium real: inserción D1,
+  // render/piezas D2, selección desde pieza D3, edición D4 con
+  // validación honesta y ciclo de eliminar/restaurar D3.
+  //
+  // Primero se recrea la escena MIXTA: un sólido (flujo ya
+  // probado en la sección 7) y encima los clósets.
+
+  const sceneBox9 = (
+    await page.locator('[data-modeler-scene] canvas').boundingBox()
+  ) ?? { x: 0, y: 0, width: 800, height: 600 };
+
+  const compOf = (id) =>
+    page.evaluate(
+      (objectId) => window.__modeler.getComponentStates()[objectId],
+      id,
+    );
+  /** Reintenta `fn` hasta que devuelva `true` (o `false` al agotar). */
+  const until = async (fn, timeout = 10_000) => {
+    const start = Date.now();
+    for (;;) {
+      if (await fn()) return true;
+      if (Date.now() - start > timeout) return false;
+      await page.waitForTimeout(100);
+    }
+  };
+  /** Clic en una esquina "cielo" hasta deseleccionar (máx. 4). */
+  const clickSky = async () => {
+    const corners = [
+      { x: sceneBox9.x + 25, y: sceneBox9.y + 25 },
+      { x: sceneBox9.x + sceneBox9.width - 25, y: sceneBox9.y + 25 },
+      { x: sceneBox9.x + 25, y: sceneBox9.y + sceneBox9.height - 25 },
+      {
+        x: sceneBox9.x + sceneBox9.width - 25,
+        y: sceneBox9.y + sceneBox9.height - 25,
+      },
+    ];
+    for (const corner of corners) {
+      await page.mouse.click(corner.x, corner.y);
+      await page.waitForTimeout(150);
+      if ((await selectionOf()) === null) return true;
+    }
+    return false;
+  };
+
+  await page.getByRole('button', { name: 'Rectángulo' }).click();
+  const mixX = sceneBox9.x + sceneBox9.width * 0.35;
+  const mixY = sceneBox9.y + sceneBox9.height * 0.55;
+  await page.mouse.move(mixX, mixY);
+  await page.mouse.down();
+  await page.mouse.move(mixX + 240, mixY + 130, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForSelector('[data-modeler-pending]');
+  await page.locator('[data-modeler-field="pending-width"]').fill('800');
+  await page.locator('[data-modeler-field="pending-depth"]').fill('600');
+  await page.locator('[data-modeler-field="pending-height"]').fill('100');
+  await page.locator('[data-modeler-extrude]').click();
+  await page.waitForSelector('[data-modeler-object="solid-1"]');
+  await until(
+    async () =>
+      (await page.evaluate(() => window.__modeler.getStates()['solid-1']))
+        ?.status === 'ready',
+    30_000,
+  );
+  await page.getByRole('button', { name: 'Seleccionar' }).click();
+
+  const shotBefore9 = await shootStable(page, '15-escena-con-solido', canvasClip);
+
+  // 9a — Inserción (D1): componente LISTO con derivación síncrona.
+  const t9a = Date.now();
+  await page.locator('[data-modeler-insert-wardrobe]').click();
+  await page.waitForSelector('[data-modeler-object="component-1"]');
+  const comp9a = await compOf('component-1');
+  const lat9a = Date.now() - t9a;
+  const kind9a = await page
+    .locator('[data-modeler-object="component-1"]')
+    .getAttribute('data-object-kind');
+  check(
+    '9a. «Insertar clóset» crea component-1 LISTO con chip «Clóset» (síncrono)',
+    comp9a?.status === 'ready' && (comp9a?.parts ?? 0) > 5 && kind9a === 'component',
+    `estado=${comp9a?.status} piezas=${comp9a?.parts} en ${lat9a} ms`,
+  );
+
+  const shot9a = await shootStable(page, '16-closet-insertado', canvasClip);
+  const diff9a = await pixelDiffRatio(page, shotBefore9, shot9a, 4);
+  check(
+    '9b. el clóset se DIBUJA (píxeles nuevos en el canvas)',
+    diff9a > 0.01,
+    `diff=${(diff9a * 100).toFixed(1)}%`,
+  );
+
+  const doc9c = await docOf();
+  const object9c = doc9c.objects.find((entry) => entry.id === 'component-1');
+  const material9c = doc9c.materials.some(
+    (material) => material.id === object9c?.materialId,
+  );
+  check(
+    '9c. posición [0,0,0] mm, contrato v1 y material referenciado del documento',
+    object9c?.transform.positionMm[0] === 0 &&
+      object9c?.transform.positionMm[1] === 0 &&
+      object9c?.transform.positionMm[2] === 0 &&
+      object9c?.type === 'furniconfig.wardrobe' &&
+      object9c?.version === 1 &&
+      material9c,
+    `${JSON.stringify(object9c?.transform.positionMm)} material=${object9c?.materialId}`,
+  );
+
+  const sel9d = await selectionOf();
+  const widthField9d = await page
+    .locator('[data-modeler-field="wardrobe-width"]')
+    .count();
+  check(
+    '9d. el clóset insertado queda SELECCIONADO con panel editable',
+    sel9d?.anchor === 'component-1' && widthField9d === 1,
+    `selección=${sel9d?.anchor ?? 'null'} campos=${widthField9d}`,
+  );
+
+  // 9e — Deselección en el cielo + SELECCIÓN DESDE UNA PIEZA
+  // (clic sobre la geometría proyectada → componente completo).
+  const sky9e = await clickSky();
+  const sel9eOff = await selectionOf();
+  let picked9e = null;
+  const candidates9e = [
+    [1200, 2190, 300], // canto del techo (visto desde arriba)
+    [2390, 1100, 300], // lateral derecho
+    [1200, 1100, 597], // cara trasera
+    [9, 1100, 300], // lateral izquierdo
+  ];
+  for (const point of candidates9e) {
+    const px = await page.evaluate(
+      (p) => window.__modelerProject(p),
+      point,
+    );
+    if (
+      !Number.isFinite(px.x) ||
+      !Number.isFinite(px.y) ||
+      px.x < sceneBox9.x + 4 ||
+      px.x > sceneBox9.x + sceneBox9.width - 4 ||
+      px.y < sceneBox9.y + 4 ||
+      px.y > sceneBox9.y + sceneBox9.height - 4
+    ) {
+      continue;
+    }
+    await page.mouse.click(px.x, px.y);
+    await page.waitForTimeout(200);
+    const sel = await selectionOf();
+    if (sel?.anchor === 'component-1') {
+      picked9e = point;
+      break;
+    }
+  }
+  check(
+    '9e. cielo deselecciona y un CLIC SOBRE UNA PIEZA selecciona el clóset completo',
+    sky9e && sel9eOff === null && picked9e !== null,
+    picked9e
+      ? `pieza en [${picked9e.join(',')}]`
+      : `cielo=${sky9e} ninguna pieza alcanzable`,
+  );
+
+  // 9f — Edición de ancho (D4): params 1500, piezas nuevas y UNA
+  // entrada de historial (confirmación única, no por tecla).
+  const hist9f0 = await historyOf();
+  const t9f = Date.now();
+  await page.locator('[data-modeler-field="wardrobe-width"]').fill('1500');
+  await page.keyboard.press('Enter');
+  await until(async () => {
+    const state = await compOf('component-1');
+    const width = await page.evaluate(
+      () =>
+        window.__modeler.getDocument().objects.find(
+          (entry) => entry.id === 'component-1',
+        )?.params?.dimensions?.widthMm,
+    );
+    return state?.status === 'ready' && width === 1500;
+  });
+  const lat9f = Date.now() - t9f;
+  const comp9f = await compOf('component-1');
+  const hist9f1 = await historyOf();
+  check(
+    '9f. ancho 1500 mm → params + piezas regeneradas + UNA entrada de historial',
+    comp9f?.status === 'ready' &&
+      hist9f1.past === hist9f0.past + 1 &&
+      lat9f < 5000,
+    `piezas=${comp9f?.parts} past ${hist9f0.past}→${hist9f1.past} en ${lat9f} ms`,
+  );
+
+  // 9g — Entrada INVÁLIDA (100 mm < mínimo del motor): error
+  // visible y documento + historial INTACTOS (D4/§7).
+  const doc9g0 = await docOf();
+  const hist9g0 = await historyOf();
+  await page.locator('[data-modeler-field="wardrobe-width"]').fill('100');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(400);
+  const editErr9g = page.locator('[data-modeler-wardrobe-edit-error]');
+  const errCount9g = await editErr9g.count();
+  const errText9g = errCount9g > 0 ? (await editErr9g.innerText()).trim() : '';
+  const doc9g1 = await docOf();
+  const hist9g1 = await historyOf();
+  const width9g1 = doc9g1.objects.find(
+    (entry) => entry.id === 'component-1',
+  )?.params?.dimensions?.widthMm;
+  check(
+    '9g. entrada inválida → error visible SIN mutar documento ni historial',
+    errCount9g === 1 &&
+      errText9g.length > 0 &&
+      width9g1 === 1500 &&
+      hist9g1.past === hist9g0.past,
+    `error="${errText9g.slice(0, 50)}" ancho=${width9g1} past=${hist9g1.past}`,
+  );
+  await shootStable(page, '17-error-validacion', canvasClip);
+
+  // 9h — Puertas: activarlas añade piezas (hojas+tiradores) y
+  // muestra SOLO entonces hojas/bisagra (sin controles que no aplican).
+  const parts9h0 = (await compOf('component-1'))?.parts ?? 0;
+  await page.locator('[data-modeler-doors-enabled]').check();
+  await until(async () => ((await compOf('component-1'))?.parts ?? 0) > parts9h0);
+  const parts9h1 = (await compOf('component-1'))?.parts ?? 0;
+  const leaves9h = await page.locator('[data-modeler-door-leaves]').count();
+  const hinge9h = await page.locator('[data-modeler-door-hinge]').count();
+  check(
+    '9h. activar puertas → más piezas (hojas+tiradores) y controles de hojas/bisagra',
+    parts9h1 > parts9h0 && leaves9h === 1 && hinge9h === 1,
+    `piezas ${parts9h0}→${parts9h1} hojas=${leaves9h} bisagra=${hinge9h}`,
+  );
+
+  // 9i — Módulos: 3 → 4 cambia el conjunto de piezas.
+  await page.locator('[data-modeler-module-count]').selectOption('4');
+  await until(async () => ((await compOf('component-1'))?.parts ?? 0) > parts9h1);
+  const parts9i = (await compOf('component-1'))?.parts ?? 0;
+  check('9i. nº de módulos 3 → 4 regenera las piezas', parts9i > parts9h1, `${parts9h1}→${parts9i}`);
+
+  // 9j — Undo/Redo EXACTOS sobre params (botones de la barra).
+  await undoBtn.click();
+  await page.waitForTimeout(300);
+  const doc9j1 = await docOf();
+  const mods9j1 = doc9j1.objects.find(
+    (entry) => entry.id === 'component-1',
+  )?.params?.modules?.length;
+  await redoBtn.click();
+  await page.waitForTimeout(300);
+  const doc9j2 = await docOf();
+  const mods9j2 = doc9j2.objects.find(
+    (entry) => entry.id === 'component-1',
+  )?.params?.modules?.length;
+  check(
+    '9j. Deshacer/Rehacer de params exactos (módulos 4 → 3 → 4)',
+    mods9j1 === 3 && mods9j2 === 4,
+    `módulos ${mods9j1}→${mods9j2}`,
+  );
+
+  // 9k — Eliminar y restaurar (D3): purga de estados + vuelta con
+  // piezas y selección por Undo.
+  await page.locator('[data-modeler-object="component-1"]').click();
+  await page.waitForTimeout(100);
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(300);
+  const rowsGone9k = await page
+    .locator('[data-modeler-object="component-1"]')
+    .count();
+  const compGone9k = await compOf('component-1');
+  const props9k = await propsText();
+  await undoBtn.click();
+  await page.waitForTimeout(400);
+  const rowsBack9k = await page
+    .locator('[data-modeler-object="component-1"]')
+    .count();
+  const compBack9k = await compOf('component-1');
+  const sel9k = await selectionOf();
+  check(
+    '9k. eliminar → estados purgados; Undo restaura fila, piezas y selección',
+    rowsGone9k === 0 &&
+      compGone9k === undefined &&
+      props9k.includes('Selecciona un sólido o un clóset') &&
+      rowsBack9k === 1 &&
+      compBack9k?.status === 'ready' &&
+      (compBack9k?.parts ?? 0) > 5 &&
+      sel9k?.anchor === 'component-1',
+    `restaurado=${compBack9k?.status} selección=${sel9k?.anchor ?? 'null'}`,
+  );
+
+  // 9l — Segundo clóset: posición junto al primero (hueco 200 mm,
+  // rejilla 10) y selección del nuevo.
+  await page.locator('[data-modeler-insert-wardrobe]').click();
+  await page.waitForSelector('[data-modeler-object="component-2"]');
+  const comp9l = await compOf('component-2');
+  const doc9l = await docOf();
+  const c1_9l = doc9l.objects.find((entry) => entry.id === 'component-1');
+  const c2_9l = doc9l.objects.find((entry) => entry.id === 'component-2');
+  const width9l = c1_9l?.params?.dimensions?.widthMm ?? 0;
+  const expected9l =
+    Math.ceil(((c1_9l?.transform.positionMm[0] ?? 0) + width9l + 200) / 10) * 10;
+  const sel9l = await selectionOf();
+  check(
+    '9l. segundo clóset listo a la derecha del primero (hueco 200 mm, rejilla 10) y seleccionado',
+    comp9l?.status === 'ready' &&
+      c2_9l?.transform.positionMm[0] === expected9l &&
+      sel9l?.anchor === 'component-2' &&
+      doc9l.objects.filter((entry) => entry.kind === 'component').length === 2,
+    `x=${c2_9l?.transform.positionMm[0]} esperado=${expected9l}`,
+  );
+  await shootStable(page, '18-dos-closets', canvasClip);
+
+  // 9m — Convivencia (mezcla): sólido + 2 clósets, cada uno en SU
+  // mapa de estados y todos «Listo».
+  const states9m = await page.evaluate(() => window.__modeler.getStates());
+  const comps9m = await page.evaluate(() => window.__modeler.getComponentStates());
+  const rows9m = await page.locator('[data-modeler-object]').count();
+  const chips9m = await page
+    .locator('[data-modeler-object-kind="component"]')
+    .count();
+  check(
+    '9m. mezcla sólido + 2 clósets: tres filas, dos chips «Clóset» y TODOS «Listo»',
+    rows9m === 3 &&
+      chips9m === 2 &&
+      states9m['solid-1']?.status === 'ready' &&
+      comps9m['component-1']?.status === 'ready' &&
+      comps9m['component-2']?.status === 'ready',
+    `filas=${rows9m} chips=${chips9m}`,
+  );
+
+  // 9n — Cierre del flujo: clic en el cielo → deselección.
+  const sky9n = await clickSky();
+  const sel9n = await selectionOf();
+  check(
+    '9n. clic en el cielo deselecciona el clóset (panel vuelve al aviso)',
+    sky9n && sel9n === null,
+    `anchor=${sel9n?.anchor ?? 'null'}`,
+  );
+
+  // 9o — Liberación de recursos (D5): al eliminar los clósets se
+  // purgan sus estados y su ciclo de vida no crece por debajo de
+  // lo creado (nada queda retenido de lo eliminado).
+  await page.locator('[data-modeler-object="component-2"]').click();
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(200);
+  await page.locator('[data-modeler-object="component-1"]').click();
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(300);
+  const partsLeft9o = await page.evaluate(
+    () => window.__modeler.getComponentStates(),
+  );
+  const life9o = await page.evaluate(() => window.__modeler.getPartsGeometryStats());
+  const rows9o = await page.locator('[data-modeler-object]').count();
+  check(
+    '9o. eliminar clósets: estados purgados y ciclo de vida de piezas equilibrado en lo eliminado',
+    Object.keys(partsLeft9o).length === 0 &&
+      rows9o === 1 &&
+      life9o.created > 0 &&
+      life9o.disposed <= life9o.created,
+    `creadas=${life9o.created} liberadas=${life9o.disposed} filas=${rows9o}`,
+  );
+  // 9p — Escena vacía al final (equivalente a 7v): paridad TOTAL
+  // de los dos ciclos de vida (piezas de componentes Y sólidos).
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(300);
+  const finalLife9o = await page.evaluate(
+    () => window.__modeler.getPartsGeometryStats(),
+  );
+  const solidLife9o = await page.evaluate(
+    () => window.__modeler.getGeometryStats(),
+  );
+  check(
+    '9p. escena vacía al final: paridad TOTAL de piezas y de sólidos (cero fugas)',
+    (await page.locator('[data-modeler-object]').count()) === 0 &&
+      finalLife9o.created === finalLife9o.disposed &&
+      solidLife9o.created === solidLife9o.disposed,
+    `piezas ${finalLife9o.disposed}/${finalLife9o.created} · sólidos ${solidLife9o.disposed}/${solidLife9o.created}`,
+  );
+  await shootStable(page, '19-4c-d-final-vacio', canvasClip);
+
   // --- 5. Sin errores de consola/página --------------------
   check(
     '5a. sin errores de consola',
@@ -925,7 +1307,7 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B + 4C-C',
+        fase: '4C-A + 4C-B + 4C-C + 4C-D',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,

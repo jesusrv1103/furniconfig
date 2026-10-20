@@ -44,14 +44,17 @@ diseño antiguo dentro del modelador, y será explícita y reversible.
 - El configurador actual permanece por defecto (ADR de usabilidad: no
   obligar a migrar).
 
-> **Actualizado (FASE-4C-B)**: la pantalla `/modeler` existe y ya
+> **Actualizado (FASE-4C-D)**: la pantalla `/modeler` existe y ya
 > implementa el flujo de **modelado libre** (4C-A: escena, vistas y
 > herramientas; 4C-B: dibujo de rectángulos con cotas exactas,
 > extrusión a sólido, selección, edición de cotas y eliminación, con
-> la geometría derivada en el Worker del kernel). Documentación y
+> la geometría derivada en el Worker del kernel), el **historial
+> visual** (4C-C: Undo/Redo, renombrar, selección coherente) y los
+> **clósets inteligentes** (4C-D: insertar, renderizar, seleccionar
+> por pieza y editar `furniconfig.wardrobe` v1). Documentación y
 > limitaciones: `MODELER_4C.md`. **Quedan para las fases siguientes de
-> 4C/4D**: Undo/Redo visual, booleanos, componentes en la UI del
-> modelador, persistencia del documento y la vuelta al configurador.
+> 4C/4D**: booleanos, persistencia del documento y la vuelta al
+> configurador.
 
 ### Fase 4D — Componentes paramétricos (futuro)
 
@@ -67,9 +70,13 @@ diseño antiguo dentro del modelador, y será explícita y reversible.
 > (D2). La conversión de sólidos libres a componente con equivalencia
 > demostrable (`createConvertToComponentCommand`) y el servicio de
 > regeneración asíncrona sin UI (`SceneGeometryService`) también están
-> implementados (D3/D4a). **Quedan para 4C/4D**: insertar el clóset desde
-> la UI del modelador, el cableado del servicio con el worker en pantalla
-> (D4b) y la vuelta atrás modelador → configurador.
+> implementados (D3/D4a). **Actualizado (FASE-4C-D)**: la inserción
+> desde la UI, el render de piezas, la selección por pieza y la
+> edición paramétrica del clóset están **implementados** en el
+> modelador (clósets inteligentes, `MODELER_4C.md` §11). La derivación
+> es **síncrona en el coordinador y NO usa Worker**: el servicio con
+> worker en pantalla (D4b) sigue siendo exclusivo de los sólidos.
+> **Queda para 4D**: la vuelta atrás modelador → configurador.
 
 ## 4. Estrategia de versionado
 

@@ -20,17 +20,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { SceneDocument } from '@furniconfig/modeler-core';
+import type { ParametricComponentRegistry } from '@furniconfig/modeler-core';
 
 import type { UseModelerGeometry } from './use-modeler-geometry.js';
 import {
   SceneGeometryCoordinator,
   type SceneGeometryCoordinatorStats,
+  type ComponentGeometryState,
   type SolidGeometryState,
 } from '../lib/modeler/scene-geometry-coordinator.js';
 
 export interface UseSceneGeometry {
   /** Mapa objectId → estado de su derivación (inmutable). */
   readonly states: ReadonlyMap<string, SolidGeometryState>;
+  /**
+   * Mapa objectId → estado de las piezas de un componente (4C-D,
+   * SEPARADO de `states`: cada tipo tiene su propio ciclo).
+   */
+  readonly componentStates: ReadonlyMap<string, ComponentGeometryState>;
   /** Métricas de depuración (revisión, publicados, obsoletos). */
   readonly stats: SceneGeometryCoordinatorStats;
   /** Reintento de un objeto en error (o del arranque del motor). */
@@ -46,11 +53,15 @@ export interface UseSceneGeometry {
 export function useSceneGeometry(
   document: SceneDocument,
   geometry: UseModelerGeometry,
+  components?: ParametricComponentRegistry,
 ): UseSceneGeometry {
   const { status, ensureKernel, notifyReady } = geometry;
   const coordinatorRef = useRef<SceneGeometryCoordinator | null>(null);
   const [states, setStates] = useState<
     ReadonlyMap<string, SolidGeometryState>
+  >(() => new Map());
+  const [componentStates, setComponentStates] = useState<
+    ReadonlyMap<string, ComponentGeometryState>
   >(() => new Map());
   const [stats, setStats] = useState<SceneGeometryCoordinatorStats>({
     revision: 0,
@@ -62,8 +73,13 @@ export function useSceneGeometry(
   useEffect(() => {
     const coordinator = new SceneGeometryCoordinator({
       ensureKernel,
+      components,
       onChange: (next) => {
         setStates(next);
+        // Copia inmutable: `#componentStates` es un Map mutable
+        // que el coordinador edita internamente (patrón de copia
+        // de `#notify` para los sólidos).
+        setComponentStates(new Map(coordinator.componentStates));
         setStats(coordinator.stats);
       },
       onRecovered: () => {
@@ -80,8 +96,9 @@ export function useSceneGeometry(
         coordinatorRef.current = null;
       }
     };
-    // `ensureKernel` y `notifyReady` son estables (useCallback).
-  }, [ensureKernel, notifyReady]);
+    // `ensureKernel` y `notifyReady` son estables (useCallback);
+    // `components` es un registro estable importado por la app.
+  }, [ensureKernel, notifyReady, components]);
 
   useEffect(() => {
     coordinatorRef.current?.setDocument(document);
@@ -95,5 +112,5 @@ export function useSceneGeometry(
     coordinatorRef.current?.retry(objectId);
   }, []);
 
-  return { states, stats, retry };
+  return { states, componentStates, stats, retry };
 }
