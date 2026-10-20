@@ -31,14 +31,21 @@ import { Grid, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 
 import type {
+  ComponentPart,
+  MmPoint3,
   SceneDocument,
+  SceneParams,
   SelectionState,
   Sketch2D,
 } from '@furniconfig/modeler-core';
 
 import type { ViewRequest } from '../../lib/camera-views.js';
 import type { Aabb } from '../../lib/camera-views.js';
-import type { SolidGeometryState } from '../../lib/modeler/scene-geometry-coordinator.js';
+import type {
+  ComponentGeometryState,
+  SolidGeometryState,
+} from '../../lib/modeler/scene-geometry-coordinator.js';
+import { parseWardrobeParams } from '../../lib/modeler/components/wardrobe.js';
 import { ModelerCameraRig } from './ModelerCameraRig.js';
 import { mmToM } from '../../lib/units.js';
 import {
@@ -54,6 +61,7 @@ import {
 } from '../../lib/modeler/drawing.js';
 import { type SolidMeshRenderData } from '../../lib/modeler/mesh-to-renderable.js';
 import { useSolidGeometry } from './use-solid-geometry.js';
+import { useComponentParts } from './use-component-parts.js';
 
 /** Tamaño del plano capturador de clics (m; muy superior al límite de coordenadas). */
 const INTERACTION_PLANE_M = 400;
@@ -73,6 +81,11 @@ export interface ModelerSceneProps {
   readonly gridStepMm: number;
   readonly sceneDocument: SceneDocument;
   readonly solidStates: ReadonlyMap<string, SolidGeometryState>;
+  /**
+   * Estados de componentes (4C-D): mapa SEPARADO de los sólidos;
+   * cada tipo mantiene su propio ciclo de derivación.
+   */
+  readonly componentStates: ReadonlyMap<string, ComponentGeometryState>;
   readonly selection: SelectionState | null;
   readonly pendingSketch: Sketch2D | null;
   readonly onCreateSketch: (sketch: Sketch2D) => void;
@@ -167,6 +180,7 @@ function SceneContent(props: SceneContentProps): ReactNode {
     gridStepMm,
     sceneDocument,
     solidStates,
+    componentStates,
     selection,
     pendingSketch,
     onCreateSketch,
@@ -247,6 +261,11 @@ function SceneContent(props: SceneContentProps): ReactNode {
       sceneDocument.objects.filter(
         (object) => object.kind === 'solid' && object.geometry.source === 'sketch',
       ),
+    [sceneDocument],
+  );
+
+  const components = useMemo(
+    () => sceneDocument.objects.filter((object) => object.kind === 'component'),
     [sceneDocument],
   );
 
@@ -387,6 +406,35 @@ function SceneContent(props: SceneContentProps): ReactNode {
         );
       })}
 
+      {/* Componentes inteligentes (4C-D): piezas analíticas del
+          motor paramétrico; fantasma mientras no haya derivación o
+          en error (el objeto NUNCA desaparece sin explicación). */}
+      {components.map((object) => {
+        if (object.kind !== 'component') return null;
+        const state = componentStates.get(object.id);
+        const selected = selection !== null && selection.anchor === object.id;
+        if (state !== undefined && state.status === 'ready' && state.parts !== null) {
+          return (
+            <ComponentPartsView
+              key={object.id}
+              objectId={object.id}
+              positionMm={object.transform.positionMm}
+              parts={state.parts}
+              selected={selected}
+              downPxRef={downPxRef}
+              onPickObject={onPickObject}
+            />
+          );
+        }
+        return (
+          <GhostComponentView
+            key={object.id}
+            params={object.params}
+            positionMm={object.transform.positionMm}
+          />
+        );
+      })}
+
       <OrbitControls
         makeDefault
         enableDamping
@@ -473,6 +521,126 @@ function GhostSolidView({
       receiveShadow
     >
       <boxGeometry args={[bounds.widthM, heightM, bounds.depthM]} />
+      <meshStandardMaterial
+        color="#9aa4b2"
+        transparent
+        opacity={0.22}
+        flatShading
+      />
+    </mesh>
+  );
+}
+
+/**
+ * Componente inteligente (4C-D): grupo con UNA malla por pieza
+ * analítica (cajas y cilindros exactos del motor). CUALQUIER pieza
+ * selecciona el clóset COMPLETO (`onPickObject(objectId)`); si
+ * está seleccionado se resalta TODO el componente con el mismo
+ * tratamiento que los sólidos.
+ *
+ * Las geometrías las retiene `useComponentParts` (se recrean al
+ * cambiar params y se liberan al sustituir o desmontar).
+ */
+function ComponentPartsView({
+  objectId,
+  positionMm,
+  parts,
+  selected,
+  downPxRef,
+  onPickObject,
+}: {
+  objectId: string;
+  positionMm: MmPoint3;
+  parts: readonly ComponentPart[];
+  selected: boolean;
+  downPxRef: { current: PointerPx | null };
+  onPickObject: (objectId: string | null) => void;
+}): ReactNode {
+  const data = useComponentParts(objectId, parts);
+  if (data === null) return null;
+  return (
+    <group
+      position={[
+        mmToM(positionMm[0]),
+        mmToM(positionMm[1]),
+        mmToM(positionMm[2]),
+      ]}
+    >
+      {data.parts.map((part) => (
+        <mesh
+          key={part.partId}
+          geometry={part.geometry}
+          castShadow
+          receiveShadow
+          onClick={(event) => {
+            event.stopPropagation();
+            const down = downPxRef.current;
+            if (down === null) return;
+            if (
+              !isClick(
+                Math.hypot(
+                  event.nativeEvent.clientX - down.x,
+                  event.nativeEvent.clientY - down.y,
+                ),
+              )
+            ) {
+              return; // orbitada sobre el clóset: no cambia la selección
+            }
+            // Cualquier pieza → el componente COMPLETO (§4).
+            onPickObject(objectId);
+          }}
+        >
+          <meshStandardMaterial
+            color={selected ? '#9dbbe4' : part.color}
+            flatShading
+            emissive={selected ? '#2563eb' : '#000000'}
+            emissiveIntensity={selected ? 0.35 : 0}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/**
+ * Fantasma de componente mientras no hay piezas (pendiente o
+ * error de derivación): caja translúcida con las dimensiones
+ * EXTERNAS del clóset si sus params son legibles, o una caja
+ * neutra de marcador si el motor los rechazó (nunca inventa
+ * piezas: solo indica "aquí hay un objeto con un problema").
+ */
+function GhostComponentView({
+  params,
+  positionMm,
+}: {
+  params: SceneParams | undefined;
+  positionMm: MmPoint3;
+}): ReactNode {
+  const dims = useMemo(() => {
+    const config = parseWardrobeParams(params);
+    return {
+      widthMm: config?.dimensions.widthMm ?? 800,
+      heightMm: config?.dimensions.heightMm ?? 2000,
+      depthMm: config?.dimensions.depthMm ?? 400,
+    };
+  }, [params]);
+  return (
+    <mesh
+      position={[
+        mmToM(positionMm[0] + dims.widthMm / 2),
+        mmToM(positionMm[1] + dims.heightMm / 2),
+        mmToM(positionMm[2] + dims.depthMm / 2),
+      ]}
+      castShadow
+      receiveShadow
+    >
+      <boxGeometry
+        args={[
+          mmToM(dims.widthMm),
+          mmToM(dims.heightMm),
+          mmToM(dims.depthMm),
+        ]}
+      />
       <meshStandardMaterial
         color="#9aa4b2"
         transparent

@@ -21,6 +21,13 @@
  *   reintentar fallos del kernel, eliminar; 4C-C: renombrar con
  *   confirmación por Enter/blur — una edición = una entrada de
  *   historial).
+ * - **4C-D**: botón «Insertar clóset» (acción real, reversible),
+ *   chip de TIPO en cada fila de la lista (Sólido / Clóset: los dos
+ *   objetos son distinguibles de un vistazo) y panel contextual de
+ *   propiedades del clóset (dimensiones, módulos, puertas y panel
+ *   trasero) con errores de validación visibles. Solo se muestran
+ *   controles que aplican (p. ej. hojas/bisagra SOLO con puertas
+ *   activadas): ningún control deshabilitado sin explicación.
  *
  * Campos con confirmación (`CommitField`, 4C-C): el borrador vive
  * en el campo; se confirma en Enter, blur y en el evento nativo
@@ -35,6 +42,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { MODULE_KIND_LABELS } from '../../lib/config.js';
 import type { CameraView } from '../../lib/camera-views.js';
 import type { GeometryKernelStatus } from '../../lib/modeler/geometry-runtime.js';
 import type { ModelerTool } from '../../lib/modeler/drawing.js';
@@ -74,6 +82,13 @@ const STATUS_LABELS: Readonly<Record<ObjectGenerationStatus, string>> = {
   error: 'Error',
 };
 
+/** Opciones de tipo de módulo (etiquetas del configurador, sin duplicar). */
+const WARDROBE_MODULE_KINDS: readonly WardrobeModuleKind[] = [
+  'shelves',
+  'hanging',
+  'drawers',
+];
+
 /** Panel del croquis pendiente de extruir (campos en mm). */
 export interface PendingSketchPanelProps {
   readonly widthText: string;
@@ -89,6 +104,8 @@ export interface PendingSketchPanelProps {
 /** Fila de la lista de objetos. */
 export interface ObjectRowProps {
   readonly id: string;
+  /** Tipo visible: sólido libre vs componente inteligente (4C-D). */
+  readonly kind: 'solid' | 'component';
   readonly name: string;
   readonly dimsText: string;
   readonly status: ObjectGenerationStatus;
@@ -110,6 +127,63 @@ export interface SelectionPanelProps {
   readonly onHeightChange: (text: string) => void;
   readonly status: ObjectGenerationStatus;
   readonly errorMessage: string | null;
+  readonly onRetry: () => void;
+  readonly onDelete: () => void;
+}
+
+/** Tipo de módulo del clóset (estructural: `ModuleKind` del motor). */
+export type WardrobeModuleKind = 'shelves' | 'hanging' | 'drawers';
+
+/** Fila de controles de UN módulo del clóset (4C-D). */
+export interface WardrobeModuleRow {
+  readonly index: number;
+  readonly kind: WardrobeModuleKind;
+  /** Entrepaños en texto (solo `shelves`; `null` = no aplica). */
+  readonly shelvesText: string | null;
+  /** Cajones en texto (solo `drawers`; `null` = no aplica). */
+  readonly drawersText: string | null;
+  readonly onKindChange: (kind: WardrobeModuleKind) => void;
+  readonly onShelvesChange: (text: string) => void;
+  readonly onDrawersChange: (text: string) => void;
+}
+
+/** Campos editables de un clóset cuyos params SÍ son legibles. */
+export interface WardrobeParamsProps {
+  readonly widthText: string;
+  readonly heightText: string;
+  readonly depthText: string;
+  readonly onWidthChange: (text: string) => void;
+  readonly onHeightChange: (text: string) => void;
+  readonly onDepthChange: (text: string) => void;
+  readonly moduleCount: number;
+  readonly onModuleCountChange: (count: number) => void;
+  readonly modules: readonly WardrobeModuleRow[];
+  readonly doorsEnabled: boolean;
+  readonly onDoorsEnabledChange: (enabled: boolean) => void;
+  readonly doorLeaves: 1 | 2;
+  readonly onDoorLeavesChange: (leaves: 1 | 2) => void;
+  readonly doorHinge: 'left' | 'right';
+  readonly onDoorHingeChange: (side: 'left' | 'right') => void;
+  readonly backPanelEnabled: boolean;
+  readonly onBackPanelEnabledChange: (enabled: boolean) => void;
+}
+
+/**
+ * Panel contextual del clóset seleccionado (4C-D, D4). `params` es
+ * `null` cuando el motor rechaza los params de la instancia: solo
+ * se ofrecen nombre, estado y eliminar (nunca campos que no
+ * aplican).
+ */
+export interface WardrobePanelProps {
+  readonly name: string;
+  readonly nameText: string;
+  readonly onNameChange: (text: string) => void;
+  readonly params: WardrobeParamsProps | null;
+  readonly status: ObjectGenerationStatus;
+  /** Error de DERIVACIÓN del motor (estado del componente). */
+  readonly errorMessage: string | null;
+  /** Rechazo de la ÚLTIMA edición (validación): distinto de `errorMessage`. */
+  readonly editError: string | null;
   readonly onRetry: () => void;
   readonly onDelete: () => void;
 }
@@ -141,9 +215,12 @@ export interface ModelerShellProps {
   readonly history: HistoryControlsProps;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
+  /** Insertar un clóset paramétrico (4C-D): acción real y reversible. */
+  readonly onInsertWardrobe: () => void;
   readonly pendingSketch: PendingSketchPanelProps | null;
   readonly objects: readonly ObjectRowProps[];
   readonly selection: SelectionPanelProps | null;
+  readonly wardrobe: WardrobePanelProps | null;
   readonly children: ReactNode;
 }
 
@@ -321,9 +398,11 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
     history,
     onUndo,
     onRedo,
+    onInsertWardrobe,
     pendingSketch,
     objects,
     selection,
+    wardrobe,
     children,
   } = props;
 
@@ -462,6 +541,23 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             <p className="modeler-hint">{TOOL_HINTS[tool]}</p>
           </section>
 
+          <section aria-labelledby="modeler-insert-heading" data-modeler-insert="">
+            <h2 id="modeler-insert-heading">Añadir</h2>
+            <div className="modeler-view-buttons">
+              <button
+                type="button"
+                onClick={onInsertWardrobe}
+                data-modeler-insert-wardrobe=""
+              >
+                Insertar clóset
+              </button>
+            </div>
+            <p className="modeler-hint">
+              Clóset paramétrico listo para editar; se inserta seleccionado y
+              se deshace/rehace como cualquier otro cambio.
+            </p>
+          </section>
+
           {pendingSketch !== null && (
             <section
               aria-labelledby="modeler-pending-heading"
@@ -505,7 +601,7 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             <h2 id="modeler-objects-heading">Objetos</h2>
             {objects.length === 0 ? (
               <p className="modeler-hint">
-                Sin objetos todavía. Dibuja un rectángulo y extrúyelo.
+                Sin objetos todavía. Dibuja un rectángulo o inserta un clóset.
               </p>
             ) : (
               <ul className="modeler-object-list">
@@ -516,7 +612,14 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
                       aria-pressed={object.selected}
                       onClick={object.onSelect}
                       data-modeler-object={object.id}
+                      data-object-kind={object.kind}
                     >
+                      <span
+                        className="modeler-object-kind"
+                        data-modeler-object-kind={object.kind}
+                      >
+                        {object.kind === 'component' ? 'Clóset' : 'Sólido'}
+                      </span>
                       <span>{object.name}</span>
                       <span className="modeler-object-dims">{object.dimsText}</span>
                       <span
@@ -534,12 +637,12 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
 
           <section aria-labelledby="modeler-props-heading" data-modeler-props="">
             <h2 id="modeler-props-heading">Propiedades</h2>
-            {selection === null ? (
+            {selection === null && wardrobe === null ? (
               <p className="modeler-hint">
-                Selecciona un sólido (herramienta Seleccionar) para ver y editar
-                sus cotas.
+                Selecciona un sólido o un clóset (herramienta Seleccionar) para
+                ver y editar sus propiedades.
               </p>
-            ) : (
+            ) : selection !== null ? (
               <>
                 <p className="modeler-selection-name">{selection.name}</p>
                 <CommitField
@@ -598,7 +701,204 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
                   </button>
                 </div>
               </>
-            )}
+            ) : wardrobe !== null ? (
+              <>
+                <p className="modeler-selection-name">{wardrobe.name}</p>
+                <CommitField
+                  label="Nombre"
+                  value={wardrobe.nameText}
+                  onCommit={wardrobe.onNameChange}
+                  testAttr="wardrobe-name"
+                  numeric={false}
+                />
+                {wardrobe.params !== null && (
+                  <>
+                    <CommitField
+                      label="Ancho (mm)"
+                      value={wardrobe.params.widthText}
+                      onCommit={wardrobe.params.onWidthChange}
+                      testAttr="wardrobe-width"
+                    />
+                    <CommitField
+                      label="Alto (mm)"
+                      value={wardrobe.params.heightText}
+                      onCommit={wardrobe.params.onHeightChange}
+                      testAttr="wardrobe-height"
+                    />
+                    <CommitField
+                      label="Profundidad (mm)"
+                      value={wardrobe.params.depthText}
+                      onCommit={wardrobe.params.onDepthChange}
+                      testAttr="wardrobe-depth"
+                    />
+
+                    <h3 className="modeler-subheading">Módulos</h3>
+                    <label className="modeler-field">
+                      <span>Número de módulos</span>
+                      <select
+                        value={wardrobe.params.moduleCount}
+                        onChange={(event) =>
+                          wardrobe.params?.onModuleCountChange(
+                            Number(event.target.value),
+                          )
+                        }
+                        data-modeler-module-count=""
+                      >
+                        {[1, 2, 3, 4].map((count) => (
+                          <option key={count} value={count}>
+                            {count}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <ul className="modeler-module-list">
+                      {wardrobe.params.modules.map((moduleRow) => (
+                        <li key={moduleRow.index}>
+                          <label className="modeler-field">
+                            <span>{`Módulo ${moduleRow.index + 1}`}</span>
+                            <select
+                              value={moduleRow.kind}
+                              onChange={(event) =>
+                                moduleRow.onKindChange(
+                                  event.target.value as WardrobeModuleKind,
+                                )
+                              }
+                              data-modeler-module-kind={moduleRow.index}
+                            >
+                              {WARDROBE_MODULE_KINDS.map((kind) => (
+                                <option key={kind} value={kind}>
+                                  {MODULE_KIND_LABELS[kind]}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {moduleRow.kind === 'shelves' &&
+                            moduleRow.shelvesText !== null && (
+                              <CommitField
+                                label="Entrepaños"
+                                value={moduleRow.shelvesText}
+                                onCommit={moduleRow.onShelvesChange}
+                                testAttr={`module-shelves-${moduleRow.index}`}
+                              />
+                            )}
+                          {moduleRow.kind === 'drawers' &&
+                            moduleRow.drawersText !== null && (
+                              <CommitField
+                                label="Cajones"
+                                value={moduleRow.drawersText}
+                                onCommit={moduleRow.onDrawersChange}
+                                testAttr={`module-drawers-${moduleRow.index}`}
+                              />
+                            )}
+                        </li>
+                      ))}
+                    </ul>
+
+                    <h3 className="modeler-subheading">Puertas</h3>
+                    <label className="modeler-check">
+                      <input
+                        type="checkbox"
+                        checked={wardrobe.params.doorsEnabled}
+                        onChange={(event) =>
+                          wardrobe.params?.onDoorsEnabledChange(
+                            event.target.checked,
+                          )
+                        }
+                        data-modeler-doors-enabled=""
+                      />
+                      <span>Con puertas</span>
+                    </label>
+                    {wardrobe.params.doorsEnabled && (
+                      <>
+                        <label className="modeler-field">
+                          <span>Hojas por módulo</span>
+                          <select
+                            value={wardrobe.params.doorLeaves}
+                            onChange={(event) =>
+                              wardrobe.params?.onDoorLeavesChange(
+                                Number(event.target.value) as 1 | 2,
+                              )
+                            }
+                            data-modeler-door-leaves=""
+                          >
+                            <option value={1}>1</option>
+                            <option value={2}>2</option>
+                          </select>
+                        </label>
+                        <label className="modeler-field">
+                          <span>Bisagra (hoja única)</span>
+                          <select
+                            value={wardrobe.params.doorHinge}
+                            onChange={(event) =>
+                              wardrobe.params?.onDoorHingeChange(
+                                event.target.value as 'left' | 'right',
+                              )
+                            }
+                            data-modeler-door-hinge=""
+                          >
+                            <option value="left">Izquierda</option>
+                            <option value="right">Derecha</option>
+                          </select>
+                        </label>
+                      </>
+                    )}
+
+                    <h3 className="modeler-subheading">Estructura</h3>
+                    <label className="modeler-check">
+                      <input
+                        type="checkbox"
+                        checked={wardrobe.params.backPanelEnabled}
+                        onChange={(event) =>
+                          wardrobe.params?.onBackPanelEnabledChange(
+                            event.target.checked,
+                          )
+                        }
+                        data-modeler-back-panel=""
+                      />
+                      <span>Panel trasero</span>
+                    </label>
+                  </>
+                )}
+                <p
+                  className="modeler-hint"
+                  data-modeler-selection-status=""
+                  data-status={wardrobe.status}
+                >
+                  Generación: {STATUS_LABELS[wardrobe.status]}
+                </p>
+                {wardrobe.errorMessage !== null && (
+                  <p className="modeler-error" data-modeler-selection-error="">
+                    {wardrobe.errorMessage}
+                  </p>
+                )}
+                {wardrobe.editError !== null && (
+                  <p
+                    className="modeler-error"
+                    data-modeler-wardrobe-edit-error=""
+                  >
+                    {wardrobe.editError}
+                  </p>
+                )}
+                <div className="modeler-view-buttons">
+                  {wardrobe.status === 'error' && (
+                    <button
+                      type="button"
+                      onClick={wardrobe.onRetry}
+                      data-modeler-retry=""
+                    >
+                      Reintentar
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={wardrobe.onDelete}
+                    data-modeler-delete=""
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </>
+            ) : null}
           </section>
 
           <section aria-labelledby="modeler-doc-heading">
