@@ -38,6 +38,7 @@ import {
   setSketchDimension,
   sketchDimensionMm,
   type Command,
+  type MmPoint3,
   type SceneDocument,
   type SceneParams,
   type SelectionState,
@@ -53,6 +54,7 @@ import {
   ModelerShell,
   type ObjectRowProps,
   type PendingSketchPanelProps,
+  type PositionPanelProps,
   type SelectionPanelProps,
   type WardrobePanelProps,
 } from './ModelerShell.js';
@@ -92,6 +94,13 @@ import {
   nextComponentId,
   nextSolidId,
 } from '../../lib/modeler/document-actions.js';
+import {
+  buildObjectMoveCommand,
+  getObjectPositionMm,
+  offsetPositionMm,
+  parsePositionMm,
+  type MoveDraft,
+} from '../../lib/modeler/transform.js';
 import {
   WARDROBE_COMPONENT_TYPE,
   parseWardrobeParams,
@@ -189,6 +198,16 @@ export function ModelerApp(): ReactNode {
    */
   const selectionStashRef = useRef<SelectionState | null>(null);
 
+  /**
+   * WAVE-01 BLOQUE 2 — distribución espacial: borrador de arrastre
+   * (previsualización SIN mutar el documento; el commit genera UNA
+   * entrada de historial), snap del arrastre a la rejilla del
+   * documento y rechazo visible de la ÚLTIMA edición de posición.
+   */
+  const [moveDraft, setMoveDraft] = useState<MoveDraft | null>(null);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [positionError, setPositionError] = useState<string | null>(null);
+
   const geometry = useModelerGeometry();
   const sceneGeometry = useSceneGeometry(
     document,
@@ -230,6 +249,41 @@ export function ModelerApp(): ReactNode {
     };
   }, [document, selection]);
 
+  // -------------------------------------------------------------------------
+  // WAVE-01 BLOQUE 2 — posición autoritativa del objeto seleccionado:
+  // clóset → `transform.positionMm`; sólido → esquina mínima del
+  // croquis (la malla, el picking y el kernel derivan del croquis).
+  // El arrastre solo se ofrece con geometría DERIVADA lista (la
+  // previsualización desplaza la malla/piezas reales).
+  // -------------------------------------------------------------------------
+
+  const selectedObjectId = selection?.anchor ?? null;
+
+  const selectedPositionMm = useMemo(
+    () =>
+      selectedObjectId === null
+        ? null
+        : getObjectPositionMm(document, selectedObjectId),
+    [document, selectedObjectId],
+  );
+
+  const selectedDraggable = useMemo(() => {
+    if (selectedObjectId === null) return false;
+    const object = document.objects.find(
+      (entry) => entry.id === selectedObjectId,
+    );
+    if (object === undefined) return false;
+    if (object.kind === 'solid') {
+      return sceneGeometry.states.get(object.id)?.status === 'ready';
+    }
+    return sceneGeometry.componentStates.get(object.id)?.status === 'ready';
+  }, [
+    document,
+    selectedObjectId,
+    sceneGeometry.states,
+    sceneGeometry.componentStates,
+  ]);
+
   // C4 — Selección SIEMPRE coherente con el documento vigente: una
   // referencia a un objeto inexistente se anula (eliminación o
   // redo), y el undo de una eliminación restaura la selección
@@ -258,15 +312,21 @@ export function ModelerApp(): ReactNode {
   }, [document, selection]);
 
   // El error de edición de clóset no sobrevive a un cambio de
-  // selección (el panel nuevo no tiene por qué heredarlo).
+  // selección (el panel nuevo no tiene por qué heredarlo); lo
+  // mismo aplica al error de posición y al borrador de arrastre
+  // (WAVE-01): un arrastre nunca cruza selecciones.
   useEffect(() => {
     setWardrobeEditError(null);
+    setPositionError(null);
+    setMoveDraft(null);
   }, [selection]);
 
-  // Escape cancela el croquis pendiente (operación incompleta).
+  // Escape cancela el arrastre activo (WAVE-01: SIN commit) o el
+  // croquis pendiente (operación incompleta).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return;
+      setMoveDraft((current) => (current === null ? current : null));
       setPendingSketch((current) => (current === null ? current : null));
     };
     window.addEventListener('keydown', onKeyDown);
@@ -488,6 +548,91 @@ export function ModelerApp(): ReactNode {
     if (selectedObject === null) return;
     handleDeleteObject(selectedObject.id);
   }, [selectedObject, handleDeleteObject]);
+
+  // -------------------------------------------------------------------------
+  // WAVE-01 BLOQUE 2 — mover objetos (UNA entrada de historial por
+  // gesto/confirmación; el error de validación es visible y deja
+  // documento e historial intactos).
+  // -------------------------------------------------------------------------
+
+  /** Commit de posición para cualquier objeto (sólido o clóset). */
+  const applyObjectPosition = useCallback(
+    (objectId: string, positionMm: MmPoint3) => {
+      let change: ReturnType<ModelerHistory['dispatch']>;
+      try {
+        change = runDispatch(
+          buildObjectMoveCommand(document, objectId, positionMm),
+        );
+      } catch {
+        setPositionError('Posición no válida: mm enteros con signo.');
+        return;
+      }
+      if (change === null) {
+        // No-op (misma posición) o conflicto de precondición.
+        setPositionError(null);
+        return;
+      }
+      setPositionError(null);
+      const name =
+        document.objects.find((entry) => entry.id === objectId)?.name ??
+        objectId;
+      setHistoryMessage(`Movido: ${name}`);
+    },
+    [document, runDispatch],
+  );
+
+  /** Campos X/Z: texto → entero con signo → UN comando. */
+  const handlePositionField = useCallback(
+    (axis: 'x' | 'z', text: string) => {
+      const value = parsePositionMm(text);
+      if (
+        value === null ||
+        selectedPositionMm === null ||
+        selectedObjectId === null
+      ) {
+        setPositionError('Posición: entero en mm con signo (p. ej. -250).');
+        return;
+      }
+      const target: MmPoint3 =
+        axis === 'x'
+          ? [value, selectedPositionMm[1], selectedPositionMm[2]]
+          : [selectedPositionMm[0], selectedPositionMm[1], value];
+      applyObjectPosition(selectedObjectId, target);
+    },
+    [selectedPositionMm, selectedObjectId, applyObjectPosition],
+  );
+
+  /** Flechas de ajuste: UN desplazamiento por clic (mm enteros). */
+  const handleNudge = useCallback(
+    (dxMm: number, dzMm: number) => {
+      if (selectedPositionMm === null || selectedObjectId === null) return;
+      applyObjectPosition(
+        selectedObjectId,
+        offsetPositionMm(selectedPositionMm, dxMm, dzMm),
+      );
+    },
+    [selectedPositionMm, selectedObjectId, applyObjectPosition],
+  );
+
+  /** Borrador de arrastre (desde la escena): sin mutar documento. */
+  const handleMoveDraftChange = useCallback(
+    (draft: MoveDraft | null) => {
+      setMoveDraft((current) => {
+        if (draft === null) return current === null ? current : null;
+        if (
+          current !== null &&
+          current.objectId === draft.objectId &&
+          current.positionMm[0] === draft.positionMm[0] &&
+          current.positionMm[1] === draft.positionMm[1] &&
+          current.positionMm[2] === draft.positionMm[2]
+        ) {
+          return current;
+        }
+        return draft;
+      });
+    },
+    [],
+  );
 
   // -------------------------------------------------------------------------
   // Edición paramétrica de clósets (D4): valida → construye params →
@@ -812,6 +957,25 @@ export function ModelerApp(): ReactNode {
           },
         };
 
+  // WAVE-01: panel de posición (común a sólidos y clósets) con
+  // propiedades derivadas del documento (undo/redo lo actualizan).
+  const positionPanel: PositionPanelProps | null =
+    selectedObjectId === null || selectedPositionMm === null
+      ? null
+      : {
+          xText: String(selectedPositionMm[0]),
+          zText: String(selectedPositionMm[2]),
+          onXChange: (text) => handlePositionField('x', text),
+          onZChange: (text) => handlePositionField('z', text),
+          onNudge: handleNudge,
+          nudgeStepMm: document.gridStepMm,
+          snapEnabled,
+          onSnapChange: setSnapEnabled,
+          snapStepMm: document.gridStepMm,
+          errorMessage: positionError,
+          draggable: selectedDraggable,
+        };
+
   // Depuración para las verificaciones visuales (patrón del
   // configurador con `__wardrobeConfigDebug`).
   useEffect(() => {
@@ -875,11 +1039,31 @@ export function ModelerApp(): ReactNode {
         future: history.futureLength,
         message: historyMessage,
       }),
+      /** WAVE-01: estado de distribución espacial para verificación visual. */
+      getTransformState: () => ({
+        moveDraft,
+        snapEnabled,
+        positionError,
+        selectedPositionMm,
+        selectedDraggable,
+      }),
     };
     return () => {
       delete target.__modeler;
     };
-  }, [document, tool, selection, sceneGeometry, history, historyMessage]);
+  }, [
+    document,
+    tool,
+    selection,
+    sceneGeometry,
+    history,
+    historyMessage,
+    moveDraft,
+    snapEnabled,
+    positionError,
+    selectedPositionMm,
+    selectedDraggable,
+  ]);
 
   return (
     <ModelerShell
@@ -908,6 +1092,7 @@ export function ModelerApp(): ReactNode {
       objects={objectRows}
       selection={selectionPanel}
       wardrobe={wardrobePanel}
+      position={positionPanel}
     >
       <ModelerScene
         viewRequest={camera.request}
@@ -920,6 +1105,10 @@ export function ModelerApp(): ReactNode {
         pendingSketch={pendingSketch}
         onCreateSketch={handleCreateSketch}
         onPickObject={handlePickObject}
+        moveDraft={moveDraft}
+        snapGridStepMm={snapEnabled ? document.gridStepMm : null}
+        onMoveDraftChange={handleMoveDraftChange}
+        onObjectMove={applyObjectPosition}
       />
     </ModelerShell>
   );

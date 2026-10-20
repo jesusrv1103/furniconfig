@@ -474,6 +474,58 @@
   outline-offset: 1px;
 }
 
+/* --- WAVE-01: posición en el suelo (X/Z) ----------------- */
+
+.modeler-position {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding-bottom: var(--space-3, 12px);
+  margin-bottom: var(--space-3, 12px);
+  border-bottom: 1px solid var(--border, #d8dce3);
+}
+
+.modeler-position h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modeler-position-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-position-nudge {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-position-nudge button {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: var(--radius-sm, 6px);
+  background: #ffffff;
+  color: var(--text, #1f2430);
+  cursor: pointer;
+}
+
+.modeler-position-nudge button:hover {
+  border-color: #9aa0ab;
+}
+
+.modeler-position-snap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 /* --- Estado de error (imposible, pero honesto) ----------- */
 
 .modeler-root--error {

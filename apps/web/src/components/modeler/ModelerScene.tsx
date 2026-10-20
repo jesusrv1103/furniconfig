@@ -23,10 +23,25 @@
  *   generación está pendiente/fallida; selección resaltada con
  *   emisivo; `dispose()` de la BufferGeometry al sustituirla.
  * - **Escape** cancela el gesto en curso (estado vacío).
+ *
+ * WAVE-01 BLOQUE 2 — **arrastre de objetos en el suelo** (herramienta
+ * `select`): pulsar un objeto YA SELECCIONADO y arrastrarlo lo
+ * desplaza sobre el plano Y=0 con previsualización estable (offset
+ * de render SIN mutar el documento); el soltar confirma UNA UNICA
+ * entrada de historial vía `onObjectMove` y Escape cancela el
+ * borrador. La órbita se deshabilita durante el arrastre (el
+ * documento y el histórico no se tocan hasta el commit).
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Grid, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -47,7 +62,7 @@ import type {
 } from '../../lib/modeler/scene-geometry-coordinator.js';
 import { parseWardrobeParams } from '../../lib/modeler/components/wardrobe.js';
 import { ModelerCameraRig } from './ModelerCameraRig.js';
-import { mmToM } from '../../lib/units.js';
+import { mmToM, mToMm } from '../../lib/units.js';
 import {
   cancelDrawGesture,
   createDrawGesture,
@@ -59,12 +74,20 @@ import {
   type DrawGesture,
   type ModelerTool,
 } from '../../lib/modeler/drawing.js';
+import {
+  getObjectPositionMm,
+  snapPositionMm,
+  type MoveDraft,
+} from '../../lib/modeler/transform.js';
 import { type SolidMeshRenderData } from '../../lib/modeler/mesh-to-renderable.js';
 import { useSolidGeometry } from './use-solid-geometry.js';
 import { useComponentParts } from './use-component-parts.js';
 
 /** Tamaño del plano capturador de clics (m; muy superior al límite de coordenadas). */
 const INTERACTION_PLANE_M = 400;
+
+/** Plano Y=0 del documento (m) para la intersección del arrastre. */
+const GROUND_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 /** Caja de referencia del espacio de trabajo (m), para encuadre. */
 const WORKSPACE_BOX: Aabb = {
@@ -90,6 +113,17 @@ export interface ModelerSceneProps {
   readonly pendingSketch: Sketch2D | null;
   readonly onCreateSketch: (sketch: Sketch2D) => void;
   readonly onPickObject: (objectId: string | null) => void;
+  /**
+   * WAVE-01 BLOQUE 2 — borrador de arrastre (posición propuesta, SIN
+   * mutar el documento). `null` = sin arrastre activo.
+   */
+  readonly moveDraft: MoveDraft | null;
+  /** Paso de snap del arrastre (mm enteros) o `null` = sin snap. */
+  readonly snapGridStepMm: number | null;
+  /** Actualiza/limpia el borrador (la escena lo usa como previsualización). */
+  readonly onMoveDraftChange: (draft: MoveDraft | null) => void;
+  /** Commit del gesto: UNA entrada de historial para la posición final. */
+  readonly onObjectMove: (objectId: string, positionMm: MmPoint3) => void;
 }
 
 interface PointerPx {
@@ -185,6 +219,10 @@ function SceneContent(props: SceneContentProps): ReactNode {
     pendingSketch,
     onCreateSketch,
     onPickObject,
+    moveDraft,
+    snapGridStepMm,
+    onMoveDraftChange,
+    onObjectMove,
     gestureMirror,
     downPxRef,
     onGestureChange,
@@ -255,6 +293,171 @@ function SceneContent(props: SceneContentProps): ReactNode {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [gestureMirror, onGestureChange]);
+
+  // -------------------------------------------------------------------------
+  // WAVE-01 BLOQUE 2 — arrastre de objetos en el suelo (tool `select`)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Estado del arrastre activo (espejo síncrono del borrador del
+   * App: el puntero se mueve más rápido que los renders de React).
+   */
+  const dragStateRef = useRef<{
+    objectId: string;
+    originMm: MmPoint3;
+    grabOffsetMmX: number;
+    grabOffsetMmZ: number;
+    pointerId: number;
+  } | null>(null);
+  const draftMirror = useRef<MoveDraft | null>(moveDraft);
+  draftMirror.current = moveDraft;
+  const draggingActive = moveDraft !== null;
+
+  /** Intersección rayo↔plano Y=0 → mm enteros del documento. */
+  const groundHitMm = useCallback(
+    (clientX: number, clientY: number): MmPoint3 | null => {
+      const rect = gl.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(ndc, camera);
+      const intersection = new THREE.Vector3();
+      const hit = raycaster.ray.intersectPlane(GROUND_PLANE, intersection);
+      if (hit === null || !Number.isFinite(intersection.x)) return null;
+      return [
+        Math.round(mToMm(intersection.x)),
+        0,
+        Math.round(mToMm(intersection.z)),
+      ];
+    },
+    [gl, camera],
+  );
+
+  /**
+   * Pulsación sobre un objeto YA SELECCIONADO (tool `select`):
+   * arranca el arrastre. Objetos no seleccionados siguen eligiendo
+   * (clic = seleccionar); la órbita queda para el fondo.
+   */
+  const handleObjectPointerDown = useCallback(
+    (event: ThreeEvent<PointerEvent>, objectId: string) => {
+      if (tool !== 'select') return;
+      if (event.nativeEvent.button !== 0) return;
+      if (selection === null || selection.anchor !== objectId) return;
+      const originMm = getObjectPositionMm(sceneDocument, objectId);
+      if (originMm === null) return;
+      const hitMm = groundHitMm(
+        event.nativeEvent.clientX,
+        event.nativeEvent.clientY,
+      );
+      if (hitMm === null) return;
+      event.stopPropagation();
+      try {
+        gl.domElement.setPointerCapture(event.nativeEvent.pointerId);
+      } catch {
+        // Sin captura disponible: el gesto sigue con el puntero
+        // sobre el lienzo.
+      }
+      dragStateRef.current = {
+        objectId,
+        originMm,
+        grabOffsetMmX: hitMm[0] - originMm[0],
+        grabOffsetMmZ: hitMm[2] - originMm[2],
+        pointerId: event.nativeEvent.pointerId,
+      };
+      onMoveDraftChange({ objectId, positionMm: originMm });
+    },
+    [tool, selection, sceneDocument, groundHitMm, gl, onMoveDraftChange],
+  );
+
+  /**
+   * Seguimiento del arrastre (listeners de ventana mientras esté
+   * activo): movimiento → borrador CON snap opcional; soltar → UNA
+   * llamada a `onObjectMove` (una entrada de historial); cancelar
+   * (pointercancel o Escape vía App) → borrador anulado SIN commit.
+   */
+  useEffect(() => {
+    if (!draggingActive) return;
+    const state = dragStateRef.current;
+    if (state === null) return;
+    const onPointerMove = (event: PointerEvent): void => {
+      const hitMm = groundHitMm(event.clientX, event.clientY);
+      if (hitMm === null) return;
+      let next: MmPoint3 = [
+        hitMm[0] - state.grabOffsetMmX,
+        0,
+        hitMm[2] - state.grabOffsetMmZ,
+      ];
+      if (snapGridStepMm !== null) {
+        next = snapPositionMm(next, snapGridStepMm);
+      }
+      const latest = draftMirror.current;
+      if (
+        latest !== null &&
+        latest.positionMm[0] === next[0] &&
+        latest.positionMm[1] === next[1] &&
+        latest.positionMm[2] === next[2]
+      ) {
+        return; // sin cambio de posición: no re-render
+      }
+      onMoveDraftChange({ objectId: state.objectId, positionMm: next });
+    };
+    const finish = (commit: boolean): void => {
+      const latest = draftMirror.current;
+      dragStateRef.current = null;
+      try {
+        gl.domElement.releasePointerCapture(state.pointerId);
+      } catch {
+        // La captura ya se liberó (o nunca existió).
+      }
+      if (
+        commit &&
+        latest !== null &&
+        (latest.positionMm[0] !== state.originMm[0] ||
+          latest.positionMm[2] !== state.originMm[2])
+      ) {
+        onObjectMove(state.objectId, latest.positionMm);
+      }
+      onMoveDraftChange(null);
+    };
+    const onPointerUp = (): void => finish(true);
+    const onPointerCancel = (): void => finish(false);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+      dragStateRef.current = null;
+    };
+  }, [
+    draggingActive,
+    snapGridStepMm,
+    groundHitMm,
+    gl,
+    onMoveDraftChange,
+    onObjectMove,
+  ]);
+
+  /**
+   * Offset de previsualización (m) del objeto con borrador activo:
+   * desplaza SOLO el render (el documento no cambia hasta el commit).
+   */
+  const draftOffsetM = useCallback(
+    (objectId: string): readonly [number, number, number] | null => {
+      if (moveDraft === null || moveDraft.objectId !== objectId) return null;
+      const base = getObjectPositionMm(sceneDocument, objectId);
+      if (base === null) return null;
+      return [
+        mmToM(moveDraft.positionMm[0] - base[0]),
+        mmToM(moveDraft.positionMm[1] - base[1]),
+        mmToM(moveDraft.positionMm[2] - base[2]),
+      ];
+    },
+    [moveDraft, sceneDocument],
+  );
 
   const solids = useMemo(
     () =>
@@ -380,58 +583,83 @@ function SceneContent(props: SceneContentProps): ReactNode {
         <PendingSketchOutline sketch={pendingSketch} />
       )}
 
-      {/* Sólidos: malla real o caja fantasma mientras se genera. */}
+      {/* Sólidos: malla real o caja fantasma mientras se genera.
+          WAVE-01: el grupo aplica el offset del borrador de arrastre
+          (previsualización) y captura la pulsación para arrastrar. */}
       {solids.map((object) => {
         if (object.kind !== 'solid' || object.geometry.source !== 'sketch') return null;
         const state = solidStates.get(object.id);
         const selected = selection !== null && selection.anchor === object.id;
+        const offsetM = draftOffsetM(object.id);
+        const dragProps = {
+          onPointerDown: (event: ThreeEvent<PointerEvent>) =>
+            handleObjectPointerDown(event, object.id),
+        };
         if (state !== undefined && state.status === 'ready' && state.mesh !== null) {
           return (
-            <SolidMeshView
+            <group
               key={object.id}
-              objectId={object.id}
-              mesh={state.mesh}
-              selected={selected}
-              downPxRef={downPxRef}
-              onPickObject={onPickObject}
-            />
+              position={offsetM ?? [0, 0, 0]}
+              {...dragProps}
+            >
+              <SolidMeshView
+                objectId={object.id}
+                mesh={state.mesh}
+                selected={selected}
+                downPxRef={downPxRef}
+                onPickObject={onPickObject}
+              />
+            </group>
           );
         }
         return (
-          <GhostSolidView
-            key={object.id}
-            sketch={object.geometry.sketch}
-            extrusionMm={object.geometry.extrusionMm}
-          />
+          <group key={object.id} position={offsetM ?? [0, 0, 0]} {...dragProps}>
+            <GhostSolidView
+              sketch={object.geometry.sketch}
+              extrusionMm={object.geometry.extrusionMm}
+            />
+          </group>
         );
       })}
 
       {/* Componentes inteligentes (4C-D): piezas analíticas del
           motor paramétrico; fantasma mientras no haya derivación o
-          en error (el objeto NUNCA desaparece sin explicación). */}
+          en error (el objeto NUNCA desaparece sin explicación).
+          WAVE-01: la posición renderizada sigue al borrador de
+          arrastre y el grupo captura la pulsación para arrastrar. */}
       {components.map((object) => {
         if (object.kind !== 'component') return null;
         const state = componentStates.get(object.id);
         const selected = selection !== null && selection.anchor === object.id;
+        const renderPositionMm: MmPoint3 =
+          moveDraft !== null && moveDraft.objectId === object.id
+            ? moveDraft.positionMm
+            : object.transform.positionMm;
+        const dragProps = {
+          onPointerDown: (event: ThreeEvent<PointerEvent>) =>
+            handleObjectPointerDown(event, object.id),
+        };
         if (state !== undefined && state.status === 'ready' && state.parts !== null) {
           return (
-            <ComponentPartsView
-              key={object.id}
-              objectId={object.id}
-              positionMm={object.transform.positionMm}
-              parts={state.parts}
-              selected={selected}
-              downPxRef={downPxRef}
-              onPickObject={onPickObject}
-            />
+            <group key={object.id} {...dragProps}>
+              <ComponentPartsView
+                objectId={object.id}
+                positionMm={renderPositionMm}
+                parts={state.parts}
+                selected={selected}
+                downPxRef={downPxRef}
+                onPickObject={onPickObject}
+              />
+            </group>
           );
         }
         return (
-          <GhostComponentView
-            key={object.id}
-            params={object.params}
-            positionMm={object.transform.positionMm}
-          />
+          <group key={object.id} {...dragProps}>
+            <GhostComponentView
+              params={object.params}
+              positionMm={renderPositionMm}
+            />
+          </group>
         );
       })}
 
@@ -441,6 +669,9 @@ function SceneContent(props: SceneContentProps): ReactNode {
         dampingFactor={0.08}
         minPolarAngle={0}
         maxPolarAngle={Math.PI / 2 - 0.02}
+        // WAVE-01: la órbita se detiene mientras dura un arrastre
+        // (vista previa estable; se rehabilita al soltar/Escape).
+        enabled={!draggingActive}
       />
       <ModelerCameraRig bounds={WORKSPACE_BOX} viewRequest={viewRequest} />
     </>

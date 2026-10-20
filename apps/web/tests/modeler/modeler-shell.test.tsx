@@ -15,7 +15,10 @@ import { describe, expect, it } from 'vitest';
 import { renderToString } from 'react-dom/server';
 
 import { ModelerShell } from '../../src/components/modeler/ModelerShell.js';
-import type { ModelerShellProps } from '../../src/components/modeler/ModelerShell.js';
+import type {
+  ModelerShellProps,
+  PositionPanelProps,
+} from '../../src/components/modeler/ModelerShell.js';
 
 function renderShell(
   overrides: Partial<ModelerShellProps> = {},
@@ -42,6 +45,7 @@ function renderShell(
     objects: [],
     selection: null,
     wardrobe: null,
+    position: null,
     children: <div data-testid="escena" />,
     ...overrides,
   };
@@ -566,5 +570,75 @@ describe('ModelerShell — 4C-D clósets', () => {
   it('sin selección ni clóset: el aviso menciona AMBOS objetos', () => {
     const html = renderShell();
     expect(html).toContain('Selecciona un sólido o un clóset');
+  });
+});
+
+describe('ModelerShell — WAVE-01 posición en el suelo', () => {
+  const basePosition: PositionPanelProps = {
+    xText: '500',
+    zText: '300',
+    onXChange: () => undefined,
+    onZChange: () => undefined,
+    onNudge: () => undefined,
+    nudgeStepMm: 100,
+    snapEnabled: true,
+    onSnapChange: () => undefined,
+    snapStepMm: 100,
+    errorMessage: null,
+    draggable: true,
+  };
+
+  it('sin panel de posición no existe la sección (sin reserva)', () => {
+    const html = renderShell();
+    expect(html).not.toContain('data-modeler-position');
+  });
+
+  it('campos X/Z, flechas por paso, snap y pista de arrastre', () => {
+    const html = renderShell({ position: basePosition });
+    expect(html).toContain('data-modeler-position');
+    expect(html).toContain('data-modeler-field="position-x"');
+    expect(html).toContain('data-modeler-field="position-z"');
+    expect(html).toContain('value="500"');
+    expect(html).toContain('value="300"');
+    for (const direction of ['-x', '+x', '-z', '+z']) {
+      expect(html).toContain(`data-modeler-nudge="${direction}"`);
+    }
+    expect(html).toContain('X −100');
+    expect(html).toContain('Z +100');
+    expect(html).toContain('data-modeler-snap');
+    expect(html).toContain('Arrastra el objeto sobre el suelo (snap 100 mm)');
+    expect(html).not.toContain('data-modeler-position-error');
+  });
+
+  it('snap desactivado → pista honesta sin snap', () => {
+    const html = renderShell({
+      position: { ...basePosition, snapEnabled: false },
+    });
+    expect(html).toContain('posiciones exactas');
+    expect(html).not.toContain('checked'); // checkbox sin marcar en SSR
+  });
+
+  it('objeto no arrastrable (generando) → pista explícita, sin fingir', () => {
+    const html = renderShell({
+      position: { ...basePosition, draggable: false },
+    });
+    expect(html).toContain('Generando geometría');
+    expect(html).not.toContain('Arrastra el objeto');
+  });
+
+  it('error de posición visible en su nodo propio', () => {
+    const html = renderShell({
+      position: {
+        ...basePosition,
+        errorMessage: 'Posición: entero en mm con signo (p. ej. -250).',
+      },
+    });
+    expect(html).toContain('data-modeler-position-error');
+    expect(html).toContain('entero en mm con signo');
+  });
+
+  it('sin botones deshabilitados (controles reales)', () => {
+    const html = renderShell({ position: basePosition });
+    expect(html).not.toContain('disabled');
   });
 });
