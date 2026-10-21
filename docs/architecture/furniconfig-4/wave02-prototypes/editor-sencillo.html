@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prototipo WAVE-02 · Editor sencillo (con modo avanzado)</title>
+<!--
+  Prototipo estático (vanilla JS, sin dependencias) — WAVE-02 BLOQUE C/D.
+  Editor en MODO SENCILLO: fondo neutro sin rejilla/ejes, mueble centrado y
+  encuadrado, tarjeta contextual con medidas en lenguaje de usuario, movimiento
+  visual rotulado, chip de cambios sin guardar y deshacer accesible.
+  El interruptor «Modo avanzado» revela la UI CAD actual completa
+  (mismo layout de hoy) — potencia disponible, no obligatoria.
+  Ver docs/architecture/furniconfig-4/WAVE02_UX_DESIGN.md §3-§6.
+-->
+<style>
+  :root {
+    --bg: #eef1f5;
+    --surface: #ffffff;
+    --ink: #0f172a;
+    --ink-soft: #55627a;
+    --line: #dfe5ee;
+    --brand: #2563eb;
+    --warn: #b45309;
+    --ok: #16a34a;
+    --topbar: #111c30;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* ============ Barra superior ============ */
+  header {
+    background: var(--topbar);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+  header .brand { font-weight: 700; }
+  header .doc-name {
+    display: flex; align-items: center; gap: 8px;
+    background: #1d2a44; border: 1px solid #2c3c5e;
+    padding: 4px 12px; border-radius: 8px;
+  }
+  header .doc-name b { font-weight: 600; }
+  .chip {
+    font-size: 12px;
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: #3b2f16;
+    color: #fcd34d;
+    border: 1px solid #7c5c14;
+  }
+  .chip.ok { background: #10331d; color: #86efac; border-color: #14532d; }
+  .spacer { flex: 1; }
+  .views { display: flex; gap: 6px; }
+  .views button {
+    background: transparent; color: #cdd8ee; border: 1px solid #33415c;
+    border-radius: 999px; padding: 4px 14px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .views button[aria-pressed="true"] { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .hist button {
+    background: transparent; color: #cdd8ee; border: 1px solid #33415c;
+    border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .hist button:disabled { opacity: 0.45; cursor: default; }
+  .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cdd8ee; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--brand); }
+  .save-btn {
+    background: var(--brand); color: #fff; border: 0; border-radius: 8px;
+    padding: 7px 16px; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  /* ============ Lienzo ============ */
+  .stage { flex: 1; display: flex; min-height: 0; }
+  .scene {
+    flex: 1;
+    position: relative;
+    background: var(--bg); /* MODO SENCILLO: neutro, SIN rejilla ni ejes */
+    overflow: hidden;
+  }
+  /* En modo avanzado reaparece la estética CAD actual */
+  body.advanced .scene {
+    background:
+      linear-gradient(transparent 97%, #d3dae6 97%) 0 0 / 40px 40px,
+      linear-gradient(90deg, transparent 97%, #d3dae6 97%) 0 0 / 40px 40px,
+      var(--bg);
+  }
+  .axis { display: none; position: absolute; inset: 0; pointer-events: none; }
+  body.advanced .axis { display: block; }
+  .axis .x { position: absolute; left: 12%; bottom: 24%; width: 46%; height: 2px;
+    background: repeating-linear-gradient(90deg, #f97316 0 8px, transparent 8px 14px); transform: rotate(-18deg); }
+  .axis .y { position: absolute; left: 50%; bottom: 40%; width: 2px; height: 34%; background: #84cc16; }
+  .axis .z { position: absolute; left: 30%; bottom: 36%; width: 40%; height: 2px;
+    background: #38bdf8; transform: rotate(-30deg); }
+  .axis .lbl { position: absolute; font-weight: 700; font-size: 18px; }
+  .axis .lx { color: #f97316; left: 10%; bottom: 16%; }
+  .axis .ly { color: #84cc16; left: 49%; top: 8%; }
+  .axis .lz { color: #38bdf8; right: 24%; bottom: 46%; }
+
+  /* Mueble centrado y encuadrado (auto-encuadre) */
+  .wardrobe {
+    position: absolute;
+    left: 50%; top: 46%;
+    transform: translate(-50%, -50%);
+    width: 210px; height: 260px;
+    filter: drop-shadow(0 18px 14px rgba(15, 23, 42, 0.18));
+    cursor: grab;
+  }
+  .wardrobe.selected { outline: 3px solid var(--brand); outline-offset: 6px; border-radius: 6px; }
+  .wardrobe svg { width: 100%; height: 100%; }
+  .move-hint {
+    position: absolute; left: 50%; top: calc(46% + 165px); transform: translateX(-50%);
+    background: #ffffffee; border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 12px; font-size: 12px; color: var(--ink-soft); white-space: nowrap;
+  }
+  /* Tarjeta contextual (edición principal sin interpretar ejes) */
+  .ctx {
+    position: absolute;
+    left: calc(50% + 150px); top: calc(46% - 130px);
+    width: 250px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+    padding: 14px;
+  }
+  .ctx h3 { margin: 0 0 10px; font-size: 15px; }
+  .ctx .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .ctx label { font-size: 11px; color: var(--ink-soft); display: block; margin-bottom: 3px; }
+  .ctx input {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 8px; font: inherit; font-size: 14px;
+  }
+  .ctx input:focus { outline: 2px solid var(--brand); border-color: transparent; }
+  .ctx .doors { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; font-size: 13px; }
+  .ctx .move-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .ctx .move-grid button {
+    border: 1px solid var(--line); background: #f8fafc; border-radius: 8px;
+    padding: 7px 4px; font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .ctx .move-grid button:hover { border-color: var(--brand); color: var(--brand-ink); }
+  .ctx .more { margin-top: 10px; font-size: 12.5px; color: var(--brand-ink); background: none; border: 0; cursor: pointer; padding: 0; }
+  /* Pista inferior */
+  .hintbar {
+    position: absolute; left: 16px; bottom: 14px;
+    background: #ffffffdd; border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 12px; font-size: 12.5px; color: var(--ink-soft);
+  }
+  body.advanced .hintbar {
+    left: 16px; right: 16px; white-space: normal;
+  }
+  /* ============ Sidebar (solo modo avanzado) ============ */
+  aside {
+    display: none;
+    width: 268px; background: var(--surface); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 14px;
+  }
+  body.advanced aside { display: block; }
+  aside h2 {
+    font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--ink-soft); margin: 16px 0 8px;
+  }
+  aside h2:first-child { margin-top: 0; }
+  aside .btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
+  aside button {
+    border: 1px solid var(--line); background: #fff; border-radius: 8px;
+    padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  aside button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  aside .obj {
+    border: 2px solid var(--brand); border-radius: 10px; padding: 8px 10px; font-size: 13px;
+  }
+  aside .obj .kind { font-size: 10px; letter-spacing: 0.6px; color: var(--ok); font-weight: 700; }
+  aside p.hint { font-size: 12px; color: var(--ink-soft); line-height: 1.45; margin: 8px 0 0; }
+  aside input[type="number"], aside select {
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 13px; width: 92px;
+  }
+  aside .fld { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; font-size: 13px; }
+  .prototipo { position: fixed; right: 12px; bottom: 8px; font-size: 11px; color: #94a3b8; z-index: 5; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">FurniConfig</span>
+  <span class="doc-name" title="Nombre editable del diseño"><b>Clóset nuevo</b> ✎</span>
+  <span class="chip" id="dirty-chip">Sin guardar todavía</span>
+  <span class="spacer"></span>
+  <nav class="views" aria-label="Vistas">
+    <button type="button" data-view="frontal">Frontal</button>
+    <button type="button" data-view="lateral">Lateral</button>
+    <button type="button" data-view="iso" aria-pressed="true">Isométrica</button>
+  </nav>
+  <span class="spacer"></span>
+  <span class="hist">
+    <button type="button" id="undo" title="Ctrl+Z">↩ Deshacer</button>
+    <button type="button" id="redo" title="Ctrl+Shift+Z" disabled>Rehacer ↪</button>
+  </span>
+  <label class="switch"><input type="checkbox" id="adv" /> Modo avanzado</label>
+  <button class="save-btn" type="button" id="save">Guardar</button>
+</header>
+
+<div class="stage">
+  <section class="scene" aria-label="Escena 3D">
+    <div class="axis" aria-hidden="true">
+      <span class="x"></span><span class="y"></span><span class="z"></span>
+      <span class="lbl lx">X</span><span class="lbl ly">Y</span><span class="lbl lz">Z</span>
+    </div>
+
+    <figure class="wardrobe selected" id="wardrobe" title="Clic para seleccionar; arrastra para mover">
+      <!-- Clóset dibujado (referencia visual; en la app real: WebGL) -->
+      <svg viewBox="0 0 210 260" aria-label="Clóset de 2 puertas">
+        <polygon points="30,40 150,10 190,30 70,60" fill="#c8d2e2"/>
+        <polygon points="30,40 70,60 70,240 30,220" fill="#93a3bd"/>
+        <rect x="70" y="60" width="120" height="180" fill="#e7ecf4" stroke="#aab7cc"/>
+        <line x1="130" y1="60" x2="130" y2="240" stroke="#aab7cc"/>
+        <circle cx="122" cy="150" r="3.4" fill="#64748b"/>
+        <circle cx="138" cy="150" r="3.4" fill="#64748b"/>
+        <line x1="78" y1="70" x2="122" y2="70" stroke="#c3cede" stroke-width="6"/>
+        <line x1="138" y1="70" x2="182" y2="70" stroke="#c3cede" stroke-width="6"/>
+      </svg>
+    </figure>
+    <p class="move-hint">✥ Arrastra el clóset para moverlo · snap 100 mm</p>
+
+    <div class="ctx" id="ctx" role="group" aria-label="Controles del objeto seleccionado">
+      <h3>Clóset nuevo</h3>
+      <div class="row">
+        <div><label for="w">Ancho (mm)</label><input id="w" type="number" value="2400" step="100" /></div>
+        <div><label for="h">Alto (mm)</label><input id="h" type="number" value="2200" step="50" /></div>
+        <div><label for="d">Fondo (mm)</label><input id="d" type="number" value="600" step="50" /></div>
+      </div>
+      <label class="doors"><input type="checkbox" checked /> Con puertas (2 hojas)</label>
+      <h3 style="margin-top:12px">Mover</h3>
+      <div class="move-grid">
+        <button type="button">← Izquierda</button>
+        <button type="button">Derecha →</button>
+        <button type="button">↑ Adelante</button>
+        <button type="button">Atrás ↓</button>
+      </div>
+      <button class="more" type="button" id="to-advanced">Más opciones (módulos, posición exacta)…</button>
+    </div>
+
+    <p class="hintbar" id="hintbar">
+      Arrastra para orbitar · rueda para acercar · <b>Ctrl+Z</b> deshace el último cambio.
+    </p>
+  </section>
+
+  <aside aria-label="Panel avanzado (modo actual de la aplicación)">
+    <h2>Vista</h2>
+    <div class="btnrow">
+      <button type="button">Isométrica</button><button type="button">Frontal</button>
+      <button type="button">Lateral</button><button type="button">Ajustar</button>
+    </div>
+    <h2>Herramientas</h2>
+    <div class="btnrow">
+      <button type="button" class="primary">Seleccionar</button><button type="button">Rectángulo</button>
+    </div>
+    <p class="hint">Clic para seleccionar; arrastrar para orbitar. Rueda: zoom.</p>
+    <h2>Insertar</h2>
+    <div class="btnrow"><button type="button">Insertar clóset</button></div>
+    <h2>Objetos</h2>
+    <div class="obj"><span class="kind">CLÓSET</span><br />Clóset 1<br />2400 × 600 × 2200 mm<br />Listo</div>
+    <h2>Posición en el suelo (mm)</h2>
+    <div class="fld"><span>X (mm)</span><input type="number" value="0" /></div>
+    <div class="fld"><span>Z (mm)</span><input type="number" value="0" /></div>
+    <div class="btnrow">
+      <button type="button">X −100</button><button type="button">X +100</button>
+      <button type="button">Z −100</button><button type="button">Z +100</button>
+    </div>
+    <p class="hint"><label><input type="checkbox" checked /> Ajustar arrastre a rejilla (100 mm)</label></p>
+    <h2>Proyectos</h2>
+    <div class="fld"><span>Diseño guardado</span>
+      <select><option>— escena sin diseño —</option></select>
+    </div>
+    <div class="btnrow">
+      <button type="button">Nuevo</button><button type="button">Guardar</button>
+      <button type="button">Guardar como</button><button type="button">Renombrar</button>
+      <button type="button">Duplicar</button><button type="button">Eliminar</button>
+    </div>
+    <p class="hint">Guardado local en tu navegador (namespace del modelador, separado del
+      configurador). Al abrir un diseño se regenera su geometría y se limpia el historial.</p>
+    <h2>Documento (técnico)</h2>
+    <div class="fld"><span>Motor geométrico</span><span>listo</span></div>
+  </aside>
+</div>
+
+<script>
+  // Prototipo: conmutación de modo y feedback mínimo (sin lógica real).
+  const body = document.body;
+  const adv = document.getElementById('adv');
+  const hintbar = document.getElementById('hintbar');
+  const simpleHint =
+    'Arrastra para orbitar · rueda para acercar · <b>Ctrl+Z</b> deshace el último cambio.';
+  const advancedHint =
+    'Rejilla: 100 mm (línea gruesa: 1 m) · snap 100 mm · Y arriba · X rojo, Y verde, Z azul · ' +
+    'Motor geométrico: listo.';
+  adv.addEventListener('change', () => {
+    body.classList.toggle('advanced', adv.checked);
+    hintbar.innerHTML = adv.checked ? advancedHint : simpleHint;
+    document.getElementById('ctx').style.display = adv.checked ? 'none' : 'block';
+    document.querySelector('.move-hint').style.display = adv.checked ? 'none' : 'block';
+  });
+  document.getElementById('to-advanced').addEventListener('click', () => {
+    adv.checked = true;
+    adv.dispatchEvent(new Event('change'));
+  });
+  document.querySelectorAll('.views button').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.views button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+      button.setAttribute('aria-pressed', 'true');
+    });
+  });
+  // Chip de estado: demostración de «cambios sin guardar» vs «guardado».
+  const chip = document.getElementById('dirty-chip');
+  function markDirty() {
+    chip.textContent = 'Cambios sin guardar';
+    chip.classList.remove('ok');
+    document.getElementById('undo').disabled = false;
+  }
+  document.querySelectorAll('.ctx input, .ctx button, .move-grid button').forEach((el) => {
+    el.addEventListener('input', markDirty);
+    el.addEventListener('click', markDirty);
+  });
+  document.getElementById('wardrobe').addEventListener('pointerdown', markDirty);
+  document.getElementById('save').addEventListener('click', () => {
+    chip.textContent = 'Guardado ✓';
+    chip.classList.add('ok');
+  });
+</script>
+<span class="prototipo">Prototipo estático · WAVE-02 · no es la interfaz real</span>
+</body>
+</html>
