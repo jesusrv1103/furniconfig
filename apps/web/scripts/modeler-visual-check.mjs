@@ -49,6 +49,16 @@
  *    posición conservada al eliminar/restaurar, medición de
  *    rendimiento con varios clósets y paridad de recursos al
  *    vaciar la escena.
+ * 11. WAVE-01 persistencia local (BLOQUE 3): «Guardar como» con
+ *    prompt (cancelación sin efectos), sobre v1 SIN mallas en el
+ *    namespace del modelador con la clave del configurador intacta,
+ *    recarga con listado persistente, apertura con documento ÍNTEGRO
+ *    igual al sobre + historial vacío + geometría regenerada,
+ *    editar tras recuperar con undo, CRUD completo (renombrar,
+ *    duplicar, nuevo con guardia de confirmación, eliminar con
+ *    confirmación), sobre corrupto visible/no borrable/finalmente
+ *    eliminable, vuelta desde el configurador con todo intacto y
+ *    paridad de recursos al final.
  *
  * Guarda evidencia reproducible (capturas + informe.json) en
  * /tmp/opencode/4c-a.
@@ -290,6 +300,27 @@ try {
   page.on('response', (response) => {
     if (response.status() >= 400) {
       notFound.push(`${response.status()} ${response.url()}`);
+    }
+  });
+
+  // Planificador de diálogos nativos (prompt/confirm) para la
+  // sección 11 (WAVE-01 BLOQUE 3): patrón de visual-check.mjs.
+  const dialogLog = [];
+  const dialogPlan = { promptValue: undefined, promptCancel: false, confirm: true };
+  page.on('dialog', async (dialog) => {
+    dialogLog.push(`${dialog.type()}: ${dialog.message()}`);
+    if (dialog.type() === 'prompt') {
+      if (dialogPlan.promptCancel) {
+        dialogPlan.promptCancel = false;
+        await dialog.dismiss();
+      } else {
+        await dialog.accept(dialogPlan.promptValue ?? '');
+      }
+    } else if (dialogPlan.confirm) {
+      await dialog.accept();
+    } else {
+      dialogPlan.confirm = true; // rearme: la cancelación es puntual
+      await dialog.dismiss();
     }
   });
 
@@ -1728,6 +1759,448 @@ try {
   );
   await shootStable(page, '24-wave01-final-vacio', canvasClip);
 
+  // --- WAVE-01 BLOQUE 3 — 11a…11m: persistencia local ------
+  // Guardar como (prompt) → recarga → apertura con igualdad de
+  // documento, geometría regenerada e historial vacío → editar tras
+  // recuperar → CRUD con diálogos (guardias de pérdida incluidas) →
+  // sobre corrupto visible y eliminable → namespace aislado del
+  // configurador → liberación de recursos.
+
+  // 11a — Escena de trabajo: sólido 1200×600×100 + clóset «Listo».
+  await page.getByRole('button', { name: 'Rectángulo' }).click();
+  const drawX11 = sceneBox.x + sceneBox.width * 0.35;
+  const drawY11 = sceneBox.y + sceneBox.height * 0.55;
+  await page.mouse.move(drawX11, drawY11);
+  await page.mouse.down();
+  await page.mouse.move(drawX11 + 240, drawY11 + 130, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForSelector('[data-modeler-pending]');
+  await page.locator('[data-modeler-field="pending-width"]').fill('1200');
+  await page.locator('[data-modeler-field="pending-depth"]').fill('600');
+  await page.locator('[data-modeler-field="pending-height"]').fill('100');
+  await page.locator('[data-modeler-extrude]').click();
+  await page
+    .waitForFunction(
+      () => window.__modeler.getStates()['solid-1']?.status === 'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  await page.locator('[data-modeler-insert-wardrobe]').click();
+  await page
+    .waitForFunction(
+      () =>
+        window.__modeler.getComponentStates()['component-1']?.status ===
+        'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  await page.getByRole('button', { name: 'Seleccionar' }).click();
+  const prep11 = await page.evaluate(() => ({
+    solid: window.__modeler.getStates()['solid-1']?.status,
+    comp: window.__modeler.getComponentStates()['component-1']?.status,
+    objectCount: window.__modeler.getDocument().objects.length,
+  }));
+  check(
+    '11a. escena de trabajo para persistencia: sólido + clóset «Listo» (2 objetos)',
+    prep11.solid === 'ready' &&
+      prep11.comp === 'ready' &&
+      prep11.objectCount === 2,
+    `solid=${prep11.solid} clóset=${prep11.comp} objetos=${prep11.objectCount}`,
+  );
+
+  // Cancelación de «Guardar como» (prompt descartado) → nada cambia.
+  const beforeCancel11 = await page.evaluate(() => ({
+    summaries: window.__modeler.getDesigns().summaries.length,
+    active: window.__modeler.getDesigns().activeDesign,
+    storageKeys: Object.keys(localStorage).filter((key) =>
+      key.startsWith('furniconfig.modeler.designs'),
+    ).length,
+  }));
+  dialogPlan.promptCancel = true;
+  await page.locator('[data-modeler-design-save-as]').click();
+  await page.waitForTimeout(200);
+  const afterCancel11 = await page.evaluate(() => ({
+    summaries: window.__modeler.getDesigns().summaries.length,
+    active: window.__modeler.getDesigns().activeDesign,
+    storageKeys: Object.keys(localStorage).filter((key) =>
+      key.startsWith('furniconfig.modeler.designs'),
+    ).length,
+  }));
+  check(
+    '11b. cancelar el prompt de «Guardar como» no crea ni altera nada',
+    JSON.stringify(afterCancel11) === JSON.stringify(beforeCancel11),
+    `antes=${beforeCancel11.summaries} tras=${afterCancel11.summaries}`,
+  );
+
+  // 11c — Guardar como con nombre: sobre v1 en el namespace del
+  // modelador; la clave del configurador NO cambia (aislamiento).
+  const configBefore11 = await page.evaluate(() =>
+    localStorage.getItem('furniconfig.designs'),
+  );
+  dialogPlan.promptValue = 'Wave01 Escena';
+  await page.locator('[data-modeler-design-save-as]').click();
+  await page.waitForFunction(
+    () => window.__modeler.getDesigns().activeDesign?.id === 'design-1',
+    undefined,
+    { timeout: 5000 },
+  ).catch(() => undefined);
+  const saved11 = await page.evaluate(() => {
+    const raw = localStorage.getItem('furniconfig.modeler.designs.design-1');
+    const envelope = raw === null ? null : JSON.parse(raw);
+    return {
+      designs: window.__modeler.getDesigns(),
+      envelope,
+      configValue: localStorage.getItem('furniconfig.designs'),
+      docName: window.__modeler.getDocument().name,
+    };
+  });
+  const envelopeKeys11 =
+    saved11.envelope === null
+      ? []
+      : Object.keys(saved11.envelope).sort();
+  check(
+    '11c. «Guardar como» crea design-1: sobre v1 con solo format/version/document, sin mallas, y NO toca la clave del configurador',
+    saved11.envelope !== null &&
+      saved11.envelope.format === 'furniconfig-scene' &&
+      envelopeKeys11.join(',') === 'document,format,version' &&
+      saved11.envelope.document.objects.length === 2 &&
+      saved11.envelope.document.objects.every(
+        (object) => object.mesh === undefined && object.parts === undefined,
+      ) &&
+      saved11.designs.activeDesign?.name === 'Wave01 Escena' &&
+      saved11.designs.dirty === false &&
+      saved11.designs.summaries.some(
+        (entry) => entry.id === 'design-1' && entry.name === 'Wave01 Escena',
+      ) &&
+      saved11.configValue === configBefore11,
+    `sobre=[${envelopeKeys11}] activo=${saved11.designs.activeDesign?.name ?? 'null'}`,
+  );
+  await shootStable(page, '25-wave01-guardado', canvasClip);
+
+  // 11d — Recarga: el diseño persiste; la escena vuelve a la semilla
+  // (sin restauración implícita del documento).
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  const reload11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    objectCount: window.__modeler.getDocument().objects.length,
+  }));
+  check(
+    '11d. tras recargar el listado persiste y la escena es la semilla (sin apertura implícita)',
+    reload11.designs.summaries.some((entry) => entry.id === 'design-1') &&
+      reload11.designs.activeDesign === null &&
+      reload11.objectCount === 0,
+    `listado=${reload11.designs.summaries.length} activo=${reload11.designs.activeDesign === null ? 'null' : 'sí'} objetos=${reload11.objectCount}`,
+  );
+
+  // 11e — Abrir design-1: documento IGUAL al sobre, historial vacío,
+  // geometría regenerada y mensaje «Abierto».
+  await page.locator('[data-modeler-design-select]').selectOption('design-1');
+  await page
+    .waitForFunction(
+      () => window.__modeler.getDesigns().activeDesign?.id === 'design-1',
+      undefined,
+      { timeout: 10_000 },
+    )
+    .catch(() => undefined);
+  await page
+    .waitForFunction(
+      () =>
+        window.__modeler.getStates()['solid-1']?.status === 'ready' &&
+        window.__modeler.getComponentStates()['component-1']?.status ===
+          'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  const opened11 = await page.evaluate(() => {
+    const envelope = JSON.parse(
+      localStorage.getItem('furniconfig.modeler.designs.design-1'),
+    );
+    return {
+      equal:
+        JSON.stringify(window.__modeler.getDocument()) ===
+        JSON.stringify(envelope.document),
+      history: window.__modeler.getHistory(),
+      states: window.__modeler.getStates(),
+      compStates: window.__modeler.getComponentStates(),
+      designs: window.__modeler.getDesigns(),
+      objectCount: window.__modeler.getDocument().objects.length,
+    };
+  });
+  check(
+    '11e. abrir: documento ÍNTEGRO igual al sobre, historial VACÍO, «Abierto» anunciado y geometría regenerada «Listo»',
+    opened11.equal &&
+      opened11.objectCount === 2 &&
+      opened11.history.past === 0 &&
+      opened11.history.canUndo === false &&
+      String(opened11.history.message ?? '').includes('Abierto') &&
+      opened11.states['solid-1']?.status === 'ready' &&
+      opened11.compStates['component-1']?.status === 'ready' &&
+      opened11.designs.dirty === false,
+    `igual=${opened11.equal} objetos=${opened11.objectCount} historial=${opened11.history.past} mensaje=${opened11.history.message ?? 'ninguno'}`,
+  );
+  await shootStable(page, '26-wave01-abierto', canvasClip);
+
+  // 11f — Editar tras recuperar: posición exacta con UNA entrada y
+  // undo exacto al valor recuperado (esquina mínima del croquis).
+  const posBeforeEdit11 = await page.evaluate(() => {
+    const solid = window.__modeler
+      .getDocument()
+      .objects.find((object) => object.id === 'solid-1');
+    return Math.min(...solid.geometry.sketch.pointsMm.map((point) => point[0]));
+  });
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.locator('[data-modeler-field="position-x"]').fill('700');
+  await page.waitForTimeout(200);
+  const edited11 = await page.evaluate(() => ({
+    history: window.__modeler.getHistory(),
+    x: Math.min(
+      ...window.__modeler
+        .getDocument()
+        .objects.find((object) => object.id === 'solid-1')
+        .geometry.sketch.pointsMm.map((point) => point[0]),
+    ),
+    dirty: window.__modeler.getDesigns().dirty,
+  }));
+  await page.locator('[data-modeler-undo]').click();
+  await page.waitForTimeout(200);
+  const undone11 = await page.evaluate(
+    () =>
+      Math.min(
+        ...window.__modeler
+          .getDocument()
+          .objects.find((object) => object.id === 'solid-1')
+          .geometry.sketch.pointsMm.map((point) => point[0]),
+      ),
+  );
+  check(
+    '11f. editar tras recuperar: posición exacta con una entrada, marca «sin guardar» y undo restaura el valor recuperado',
+    edited11.x === 700 &&
+      edited11.history.past === 1 &&
+      edited11.dirty === true &&
+      undone11 === posBeforeEdit11,
+    `x=${edited11.x} historial=${edited11.history.past} undo→${undone11} esperado=${posBeforeEdit11}`,
+  );
+
+  // 11g — Renombrar (prompt) del diseño con foco: storage y panel.
+  dialogPlan.promptValue = 'Wave01 Renombrado';
+  await page.locator('[data-modeler-design-rename]').click();
+  await page.waitForTimeout(250);
+  const renamed11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    storedName: JSON.parse(
+      localStorage.getItem('furniconfig.modeler.designs.design-1'),
+    ).document.name,
+  }));
+  check(
+    '11g. renombrar actualiza listado, diseño activo y el nombre dentro del sobre (id intacto)',
+    renamed11.designs.activeDesign?.name === 'Wave01 Renombrado' &&
+      renamed11.designs.summaries.find((entry) => entry.id === 'design-1')
+        ?.name === 'Wave01 Renombrado' &&
+      renamed11.storedName === 'Wave01 Renombrado',
+    `activo=${renamed11.designs.activeDesign?.name} sobre=${renamed11.storedName}`,
+  );
+
+  // 11h — Duplicar: design-2 con «(copia)» y contenido equivalente.
+  await page.locator('[data-modeler-design-duplicate]').click();
+  await page.waitForTimeout(250);
+  const duplicated11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    copy: JSON.parse(
+      localStorage.getItem('furniconfig.modeler.designs.design-2'),
+    ),
+  }));
+  check(
+    '11h. duplicar crea design-2 con «(copia)» y el documento equivalente; el original intacto',
+    duplicated11.designs.summaries.some(
+      (entry) =>
+        entry.id === 'design-2' &&
+        entry.name === 'Wave01 Renombrado (copia)',
+    ) &&
+      duplicated11.copy.document.objects.length === 2 &&
+      duplicated11.designs.activeDesign?.id === 'design-1',
+    `listado=${duplicated11.designs.summaries.map((entry) => entry.id).join('+')}`,
+  );
+
+  // 11i — Guardia de «Nuevo»: primero la escena se hace SUCIA (flecha
+  // de posición) para que la guardia exista de verdad; cancelar el
+  // confirm conserva todo; aceptar instala la semilla.
+  await page.locator('[data-modeler-nudge="+x"]').click();
+  await page.waitForTimeout(150);
+  const dirtyBeforeNew11 = await page.evaluate(
+    () => window.__modeler.getDesigns().dirty,
+  );
+  dialogPlan.confirm = false;
+  await page.locator('[data-modeler-design-new]').click();
+  await page.waitForTimeout(200);
+  const cancelNew11 = await page.evaluate(() => ({
+    active: window.__modeler.getDesigns().activeDesign?.id ?? null,
+    objectCount: window.__modeler.getDocument().objects.length,
+  }));
+  await page.locator('[data-modeler-design-new]').click(); // confirm aceptado
+  await page.waitForTimeout(250);
+  const newAfter11 = await page.evaluate(() => ({
+    active: window.__modeler.getDesigns().activeDesign,
+    objectCount: window.__modeler.getDocument().objects.length,
+    message: window.__modeler.getDesigns().message,
+    history: window.__modeler.getHistory(),
+  }));
+  check(
+    '11i. «Nuevo» con guardia real (escena sucia): cancelar conserva el diseño abierto; aceptar instala la semilla con historial vacío',
+    dirtyBeforeNew11 === true &&
+      cancelNew11.active === 'design-1' &&
+      cancelNew11.objectCount === 2 &&
+      newAfter11.active === null &&
+      newAfter11.objectCount === 0 &&
+      newAfter11.history.past === 0 &&
+      String(newAfter11.message ?? '').includes('Nueva escena'),
+    `sucia=${dirtyBeforeNew11} cancelado=${cancelNew11.active} aceptado=${newAfter11.active === null ? 'semilla' : 'no'}`,
+  );
+
+  // 11j — Abrir la copia → sus 2 objetos regeneran «Listo».
+  await page.locator('[data-modeler-design-select]').selectOption('design-2');
+  await page
+    .waitForFunction(
+      () =>
+        window.__modeler.getDesigns().activeDesign?.id === 'design-2' &&
+        window.__modeler.getStates()['solid-1']?.status === 'ready' &&
+        window.__modeler.getComponentStates()['component-1']?.status ===
+          'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  const copyOpened11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    objectCount: window.__modeler.getDocument().objects.length,
+    states: window.__modeler.getStates(),
+    compStates: window.__modeler.getComponentStates(),
+  }));
+  check(
+    '11j. abrir la copia: 2 objetos con geometría regenerada «Listo»',
+    copyOpened11.designs.activeDesign?.id === 'design-2' &&
+      copyOpened11.objectCount === 2 &&
+      copyOpened11.states['solid-1']?.status === 'ready' &&
+      copyOpened11.compStates['component-1']?.status === 'ready',
+    `objetos=${copyOpened11.objectCount}`,
+  );
+  await shootStable(page, '27-wave01-crud', canvasClip);
+
+  // 11k — Eliminar design-2 con confirmación: fuera del listado y del
+  // storage; la escena abierta NO se pierde.
+  await page.locator('[data-modeler-design-delete]').click();
+  await page.waitForTimeout(250);
+  const deleted11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    stored: localStorage.getItem('furniconfig.modeler.designs.design-2'),
+    objectCount: window.__modeler.getDocument().objects.length,
+  }));
+  check(
+    '11k. eliminar con confirmación (diálogo mostrado) retira design-2 del listado y del storage sin perder la escena abierta',
+    deleted11.designs.summaries.every((entry) => entry.id !== 'design-2') &&
+      deleted11.stored === null &&
+      deleted11.designs.activeDesign === null &&
+      deleted11.objectCount === 2 &&
+      dialogLog.some((entry) => entry.includes('¿Eliminar el diseño')),
+    `listado=${deleted11.designs.summaries.map((entry) => entry.id).join('+')} objetos=${deleted11.objectCount}`,
+  );
+
+  // 11l — Liberación de recursos tras recuperar y editar: vaciar la
+  // escena devuelve la paridad TOTAL de ambos ciclos de vida.
+  for (const id of ['component-1', 'solid-1']) {
+    await page.locator(`[data-modeler-object="${id}"]`).click();
+    await page.locator('[data-modeler-delete]').click();
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(400);
+  const life11 = await page.evaluate(() => window.__modeler.getGeometryStats());
+  const partsLife11 = await page.evaluate(
+    () => window.__modeler.getPartsGeometryStats(),
+  );
+  const rows11 = await page.locator('[data-modeler-object]').count();
+  check(
+    '11l. tras abrir, editar y vaciar: paridad TOTAL de ciclos de vida (cero fugas)',
+    rows11 === 0 &&
+      life11.created === life11.disposed &&
+      partsLife11.created === partsLife11.disposed,
+    `sólidos ${life11.disposed}/${life11.created} · piezas ${partsLife11.disposed}/${partsLife11.created}`,
+  );
+
+  // 11m — Sobre corrupto: se lista como dañado, NO se borra al
+  // fallar la apertura (error visible) y se puede ELIMINAR.
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'furniconfig.modeler.designs.design-9',
+      '%%%basura-intencional%%%',
+    );
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  const corruptListed11 = await page
+    .locator('[data-modeler-design-select] option')
+    .allTextContents();
+  await page.locator('[data-modeler-design-select]').selectOption('design-9');
+  await page.waitForTimeout(250);
+  const corruptOpen11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    stored: localStorage.getItem('furniconfig.modeler.designs.design-9'),
+  }));
+  const corruptErrorVisible11 = await page
+    .locator('[data-modeler-design-error]')
+    .count();
+  check(
+    '11m. sobre corrupto: listado con la entrada dañada, apertura con error visible y el registro NO se pierde',
+    corruptListed11.some((label) => label.includes('design-9 (dañado')) &&
+      corruptErrorVisible11 === 1 &&
+      corruptOpen11.designs.error !== null &&
+      corruptOpen11.designs.activeDesign === null &&
+      corruptOpen11.stored !== null,
+    `error=${corruptOpen11.designs.error ?? 'ninguno'}`,
+  );
+  await page.locator('[data-modeler-design-delete]').click();
+  await page.waitForTimeout(250);
+  const corruptDeleted11 = await page.evaluate(() => ({
+    stored: localStorage.getItem('furniconfig.modeler.designs.design-9'),
+    design1: localStorage.getItem('furniconfig.modeler.designs.design-1'),
+  }));
+  check(
+    '11n. el corrupto se puede eliminar (recuperación) sin tocar a design-1',
+    corruptDeleted11.stored === null &&
+      corruptDeleted11.design1 !== null &&
+      (await page
+        .locator('[data-modeler-design-select] option')
+        .allTextContents())
+        .every((label) => !label.includes('design-9')),
+    `design-1=${corruptDeleted11.design1 !== null ? 'intacto' : 'PERDIDO'}`,
+  );
+  await shootStable(page, '28-wave01-corrupto', canvasClip);
+
+  // 11o — El configurador original sigue funcionando (navegación en
+  // la misma pestaña) y el diseño del modelador persiste al volver.
+  await page.goto(`${baseUrl}/#/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('canvas', { timeout: 15_000 });
+  await page.goto(`${baseUrl}/#/modeler`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  const back11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    key: localStorage.getItem('furniconfig.modeler.designs.design-1'),
+    configValue: localStorage.getItem('furniconfig.designs'),
+  }));
+  check(
+    '11o. vuelta desde el configurador: modelador operativo, design-1 intacto y claves separadas',
+    back11.designs.summaries.some((entry) => entry.id === 'design-1') &&
+      back11.key !== null &&
+      back11.configValue === configBefore11,
+    `listado=${back11.designs.summaries.length} configurador=${back11.configValue === configBefore11 ? 'intacto' : 'CAMBIÓ'}`,
+  );
+  await shootStable(page, '29-wave01-final', canvasClip);
+
+  // Diálogos observados (evidencia de las guardias de pérdida).
+  console.log(`   diálogos: ${dialogLog.join(' | ')}`);
+
   // --- 5. Sin errores de consola/página --------------------
   check(
     '5a. sin errores de consola',
@@ -1775,13 +2248,14 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 (traslación)',
+        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 (traslación + persistencia)',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,
         aprobadas: results.length - failures.length,
         fallos: failures.length,
         rendimientoWave01: perfWave01,
+        dialogosWave01: dialogLog,
         results,
       },
       null,

@@ -44,6 +44,7 @@ import {
   dispatchHistoryCommand,
   historyLabels,
   redoHistory,
+  resetHistory,
   undoHistory,
 } from '../../src/hooks/use-modeler-history.js';
 import {
@@ -404,5 +405,35 @@ describe('use-modeler-history (C1 — integración con CommandHistory)', () => {
     const h5 = must(undoHistory(h4));
     expect(h5.present.objects[0]).toEqual(first);
     expect(h5.present.objects[1]?.name).toBe('Sólido 2');
+  });
+});
+
+describe('resetHistory (WAVE-01 BLOQUE 3 — apertura de diseños)', () => {
+  it('instala el documento con pilas VACÍAS (sin deshacer al previo)', () => {
+    // Historial con una edición previa.
+    const base = createCommandHistory(seedDocument());
+    const withEdit = must(
+      dispatchHistoryCommand(
+        base,
+        buildSolidAddCommand(base.present, sketch(800, 400), 100),
+      ),
+    );
+    expect(withEdit.past).toHaveLength(1);
+
+    // Apertura de otro diseño: historial nuevo, documento ajeno
+    // (se instala con igualdad estructural; el clon interno conserva
+    // exactamente su contenido — clave para la igualdad JSON al abrir).
+    const opened = createEmptySceneDocument();
+    const reset = resetHistory(opened);
+    expect(reset.present).toEqual(opened);
+    expect(reset.past).toHaveLength(0);
+    expect(reset.future).toHaveLength(0);
+    expect(canUndo(reset)).toBe(false);
+    expect(canRedo(reset)).toBe(false);
+  });
+
+  it('el documento del reset queda intacto (sin alterar su contenido)', () => {
+    const opened = createEmptySceneDocument();
+    expect(resetHistory(opened).present).toEqual(opened);
   });
 });

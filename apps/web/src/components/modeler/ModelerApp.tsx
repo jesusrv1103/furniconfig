@@ -52,6 +52,7 @@ import {
 
 import {
   ModelerShell,
+  type DesignsPanelProps,
   type ObjectRowProps,
   type PendingSketchPanelProps,
   type PositionPanelProps,
@@ -101,6 +102,17 @@ import {
   parsePositionMm,
   type MoveDraft,
 } from '../../lib/modeler/transform.js';
+import {
+  createSceneDesign,
+  deleteSceneDesign,
+  duplicateSceneDesign,
+  getDefaultSceneDesignStorage,
+  listSceneDesigns,
+  readSceneDesign,
+  renameSceneDesign,
+  saveSceneDesign,
+  type SceneDesignSummary,
+} from '../../lib/modeler/design-store.js';
 import {
   WARDROBE_COMPONENT_TYPE,
   parseWardrobeParams,
@@ -207,6 +219,26 @@ export function ModelerApp(): ReactNode {
   const [moveDraft, setMoveDraft] = useState<MoveDraft | null>(null);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [positionError, setPositionError] = useState<string | null>(null);
+
+  /**
+   * WAVE-01 BLOQUE 3 — persistencia LOCAL de diseños (namespace
+   * propio `furniconfig.modeler.designs`, aislado del configurador):
+   * listado, diseño activo, foco del panel, mensajes y la instantánea
+   * JSON del último guardar/abrir para detectar cambios sin guardar.
+   * Nunca almacena mallas ni historial (solo `SceneDocument`).
+   */
+  const [designStorage] = useState(() => getDefaultSceneDesignStorage());
+  const [designSummaries, setDesignSummaries] = useState<
+    readonly SceneDesignSummary[]
+  >([]);
+  const [activeDesign, setActiveDesign] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [designFocusId, setDesignFocusId] = useState<string | null>(null);
+  const [designMessage, setDesignMessage] = useState<string | null>(null);
+  const [designError, setDesignError] = useState<string | null>(null);
+  const [designSavedJson, setDesignSavedJson] = useState<string | null>(null);
 
   const geometry = useModelerGeometry();
   const sceneGeometry = useSceneGeometry(
@@ -635,6 +667,295 @@ export function ModelerApp(): ReactNode {
   );
 
   // -------------------------------------------------------------------------
+  // WAVE-01 BLOQUE 3 — diseños locales (CRUD sobre `design-store`).
+  // Diálogos nativos prompt/confirm (patrón de `DesignSection` del
+  // configurador); apertura → historial VACÍO y estados limpios, y la
+  // geometría se regenera por los circuitos existentes del documento.
+  // -------------------------------------------------------------------------
+
+  const refreshDesigns = useCallback(() => {
+    setDesignSummaries(
+      designStorage === null ? [] : listSceneDesigns(designStorage),
+    );
+  }, [designStorage]);
+
+  useEffect(() => {
+    refreshDesigns();
+  }, [refreshDesigns]);
+
+  const designDocumentJson = useMemo(
+    () => JSON.stringify(document),
+    [document],
+  );
+
+  /** Ediciones posteriores al último guardar/abrir del diseño activo. */
+  const designDirty =
+    activeDesign !== null &&
+    designSavedJson !== null &&
+    designDocumentJson !== designSavedJson;
+
+  /**
+   * Instala un documento de diseño en la pantalla: historial NUEVO
+   * (Deshacer no vuelve al documento anterior), selección y
+   * borradores limpios; la geometría derivada del documento anterior
+   * se libera por el circuito normal (nada de mallas en storage).
+   */
+  const applyDesignDocument = useCallback(
+    (next: SceneDocument, design: { id: string; name: string } | null) => {
+      history.reset(next);
+      setSelection(null);
+      selectionStashRef.current = null;
+      setPendingSketch(null);
+      setMoveDraft(null);
+      setPositionError(null);
+      setWardrobeEditError(null);
+      setActiveDesign(design);
+      setDesignFocusId(design === null ? null : design.id);
+      setDesignSavedJson(JSON.stringify(next));
+      setDesignError(null);
+    },
+    [history],
+  );
+
+  /** Guardar como: NUEVO id determinista con nombre pedido por prompt. */
+  const handleDesignSaveAs = useCallback(() => {
+    if (designStorage === null) {
+      setDesignError('Almacenamiento local no disponible: no se guardó nada.');
+      setDesignMessage(null);
+      return;
+    }
+    const proposed = window.prompt(
+      'Nombre del nuevo diseño',
+      activeDesign === null ? document.name : `${activeDesign.name} (copia)`,
+    );
+    if (proposed === null) return;
+    const name = proposed.trim();
+    if (name === '') {
+      setDesignError('El nombre no puede estar vacío.');
+      setDesignMessage(null);
+      return;
+    }
+    const result = createSceneDesign(designStorage, { ...document, name });
+    if (!result.ok) {
+      setDesignError(result.message);
+      setDesignMessage(null);
+      return;
+    }
+    setActiveDesign({ id: result.id, name });
+    setDesignFocusId(result.id);
+    setDesignSavedJson(designDocumentJson);
+    setDesignMessage(`Guardado: ${name}`);
+    setDesignError(null);
+    refreshDesigns();
+    setHistoryMessage(`Guardado: ${name}`);
+  }, [
+    designStorage,
+    activeDesign,
+    document,
+    designDocumentJson,
+    refreshDesigns,
+  ]);
+
+  /** Guardar: SOLO sobrescribe el diseño activo (explícito, nunca automático). */
+  const handleDesignSave = useCallback(() => {
+    if (designStorage === null) {
+      setDesignError('Almacenamiento local no disponible: no se guardó nada.');
+      setDesignMessage(null);
+      return;
+    }
+    if (activeDesign === null) {
+      handleDesignSaveAs(); // sin diseño asociado → exige nombre nuevo
+      return;
+    }
+    const result = saveSceneDesign(designStorage, activeDesign.id, {
+      ...document,
+      name: activeDesign.name,
+    });
+    if (!result.ok) {
+      setDesignError(result.message);
+      setDesignMessage(null);
+      return;
+    }
+    setDesignSavedJson(designDocumentJson);
+    setDesignMessage(`Guardado: ${activeDesign.name}`);
+    setDesignError(null);
+    refreshDesigns();
+    setHistoryMessage(`Guardado: ${activeDesign.name}`);
+  }, [
+    designStorage,
+    activeDesign,
+    document,
+    designDocumentJson,
+    refreshDesigns,
+    handleDesignSaveAs,
+  ]);
+
+  /** Selección en el selector → intento de apertura (con guardia de cambios). */
+  const handleDesignFocusChange = useCallback(
+    (id: string) => {
+      setDesignFocusId(id);
+      if (designStorage === null) {
+        setDesignError(
+          'Almacenamiento local no disponible: no se puede abrir.',
+        );
+        setDesignMessage(null);
+        return;
+      }
+      if (
+        designDirty &&
+        !window.confirm(
+          `Hay cambios sin guardar en «${activeDesign?.name ?? 'la escena'}». Al abrir «${id}» se perderán. ¿Continuar?`,
+        )
+      ) {
+        setDesignFocusId(activeDesign?.id ?? null); // cancelar: selector intacto
+        return;
+      }
+      const result = readSceneDesign(designStorage, id);
+      if (!result.ok) {
+        // Corrupto/incompatible: visible con su código; el foco queda en
+        // la entrada para poder ELIMINARLA (única operación sin parseo).
+        setDesignError(result.message);
+        setDesignMessage(null);
+        return;
+      }
+      applyDesignDocument(result.document, {
+        id,
+        name: result.document.name,
+      });
+      setDesignMessage(`Abierto: ${result.document.name}`);
+      refreshDesigns();
+      setHistoryMessage(`Abierto: ${result.document.name}`);
+    },
+    [
+      designStorage,
+      designDirty,
+      activeDesign,
+      applyDesignDocument,
+      refreshDesigns,
+    ],
+  );
+
+  /** Nuevo diseño: escena semilla con guardia de cambios sin guardar. */
+  const handleDesignNew = useCallback(() => {
+    if (
+      designDirty &&
+      !window.confirm(
+        `Hay cambios sin guardar en «${activeDesign?.name ?? 'la escena'}». Al crear un diseño nuevo se perderán. ¿Continuar?`,
+      )
+    ) {
+      return;
+    }
+    applyDesignDocument(createSeedDocument(), null);
+    setDesignMessage('Nueva escena');
+    setHistoryMessage('Nueva escena');
+  }, [designDirty, activeDesign, applyDesignDocument]);
+
+  /** Renombrar la entrada con foco (el id y el resto no cambian). */
+  const handleDesignRename = useCallback(() => {
+    const id = designFocusId ?? activeDesign?.id ?? null;
+    if (id === null) {
+      setDesignError('No hay ningún diseño seleccionado para renombrar.');
+      setDesignMessage(null);
+      return;
+    }
+    if (designStorage === null) {
+      setDesignError('Almacenamiento local no disponible.');
+      setDesignMessage(null);
+      return;
+    }
+    const current =
+      designSummaries.find((entry) => entry.id === id)?.name ??
+      activeDesign?.name ??
+      id;
+    const next = window.prompt(`Nuevo nombre para «${current}»`, current);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (trimmed === '' || trimmed === current) return;
+    const result = renameSceneDesign(designStorage, id, trimmed);
+    if (!result.ok) {
+      setDesignError(result.message);
+      setDesignMessage(null);
+      return;
+    }
+    if (activeDesign?.id === id) setActiveDesign({ id, name: trimmed });
+    refreshDesigns();
+    setDesignMessage(`Renombrado: ${trimmed}`);
+    setDesignError(null);
+  }, [
+    designFocusId,
+    activeDesign,
+    designStorage,
+    designSummaries,
+    refreshDesigns,
+  ]);
+
+  /** Duplicar la entrada con foco a un id determinista nuevo. */
+  const handleDesignDuplicate = useCallback(() => {
+    const id = designFocusId ?? activeDesign?.id ?? null;
+    if (id === null) {
+      setDesignError('No hay ningún diseño seleccionado para duplicar.');
+      setDesignMessage(null);
+      return;
+    }
+    if (designStorage === null) {
+      setDesignError('Almacenamiento local no disponible.');
+      setDesignMessage(null);
+      return;
+    }
+    const currentName =
+      designSummaries.find((entry) => entry.id === id)?.name ?? 'diseño';
+    const result = duplicateSceneDesign(designStorage, id);
+    if (!result.ok) {
+      setDesignError(result.message);
+      setDesignMessage(null);
+      return;
+    }
+    setDesignFocusId(result.id);
+    refreshDesigns();
+    setDesignMessage(`Duplicado: «${currentName}» → ${result.id}`);
+    setDesignError(null);
+  }, [designFocusId, activeDesign, designStorage, designSummaries, refreshDesigns]);
+
+  /** Eliminar la entrada con foco (confirmación obligatoria). */
+  const handleDesignDelete = useCallback(() => {
+    const id = designFocusId ?? activeDesign?.id ?? null;
+    if (id === null) {
+      setDesignError('No hay ningún diseño seleccionado para eliminar.');
+      setDesignMessage(null);
+      return;
+    }
+    if (designStorage === null) {
+      setDesignError('Almacenamiento local no disponible.');
+      setDesignMessage(null);
+      return;
+    }
+    const name = designSummaries.find((entry) => entry.id === id)?.name ?? id;
+    if (
+      !window.confirm(
+        `¿Eliminar el diseño «${name}»? Esta acción no se puede deshacer.`,
+      )
+    ) {
+      return;
+    }
+    const result = deleteSceneDesign(designStorage, id);
+    if (!result.ok) {
+      setDesignError(result.message);
+      setDesignMessage(null);
+      return;
+    }
+    if (activeDesign?.id === id) {
+      // La escena SIGUE abierta en pantalla; solo retira su registro.
+      setActiveDesign(null);
+      setDesignSavedJson(null);
+    }
+    setDesignFocusId(null);
+    refreshDesigns();
+    setDesignMessage(`Eliminado: ${name}`);
+    setDesignError(null);
+    setHistoryMessage(`Eliminado: ${name}`);
+  }, [designFocusId, activeDesign, designStorage, designSummaries, refreshDesigns]);
+
+  // -------------------------------------------------------------------------
   // Edición paramétrica de clósets (D4): valida → construye params →
   // UN `createSetParamsCommand` → regenera → la selección se mantiene
   // (los params no tocan `selection`). Rechazo → error visible y
@@ -976,6 +1297,26 @@ export function ModelerApp(): ReactNode {
           draggable: selectedDraggable,
         };
 
+  // WAVE-01 BLOQUE 3: panel de diseños (siempre presente; con
+  // `storageAvailable=false` lo dice explícitamente en lugar de
+  // fingir botones operativos).
+  const designsPanel: DesignsPanelProps = {
+    designs: designSummaries,
+    activeId: activeDesign?.id ?? null,
+    focusId: designFocusId,
+    dirty: designDirty,
+    storageAvailable: designStorage !== null,
+    onNew: handleDesignNew,
+    onSave: handleDesignSave,
+    onSaveAs: handleDesignSaveAs,
+    onFocusChange: handleDesignFocusChange,
+    onRename: handleDesignRename,
+    onDuplicate: handleDesignDuplicate,
+    onDelete: handleDesignDelete,
+    message: designMessage,
+    error: designError,
+  };
+
   // Depuración para las verificaciones visuales (patrón del
   // configurador con `__wardrobeConfigDebug`).
   useEffect(() => {
@@ -1047,6 +1388,16 @@ export function ModelerApp(): ReactNode {
         selectedPositionMm,
         selectedDraggable,
       }),
+      /** WAVE-01 BLOQUE 3: estado de diseños locales para verificación visual. */
+      getDesigns: () => ({
+        summaries: designSummaries,
+        activeDesign,
+        focusId: designFocusId,
+        dirty: designDirty,
+        message: designMessage,
+        error: designError,
+        storageAvailable: designStorage !== null,
+      }),
     };
     return () => {
       delete target.__modeler;
@@ -1063,6 +1414,13 @@ export function ModelerApp(): ReactNode {
     positionError,
     selectedPositionMm,
     selectedDraggable,
+    designSummaries,
+    activeDesign,
+    designFocusId,
+    designDirty,
+    designMessage,
+    designError,
+    designStorage,
   ]);
 
   return (
@@ -1093,6 +1451,7 @@ export function ModelerApp(): ReactNode {
       selection={selectionPanel}
       wardrobe={wardrobePanel}
       position={positionPanel}
+      designs={designsPanel}
     >
       <ModelerScene
         viewRequest={camera.request}

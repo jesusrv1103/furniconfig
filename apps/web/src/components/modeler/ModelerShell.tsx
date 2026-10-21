@@ -46,6 +46,7 @@ import { MODULE_KIND_LABELS } from '../../lib/config.js';
 import type { CameraView } from '../../lib/camera-views.js';
 import type { GeometryKernelStatus } from '../../lib/modeler/geometry-runtime.js';
 import type { ModelerTool } from '../../lib/modeler/drawing.js';
+import type { SceneDesignSummary } from '../../lib/modeler/design-store.js';
 
 /** Etiquetas honestas del estado del motor geométrico. */
 const ENGINE_STATUS_LABELS: Readonly<Record<GeometryKernelStatus, string>> = {
@@ -213,6 +214,35 @@ export interface PositionPanelProps {
   readonly draggable: boolean;
 }
 
+/**
+ * WAVE-01 BLOQUE 3 — panel «Diseños» (persistencia LOCAL aislada del
+ * configurador). Los IDs de los botones apuntan a la entrada con foco
+ * (la última elegida en el selector, o el diseño activo); un diseño
+ * corrupto se lista y se puede ELIMINAR aunque no pueda abrirse.
+ */
+export interface DesignsPanelProps {
+  /** Guardados (orden determinista; los corruptos aparecen y se pueden eliminar). */
+  readonly designs: readonly SceneDesignSummary[];
+  /** Diseño realmente abierto en pantalla (`null` = sin diseño asociado). */
+  readonly activeId: string | null;
+  /** Entrada con foco en el panel (renombrar/duplicar/eliminar actúan aquí). */
+  readonly focusId: string | null;
+  /** Hay ediciones posteriores al último guardar/abrir. */
+  readonly dirty: boolean;
+  /** `localStorage` disponible (si no, la UI lo dice en lugar de fingir). */
+  readonly storageAvailable: boolean;
+  readonly onNew: () => void;
+  readonly onSave: () => void;
+  readonly onSaveAs: () => void;
+  /** Cambio del selector → intento de apertura (con guardia de cambios). */
+  readonly onFocusChange: (id: string) => void;
+  readonly onRename: () => void;
+  readonly onDuplicate: () => void;
+  readonly onDelete: () => void;
+  readonly message: string | null;
+  readonly error: string | null;
+}
+
 /** Controles del historial visual (C1/C3) para la barra superior. */
 export interface HistoryControlsProps {
   readonly canUndo: boolean;
@@ -248,6 +278,8 @@ export interface ModelerShellProps {
   readonly wardrobe: WardrobePanelProps | null;
   /** WAVE-01: posición en el suelo del objeto seleccionado (o null). */
   readonly position: PositionPanelProps | null;
+  /** WAVE-01 BLOQUE 3: panel de diseños locales (persistencia). */
+  readonly designs: DesignsPanelProps | null;
   readonly children: ReactNode;
 }
 
@@ -520,6 +552,7 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
     selection,
     wardrobe,
     position,
+    designs,
     children,
   } = props;
 
@@ -657,6 +690,117 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             </div>
             <p className="modeler-hint">{TOOL_HINTS[tool]}</p>
           </section>
+
+          {/* WAVE-01 BLOQUE 3 — diseños locales (guardado en el
+              navegador con namespace propio; los diálogos prompt /
+              confirm vive en la pantalla, patrón de DesignSection). */}
+          {designs !== null && (
+            <section
+              aria-labelledby="modeler-designs-heading"
+              data-modeler-designs=""
+            >
+              <h2 id="modeler-designs-heading">Diseños</h2>
+              <label className="modeler-field">
+                <span>Diseño guardado</span>
+                <select
+                  data-modeler-design-select=""
+                  value={designs.focusId ?? designs.activeId ?? ''}
+                  onChange={(event) => {
+                    if (event.target.value !== '') {
+                      designs.onFocusChange(event.target.value);
+                    }
+                  }}
+                >
+                  <option value="">
+                    {designs.activeId === null
+                      ? '— escena sin diseño —'
+                      : '— elegir diseño —'}
+                  </option>
+                  {designs.designs.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.corrupted
+                        ? `${entry.id} (dañado, no legible)`
+                        : entry.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="modeler-view-buttons">
+                <button
+                  type="button"
+                  onClick={designs.onNew}
+                  data-modeler-design-new=""
+                >
+                  Nuevo
+                </button>
+                <button
+                  type="button"
+                  onClick={designs.onSave}
+                  data-modeler-design-save=""
+                >
+                  Guardar
+                </button>
+                <button
+                  type="button"
+                  onClick={designs.onSaveAs}
+                  data-modeler-design-save-as=""
+                >
+                  Guardar como
+                </button>
+                <button
+                  type="button"
+                  onClick={designs.onRename}
+                  data-modeler-design-rename=""
+                >
+                  Renombrar
+                </button>
+                <button
+                  type="button"
+                  onClick={designs.onDuplicate}
+                  data-modeler-design-duplicate=""
+                >
+                  Duplicar
+                </button>
+                <button
+                  type="button"
+                  onClick={designs.onDelete}
+                  data-modeler-design-delete=""
+                >
+                  Eliminar
+                </button>
+              </div>
+              {designs.dirty && (
+                <p className="modeler-hint" data-modeler-design-dirty="">
+                  Cambios sin guardar
+                </p>
+              )}
+              {designs.message !== null && (
+                <p
+                  className="modeler-hint"
+                  data-modeler-design-message=""
+                  aria-live="polite"
+                >
+                  {designs.message}
+                </p>
+              )}
+              {designs.error !== null && (
+                <p className="modeler-error" data-modeler-design-error="">
+                  {designs.error}
+                </p>
+              )}
+              {!designs.storageAvailable && (
+                <p className="modeler-hint" data-modeler-design-nostorage="">
+                  Almacenamiento local no disponible: el guardado de diseños
+                  está inactivo en este navegador.
+                </p>
+              )}
+              <p className="modeler-hint">
+                Guardado local en tu navegador (namespace propio del
+                modelador, separado del configurador). Al abrir un diseño se
+                regenera su geometría y se limpia el historial.
+              </p>
+            </section>
+          )}
 
           <section aria-labelledby="modeler-insert-heading" data-modeler-insert="">
             <h2 id="modeler-insert-heading">Añadir</h2>
