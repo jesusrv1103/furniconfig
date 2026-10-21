@@ -16,6 +16,7 @@ import { renderToString } from 'react-dom/server';
 
 import { ModelerShell } from '../../src/components/modeler/ModelerShell.js';
 import type {
+  DesignsPanelProps,
   ModelerShellProps,
   PositionPanelProps,
 } from '../../src/components/modeler/ModelerShell.js';
@@ -46,6 +47,7 @@ function renderShell(
     selection: null,
     wardrobe: null,
     position: null,
+    designs: null,
     children: <div data-testid="escena" />,
     ...overrides,
   };
@@ -640,5 +642,92 @@ describe('ModelerShell — WAVE-01 posición en el suelo', () => {
   it('sin botones deshabilitados (controles reales)', () => {
     const html = renderShell({ position: basePosition });
     expect(html).not.toContain('disabled');
+  });
+});
+
+describe('ModelerShell — WAVE-01 BLOQUE 3 panel de diseños', () => {
+  const baseDesigns: DesignsPanelProps = {
+    designs: [
+      { id: 'design-1', name: 'Dormitorio', corrupted: false },
+      { id: 'design-2', name: null, corrupted: true, message: 'dañado' },
+    ],
+    activeId: 'design-1',
+    focusId: 'design-1',
+    dirty: true,
+    storageAvailable: true,
+    onNew: () => undefined,
+    onSave: () => undefined,
+    onSaveAs: () => undefined,
+    onFocusChange: () => undefined,
+    onRename: () => undefined,
+    onDuplicate: () => undefined,
+    onDelete: () => undefined,
+    message: 'Guardado: Dormitorio',
+    error: null,
+  };
+
+  it('sin panel no existe la sección (sin reserva)', () => {
+    const html = renderShell();
+    expect(html).not.toContain('data-modeler-designs');
+  });
+
+  it('selector con el diseño activo, entradas y la dañada etiquetada', () => {
+    const html = renderShell({ designs: baseDesigns });
+    expect(html).toContain('data-modeler-designs');
+    expect(html).toContain('data-modeler-design-select');
+    expect(html).toContain('Dormitorio');
+    expect(html).toContain('design-2 (dañado, no legible)');
+    expect(html).toContain('value="design-1"');
+  });
+
+  it('los 6 botones del CRUD existen y están operativos', () => {
+    const html = renderShell({ designs: baseDesigns });
+    for (const action of [
+      'new',
+      'save',
+      'save-as',
+      'rename',
+      'duplicate',
+      'delete',
+    ]) {
+      expect(html).toContain('data-modeler-design-' + action);
+    }
+    expect(html).not.toContain('disabled');
+  });
+
+  it('cambios sin guardar + mensaje en aria-live; sin error → sin nodo', () => {
+    const html = renderShell({ designs: baseDesigns });
+    expect(html).toContain('data-modeler-design-dirty');
+    expect(html).toContain('Cambios sin guardar');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('Guardado: Dormitorio');
+    expect(html).not.toContain('data-modeler-design-error');
+  });
+
+  it('error de diseño visible en su nodo propio', () => {
+    const html = renderShell({
+      designs: {
+        ...baseDesigns,
+        message: null,
+        error: 'No existe el diseño «design-9».',
+      },
+    });
+    expect(html).toContain('data-modeler-design-error');
+    expect(html).toContain('No existe el diseño');
+    expect(html).not.toContain('data-modeler-design-message');
+  });
+
+  it('sin storage local → aviso explícito (no finge operatividad)', () => {
+    const html = renderShell({
+      designs: { ...baseDesigns, storageAvailable: false },
+    });
+    expect(html).toContain('data-modeler-design-nostorage');
+    expect(html).toContain('Almacenamiento local no disponible');
+  });
+
+  it('la sección explica el namespace aislado y la regeneración al abrir', () => {
+    const html = renderShell({ designs: baseDesigns });
+    expect(html).toContain('namespace propio del');
+    expect(html).toContain('se regenera su geometría');
   });
 });

@@ -87,6 +87,15 @@ export function redoHistory(history: CommandHistory): CommandHistory | null {
   }
 }
 
+/**
+ * WAVE-01 BLOQUE 3 — historial NUEVO para un documento ajeno al flujo
+ * actual (apertura o creación de diseño): pilas vacías, para que
+ * «Deshacer» jamás pueda volver al documento anterior.
+ */
+export function resetHistory(document: SceneDocument): CommandHistory {
+  return createCommandHistory(document, DEFAULT_COMMAND_HISTORY_LIMIT);
+}
+
 /** Etiquetas de lo que harán Deshacer/Rehacer (o `null`). */
 export function historyLabels(history: CommandHistory): {
   readonly undoLabel: string | null;
@@ -118,6 +127,11 @@ export interface ModelerHistory {
   undo(): HistoryChange | null;
   /** Rehace; `null` = nada que rehacer/fallo (intacto). */
   redo(): HistoryChange | null;
+  /**
+   * WAVE-01 BLOQUE 3 — instala un documento nuevo (apertura/nuevo
+   * diseño) con historial VACÍO (sin deshacer al documento previo).
+   */
+  reset(document: SceneDocument): void;
 }
 
 /**
@@ -161,6 +175,10 @@ export function useModelerHistory(initial: SceneDocument): ModelerHistory {
     return { document: next.present, label };
   }, [history]);
 
+  const reset = useCallback((document: SceneDocument): void => {
+    setHistory(resetHistory(document));
+  }, []);
+
   const labels = useMemo(() => historyLabels(history), [history]);
 
   return {
@@ -174,5 +192,6 @@ export function useModelerHistory(initial: SceneDocument): ModelerHistory {
     dispatch,
     undo,
     redo,
+    reset,
   };
 }
