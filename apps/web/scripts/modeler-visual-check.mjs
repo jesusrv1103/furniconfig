@@ -39,6 +39,16 @@
  *    Undo/Redo exactos de params, eliminar/restore, segundo
  *    clóset posicionado con hueco 200 mm, mezcla con sólido y
  *    paridad de ciclos de vida al vaciar la escena.
+ * 10. WAVE-01 distribución espacial (traslación): panel de
+ *    posición coherente con el documento, arrastre real con snap
+ *    (UNA entrada por gesto, dimensiones intactas), Escape
+ *    cancela sin commit, campos X/Z EXACTOS (incl. negativos) e
+ *    inválidos con error visible, flechas de ajuste por paso,
+ *    snap configurable, aislamiento entre objetos al mover
+ *    (un clóset no mueve al otro), Undo/Redo de movimientos,
+ *    posición conservada al eliminar/restaurar, medición de
+ *    rendimiento con varios clósets y paridad de recursos al
+ *    vaciar la escena.
  *
  * Guarda evidencia reproducible (capturas + informe.json) en
  * /tmp/opencode/4c-a.
@@ -1260,6 +1270,464 @@ try {
   );
   await shootStable(page, '19-4c-d-final-vacio', canvasClip);
 
+  // --- WAVE-01 BLOQUE 2 — 10a…10m: distribución espacial ----
+  // Punto de partida: escena vacía (9p). Se crea una escena de
+  // trabajo (sólido + clóset) y se verifica la TRASLACIÓN en el
+  // suelo: arrastre real con snap, campos exactos, flechas,
+  // Escape, aislamiento entre objetos, undo/redo, posición
+  // conservada al restaurar, rendimiento y liberación de recursos.
+  const perfWave01 = {};
+
+  // 10a — Preparación: sólido 1200×600×100 + clóset, ambos «Listo».
+  await page.getByRole('button', { name: 'Rectángulo' }).click();
+  const drawX10 = sceneBox.x + sceneBox.width * 0.35;
+  const drawY10 = sceneBox.y + sceneBox.height * 0.55;
+  await page.mouse.move(drawX10, drawY10);
+  await page.mouse.down();
+  await page.mouse.move(drawX10 + 240, drawY10 + 130, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForSelector('[data-modeler-pending]');
+  await page.locator('[data-modeler-field="pending-width"]').fill('1200');
+  await page.locator('[data-modeler-field="pending-depth"]').fill('600');
+  await page.locator('[data-modeler-field="pending-height"]').fill('100');
+  await page.locator('[data-modeler-extrude]').click();
+  await page
+    .waitForFunction(
+      () => window.__modeler.getStates()['solid-1']?.status === 'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  await page.locator('[data-modeler-insert-wardrobe]').click();
+  await page
+    .waitForFunction(
+      () =>
+        window.__modeler.getComponentStates()['component-1']?.status ===
+        'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  await page.getByRole('button', { name: 'Seleccionar' }).click();
+  const prep10 = await page.evaluate(() => ({
+    solid: window.__modeler.getStates()['solid-1']?.status,
+    comp: window.__modeler.getComponentStates()['component-1']?.status,
+  }));
+  check(
+    '10a. escena de trabajo: sólido y clóset «Listo»',
+    prep10.solid === 'ready' && prep10.comp === 'ready',
+    `solid=${prep10.solid} clóset=${prep10.comp}`,
+  );
+  await shootStable(page, '20-wave01-escena', canvasClip);
+
+  // 10b — Panel de posición del sólido coherente con el documento.
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.waitForTimeout(150);
+  const pos10b = await page.evaluate(
+    () => window.__modeler.getTransformState().selectedPositionMm,
+  );
+  const fieldX10b = await page
+    .locator('[data-modeler-field="position-x"]')
+    .inputValue();
+  const fieldZ10b = await page
+    .locator('[data-modeler-field="position-z"]')
+    .inputValue();
+  check(
+    '10b. campos X/Z del sólido iguales a su posición autoritativa',
+    pos10b !== null &&
+      fieldX10b === String(pos10b[0]) &&
+      fieldZ10b === String(pos10b[2]),
+    `documento=[${pos10b}] campos=${fieldX10b}/${fieldZ10b}`,
+  );
+
+  // 10c — Arrastre REAL del sólido (snap ON): posición en rejilla,
+  // dimensiones intactas y UNA sola entrada de historial.
+  const snap100 = (value) => Math.round(value / 100) * 100;
+  const doc10c = await page.evaluate(() => window.__modeler.getDocument());
+  const solid10c = doc10c.objects.find((object) => object.id === 'solid-1');
+  const pts10c = solid10c.geometry.sketch.pointsMm;
+  const minX10c = Math.min(...pts10c.map((p) => p[0]));
+  const minZ10c = Math.min(...pts10c.map((p) => p[1]));
+  const w10c = Math.max(...pts10c.map((p) => p[0])) - minX10c;
+  const d10c = Math.max(...pts10c.map((p) => p[1])) - minZ10c;
+  const past10c = await page.evaluate(() => window.__modeler.getHistory().past);
+  const delta10c = { dx: 640, dz: -310 };
+  const grab10c = { x: minX10c + w10c / 2, y: 0, z: minZ10c + d10c / 2 };
+  const from10c = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    grab10c,
+  );
+  const to10c = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    { x: grab10c.x + delta10c.dx, y: 0, z: grab10c.z + delta10c.dz },
+  );
+  const tDrag10c = Date.now();
+  await page.mouse.move(from10c.x, from10c.y);
+  await page.mouse.down();
+  await page.mouse.move(
+    (from10c.x + to10c.x) / 2,
+    (from10c.y + to10c.y) / 2,
+    { steps: 8 },
+  );
+  // La vista previa sigue al puntero SIN mutar documento.
+  const draft10c = await page.evaluate(
+    () => window.__modeler.getTransformState().moveDraft,
+  );
+  await page.mouse.move(to10c.x, to10c.y, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  perfWave01.arrastreMs = Date.now() - tDrag10c;
+  const after10c = await page.evaluate(() => ({
+    doc: window.__modeler.getDocument(),
+    past: window.__modeler.getHistory().past,
+  }));
+  const solidAfter10c = after10c.doc.objects.find(
+    (object) => object.id === 'solid-1',
+  );
+  const ptsAfter10c = solidAfter10c.geometry.sketch.pointsMm;
+  const minXAfter10c = Math.min(...ptsAfter10c.map((p) => p[0]));
+  const minZAfter10c = Math.min(...ptsAfter10c.map((p) => p[1]));
+  const wAfter10c = Math.max(...ptsAfter10c.map((p) => p[0])) - minXAfter10c;
+  const dAfter10c = Math.max(...ptsAfter10c.map((p) => p[1])) - minZAfter10c;
+  check(
+    '10c. arrastre real con snap: posición en rejilla, dimensiones intactas, previsualización sin documento y UNA entrada',
+    draft10c !== null &&
+      draft10c.objectId === 'solid-1' &&
+      after10c.past === past10c + 1 &&
+      minXAfter10c === snap100(minX10c + delta10c.dx) &&
+      minZAfter10c === snap100(minZ10c + delta10c.dz) &&
+      wAfter10c === w10c &&
+      dAfter10c === d10c &&
+      solidAfter10c.geometry.extrusionMm === 100,
+    `pos=(${minXAfter10c},${minZAfter10c}) esperado=(${snap100(minX10c + delta10c.dx)},${snap100(minZ10c + delta10c.dz)}) historial ${past10c}→${after10c.past}`,
+  );
+  await shootStable(page, '21-arrastre-snap', canvasClip);
+
+  // 10d — Escape durante el arrastre cancela SIN commit.
+  const doc10d = await page.evaluate(() => window.__modeler.getDocument());
+  const solid10d = doc10d.objects.find((object) => object.id === 'solid-1');
+  const pts10d = solid10d.geometry.sketch.pointsMm;
+  const past10d = await page.evaluate(() => window.__modeler.getHistory().past);
+  const grab10d = {
+    x: (Math.min(...pts10d.map((p) => p[0])) + Math.max(...pts10d.map((p) => p[0]))) / 2,
+    y: 0,
+    z: (Math.min(...pts10d.map((p) => p[1])) + Math.max(...pts10d.map((p) => p[1]))) / 2,
+  };
+  const from10d = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    grab10d,
+  );
+  await page.mouse.move(from10d.x, from10d.y);
+  await page.mouse.down();
+  await page.mouse.move(from10d.x + 90, from10d.y - 40, { steps: 6 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const after10d = await page.evaluate(() => ({
+    doc: window.__modeler.getDocument(),
+    past: window.__modeler.getHistory().past,
+    draft: window.__modeler.getTransformState().moveDraft,
+  }));
+  const solidAfter10d = after10d.doc.objects.find(
+    (object) => object.id === 'solid-1',
+  );
+  check(
+    '10d. Escape cancela el arrastre: documento intacto, sin entrada y borrador limpio',
+    after10d.past === past10d &&
+      after10d.draft === null &&
+      JSON.stringify(solidAfter10d.geometry.sketch) ===
+        JSON.stringify(solid10d.geometry.sketch),
+    `historial=${after10d.past} draft=${after10d.draft === null ? 'null' : 'activo'}`,
+  );
+
+  // 10e — Campo X EXACTO (con negativo) + entrada inválida con
+  // error visible SIN tocar documento ni historial.
+  await page.locator('[data-modeler-field="position-x"]').fill('-250');
+  await page.waitForTimeout(200);
+  const after10e = await page.evaluate(() => ({
+    doc: window.__modeler.getDocument(),
+    past: window.__modeler.getHistory().past,
+    error: window.__modeler.getTransformState().positionError,
+  }));
+  const solidAfter10e = after10e.doc.objects.find(
+    (object) => object.id === 'solid-1',
+  );
+  const xExact10e = Math.min(
+    ...solidAfter10e.geometry.sketch.pointsMm.map((p) => p[0]),
+  );
+  check(
+    '10e. campo X exacto acepta negativo (sin snap) con UNA entrada',
+    xExact10e === -250 && after10e.error === null,
+    `x=${xExact10e} error=${after10e.error ?? 'ninguno'}`,
+  );
+  await page.locator('[data-modeler-field="position-z"]').fill('12.5');
+  await page.waitForTimeout(200);
+  const invalid10e = await page.evaluate(() => ({
+    doc: window.__modeler.getDocument(),
+    past: window.__modeler.getHistory().past,
+    error: window.__modeler.getTransformState().positionError,
+  }));
+  const errorVisible10e = await page
+    .locator('[data-modeler-position-error]')
+    .count();
+  check(
+    '10e. texto inválido → error visible y documento/historial intactos',
+    errorVisible10e === 1 &&
+      invalid10e.error !== null &&
+      invalid10e.past === after10e.past &&
+      JSON.stringify(invalid10e.doc) === JSON.stringify(after10e.doc),
+    `error=${invalid10e.error ?? 'ninguno'}`,
+  );
+
+  // 10f — Flechas de ajuste: UNA entrada por clic, valor exacto.
+  const doc10f = await page.evaluate(() => window.__modeler.getDocument());
+  const solid10f = doc10f.objects.find((object) => object.id === 'solid-1');
+  const pts10f = solid10f.geometry.sketch.pointsMm;
+  const xBefore10f = Math.min(...pts10f.map((p) => p[0]));
+  const zBefore10f = Math.min(...pts10f.map((p) => p[1]));
+  const past10f = invalid10e.past;
+  await page.locator('[data-modeler-nudge="+x"]').click();
+  await page.locator('[data-modeler-nudge="-z"]').click();
+  await page.waitForTimeout(200);
+  const after10f = await page.evaluate(() => ({
+    doc: window.__modeler.getDocument(),
+    past: window.__modeler.getHistory().past,
+  }));
+  const solidAfter10f = after10f.doc.objects.find(
+    (object) => object.id === 'solid-1',
+  );
+  const ptsAfter10f = solidAfter10f.geometry.sketch.pointsMm;
+  check(
+    '10f. flechas: X +100 y Z −100 exactos, dos clics = dos entradas',
+    Math.min(...ptsAfter10f.map((p) => p[0])) === xBefore10f + 100 &&
+      Math.min(...ptsAfter10f.map((p) => p[1])) === zBefore10f - 100 &&
+      after10f.past === past10f + 2,
+    `x=${Math.min(...ptsAfter10f.map((p) => p[0]))} z=${Math.min(...ptsAfter10f.map((p) => p[1]))} (antes ${xBefore10f}/${zBefore10f}) historial ${past10f}→${after10f.past}`,
+  );
+
+  // 10g — Snap DESACTIVADO: el arrastre respeta el delta exacto
+  // (tolerancia ±30 mm por proyección/perspectiva).
+  await page.locator('[data-modeler-snap]').click();
+  const snapOff10g = await page.evaluate(
+    () => window.__modeler.getTransformState().snapEnabled,
+  );
+  const doc10g = await page.evaluate(() => window.__modeler.getDocument());
+  const solid10g = doc10g.objects.find((object) => object.id === 'solid-1');
+  const pts10g = solid10g.geometry.sketch.pointsMm;
+  const minX10g = Math.min(...pts10g.map((p) => p[0]));
+  const minZ10g = Math.min(...pts10g.map((p) => p[1]));
+  const w10g = Math.max(...pts10g.map((p) => p[0])) - minX10g;
+  const d10g = Math.max(...pts10g.map((p) => p[1])) - minZ10g;
+  const past10g = await page.evaluate(() => window.__modeler.getHistory().past);
+  const delta10g = { dx: 233, dz: 177 };
+  const grab10g = { x: minX10g + w10g / 2, y: 0, z: minZ10g + d10g / 2 };
+  const from10g = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    grab10g,
+  );
+  const to10g = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    { x: grab10g.x + delta10g.dx, y: 0, z: grab10g.z + delta10g.dz },
+  );
+  await page.mouse.move(from10g.x, from10g.y);
+  await page.mouse.down();
+  await page.mouse.move(to10g.x, to10g.y, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  await page.locator('[data-modeler-snap]').click(); // volver a activar
+  const after10g = await page.evaluate(() => ({
+    doc: window.__modeler.getDocument(),
+    past: window.__modeler.getHistory().past,
+    snap: window.__modeler.getTransformState().snapEnabled,
+  }));
+  const solidAfter10g = after10g.doc.objects.find(
+    (object) => object.id === 'solid-1',
+  );
+  const ptsAfter10g = solidAfter10g.geometry.sketch.pointsMm;
+  const xAfter10g = Math.min(...ptsAfter10g.map((p) => p[0]));
+  const zAfter10g = Math.min(...ptsAfter10g.map((p) => p[1]));
+  check(
+    '10g. snap desactivado: el arrastre sigue el delta exacto (±30 mm) y el snap vuelve a activarse',
+    snapOff10g === false &&
+      after10g.snap === true &&
+      after10g.past === past10g + 1 &&
+      Math.abs(xAfter10g - (minX10g + delta10g.dx)) <= 30 &&
+      Math.abs(zAfter10g - (minZ10g + delta10g.dz)) <= 30,
+    `pos=(${xAfter10g},${zAfter10g}) esperado≈(${minX10g + delta10g.dx},${minZ10g + delta10g.dz})`,
+  );
+
+  // 10h — Aislamiento: mover el clóset 1 NO toca al clóset 2 ni
+  // cambia ningún parámetro.
+  await page.locator('[data-modeler-insert-wardrobe]').click();
+  await page
+    .waitForFunction(
+      () =>
+        window.__modeler.getComponentStates()['component-2']?.status ===
+        'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  const doc10h = await page.evaluate(() => window.__modeler.getDocument());
+  const c1Before10h = doc10h.objects.find(
+    (object) => object.id === 'component-1',
+  );
+  const c2Before10h = doc10h.objects.find(
+    (object) => object.id === 'component-2',
+  );
+  await page.locator('[data-modeler-object="component-1"]').click();
+  await page.waitForTimeout(150);
+  const c1Dims10h = c1Before10h.params.dimensions;
+  const grab10h = {
+    x: c1Before10h.transform.positionMm[0] + c1Dims10h.widthMm / 2,
+    y: 0,
+    z: c1Before10h.transform.positionMm[2] + c1Dims10h.depthMm / 2,
+  };
+  const from10h = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    grab10h,
+  );
+  const to10h = await page.evaluate(
+    (p) => window.__modelerProject([p.x, p.y, p.z]),
+    { x: grab10h.x + 300, y: 0, z: grab10h.z + 200 },
+  );
+  await page.mouse.move(from10h.x, from10h.y);
+  await page.mouse.down();
+  await page.mouse.move(to10h.x, to10h.y, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const after10h = await page.evaluate(() => window.__modeler.getDocument());
+  const c1After10h = after10h.objects.find(
+    (object) => object.id === 'component-1',
+  );
+  const c2After10h = after10h.objects.find(
+    (object) => object.id === 'component-2',
+  );
+  check(
+    '10h. mover el clóset 1 lo desplaza (snap) sin tocar posición NI params del clóset 2 ni los suyos',
+    c1After10h.transform.positionMm[0] ===
+      snap100(c1Before10h.transform.positionMm[0] + 300) &&
+      c1After10h.transform.positionMm[2] ===
+        snap100(c1Before10h.transform.positionMm[2] + 200) &&
+      JSON.stringify(c1After10h.params) ===
+        JSON.stringify(c1Before10h.params) &&
+      JSON.stringify(c2After10h.transform) ===
+        JSON.stringify(c2Before10h.transform) &&
+      JSON.stringify(c2After10h.params) === JSON.stringify(c2Before10h.params),
+    `c1=[${c1Before10h.transform.positionMm}]→[${c1After10h.transform.positionMm}] c2 intacto`,
+  );
+  await shootStable(page, '22-clots-movidos', canvasClip);
+
+  // 10i — Campo exacto del clóset + Undo/Redo del movimiento.
+  await page.locator('[data-modeler-field="position-x"]').fill('1500');
+  await page.waitForTimeout(200);
+  const moved10i = await page.evaluate(() => window.__modeler.getDocument());
+  const c1Moved10i = moved10i.objects.find(
+    (object) => object.id === 'component-1',
+  );
+  await page.locator('[data-modeler-undo]').click();
+  await page.waitForTimeout(200);
+  const undone10i = await page.evaluate(() => window.__modeler.getDocument());
+  const c1Undone10i = undone10i.objects.find(
+    (object) => object.id === 'component-1',
+  );
+  await page.locator('[data-modeler-redo]').click();
+  await page.waitForTimeout(200);
+  const redone10i = await page.evaluate(() => window.__modeler.getDocument());
+  const c1Redone10i = redone10i.objects.find(
+    (object) => object.id === 'component-1',
+  );
+  check(
+    '10i. campo exacto del clóset (x=1500) con Undo/Redo exactos del movimiento',
+    c1Moved10i.transform.positionMm[0] === 1500 &&
+      c1Undone10i.transform.positionMm[0] ===
+        c1After10h.transform.positionMm[0] &&
+      c1Redone10i.transform.positionMm[0] === 1500,
+    `movido=${c1Moved10i.transform.positionMm[0]} deshecho=${c1Undone10i.transform.positionMm[0]} rehecho=${c1Redone10i.transform.positionMm[0]}`,
+  );
+
+  // 10j — Eliminar y restaurar el sólido conserva SU posición.
+  await page.locator('[data-modeler-object="solid-1"]').click();
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(200);
+  await page.locator('[data-modeler-undo]').click();
+  await page.waitForTimeout(400);
+  const restored10j = await page.evaluate(() => window.__modeler.getDocument());
+  const solid10j = restored10j.objects.find(
+    (object) => object.id === 'solid-1',
+  );
+  const x10j = Math.min(...solid10j.geometry.sketch.pointsMm.map((p) => p[0]));
+  check(
+    '10j. eliminar y restaurar el sólido conserva su posición movida',
+    x10j === xAfter10g && solid10j.geometry.extrusionMm === 100,
+    `x=${x10j} esperado=${xAfter10g}`,
+  );
+
+  // 10k — Rendimiento en escena con VARIOS muebles: inserción y
+  // movimiento con reloj real (límites generosos; el valor exacto
+  // se registra en el informe).
+  const insertTimed10k = async (id) => {
+    const start = Date.now();
+    await page.locator('[data-modeler-insert-wardrobe]').click();
+    await page
+      .waitForFunction(
+        (componentId) =>
+          window.__modeler.getComponentStates()[componentId]?.status ===
+          'ready',
+        id,
+        { timeout: 30_000 },
+      )
+      .catch(() => undefined);
+    return Date.now() - start;
+  };
+  perfWave01.insercion3Ms = await insertTimed10k('component-3');
+  perfWave01.insercion4Ms = await insertTimed10k('component-4');
+  const moveStart10k = Date.now();
+  await page.locator('[data-modeler-field="position-z"]').fill('400');
+  await page.waitForFunction(
+    () => window.__modeler.getDocument().objects.some(
+      (object) =>
+        object.id === 'component-4' &&
+        object.transform.positionMm[2] === 400,
+    ),
+    undefined,
+    { timeout: 10_000 },
+  ).catch(() => undefined);
+  perfWave01.movimientoMs = Date.now() - moveStart10k;
+  const comps10k = await page.evaluate(() => window.__modeler.getComponentStates());
+  check(
+    '10k. escena con 4 clósets: inserción y movimiento dentro de límites holgados',
+    comps10k['component-3']?.status === 'ready' &&
+      comps10k['component-4']?.status === 'ready' &&
+      perfWave01.insercion3Ms < 20_000 &&
+      perfWave01.insercion4Ms < 20_000 &&
+      perfWave01.movimientoMs < 5_000,
+    `inserción3=${perfWave01.insercion3Ms} ms inserción4=${perfWave01.insercion4Ms} ms movimiento=${perfWave01.movimientoMs} ms`,
+  );
+  await shootStable(page, '23-cuatro-closets', canvasClip);
+
+  // 10l — Liberación de recursos tras mover: al vaciar la escena,
+  // paridad TOTAL de los dos ciclos de vida (sólidos y piezas).
+  for (const id of ['component-4', 'component-3', 'component-2', 'component-1', 'solid-1']) {
+    await page.locator(`[data-modeler-object="${id}"]`).click();
+    await page.locator('[data-modeler-delete]').click();
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(400);
+  const life10l = await page.evaluate(() => window.__modeler.getGeometryStats());
+  const partsLife10l = await page.evaluate(
+    () => window.__modeler.getPartsGeometryStats(),
+  );
+  const rows10l = await page.locator('[data-modeler-object]').count();
+  check(
+    '10l. tras mover y vaciar la escena: paridad TOTAL de ciclos de vida (cero fugas)',
+    rows10l === 0 &&
+      life10l.created === life10l.disposed &&
+      partsLife10l.created === partsLife10l.disposed,
+    `sólidos ${life10l.disposed}/${life10l.created} · piezas ${partsLife10l.disposed}/${partsLife10l.created}`,
+  );
+  await shootStable(page, '24-wave01-final-vacio', canvasClip);
+
   // --- 5. Sin errores de consola/página --------------------
   check(
     '5a. sin errores de consola',
@@ -1307,12 +1775,13 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B + 4C-C + 4C-D',
+        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 (traslación)',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,
         aprobadas: results.length - failures.length,
         fallos: failures.length,
+        rendimientoWave01: perfWave01,
         results,
       },
       null,

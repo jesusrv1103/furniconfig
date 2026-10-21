@@ -188,6 +188,31 @@ export interface WardrobePanelProps {
   readonly onDelete: () => void;
 }
 
+/**
+ * WAVE-01 BLOQUE 2 — panel de POSICIÓN EN EL SUELO (X/Z, mm
+ * enteros) del objeto seleccionado (sólido o clóset). La posición
+ * se aplica con UNA entrada de historial por confirmación/gesto;
+ * el snap afecta solo al arrastre (los campos numéricos son
+ * exactos: lo que se teclea es lo que se aplica).
+ */
+export interface PositionPanelProps {
+  readonly xText: string;
+  readonly zText: string;
+  readonly onXChange: (text: string) => void;
+  readonly onZChange: (text: string) => void;
+  /** Flechas de ajuste: UN desplazamiento por clic (mm con signo). */
+  readonly onNudge: (dxMm: number, dzMm: number) => void;
+  readonly nudgeStepMm: number;
+  /** Snap del ARRASTRE a la rejilla del documento. */
+  readonly snapEnabled: boolean;
+  readonly onSnapChange: (enabled: boolean) => void;
+  readonly snapStepMm: number;
+  /** Rechazo de la ÚLTIMA edición de posición (validación). */
+  readonly errorMessage: string | null;
+  /** El objeto seleccionado admite arrastre (geometría derivada lista). */
+  readonly draggable: boolean;
+}
+
 /** Controles del historial visual (C1/C3) para la barra superior. */
 export interface HistoryControlsProps {
   readonly canUndo: boolean;
@@ -221,6 +246,8 @@ export interface ModelerShellProps {
   readonly objects: readonly ObjectRowProps[];
   readonly selection: SelectionPanelProps | null;
   readonly wardrobe: WardrobePanelProps | null;
+  /** WAVE-01: posición en el suelo del objeto seleccionado (o null). */
+  readonly position: PositionPanelProps | null;
   readonly children: ReactNode;
 }
 
@@ -386,6 +413,95 @@ function CommitField({
   );
 }
 
+/**
+ * WAVE-01 BLOQUE 2 — editor de posición en el suelo: campos X/Z de
+ * confirmación (mm enteros con signo), flechas de ajuste por paso y
+ * snap del ARRASTRE. Cada confirmación/clic = UNA entrada de
+ * historial; el estado de error es visible y nunca muta el
+ * documento.
+ */
+function PositionEditor({
+  position,
+}: {
+  position: PositionPanelProps;
+}): ReactNode {
+  const step = position.nudgeStepMm;
+  return (
+    <div className="modeler-position" data-modeler-position="">
+      <h3>Posición en el suelo (mm)</h3>
+      <div className="modeler-position-fields">
+        <CommitField
+          label="X (mm)"
+          value={position.xText}
+          onCommit={position.onXChange}
+          testAttr="position-x"
+        />
+        <CommitField
+          label="Z (mm)"
+          value={position.zText}
+          onCommit={position.onZChange}
+          testAttr="position-z"
+        />
+      </div>
+      <div
+        className="modeler-position-nudge"
+        role="group"
+        aria-label="Ajustar posición por paso"
+      >
+        <button
+          type="button"
+          onClick={() => position.onNudge(-step, 0)}
+          data-modeler-nudge="-x"
+        >
+          {`X −${step}`}
+        </button>
+        <button
+          type="button"
+          onClick={() => position.onNudge(step, 0)}
+          data-modeler-nudge="+x"
+        >
+          {`X +${step}`}
+        </button>
+        <button
+          type="button"
+          onClick={() => position.onNudge(0, -step)}
+          data-modeler-nudge="-z"
+        >
+          {`Z −${step}`}
+        </button>
+        <button
+          type="button"
+          onClick={() => position.onNudge(0, step)}
+          data-modeler-nudge="+z"
+        >
+          {`Z +${step}`}
+        </button>
+      </div>
+      <label className="modeler-position-snap">
+        <input
+          type="checkbox"
+          checked={position.snapEnabled}
+          onChange={(event) => position.onSnapChange(event.target.checked)}
+          data-modeler-snap=""
+        />
+        <span>Ajustar arrastre a rejilla ({position.snapStepMm} mm)</span>
+      </label>
+      <p className="modeler-hint" data-modeler-drag-hint="">
+        {position.draggable
+          ? position.snapEnabled
+            ? `Arrastra el objeto sobre el suelo (snap ${position.snapStepMm} mm); Escape cancela.`
+            : 'Arrastra el objeto sobre el suelo (posiciones exactas); Escape cancela.'
+          : 'Generando geometría: el arrastre se habilita al completarse.'}
+      </p>
+      {position.errorMessage !== null && (
+        <p className="modeler-error" data-modeler-position-error="">
+          {position.errorMessage}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ModelerShell(props: ModelerShellProps): ReactNode {
   const {
     document,
@@ -403,6 +519,7 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
     objects,
     selection,
     wardrobe,
+    position,
     children,
   } = props;
 
@@ -637,6 +754,9 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
 
           <section aria-labelledby="modeler-props-heading" data-modeler-props="">
             <h2 id="modeler-props-heading">Propiedades</h2>
+            {/* WAVE-01: posición en el suelo del objeto seleccionado
+                (común a sólidos y clósets; UN comando por gesto). */}
+            {position !== null && <PositionEditor position={position} />}
             {selection === null && wardrobe === null ? (
               <p className="modeler-hint">
                 Selecciona un sólido o un clóset (herramienta Seleccionar) para
