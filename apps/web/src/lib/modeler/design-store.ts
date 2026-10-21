@@ -267,5 +267,159 @@ export function deleteSceneDesign(
   return { ok: true, id };
 }
 
+/* ------------------------------------------------------------------ *
+ * WAVE-02 BLOQUE 3 — borrador de sesión y metadatos de sesión.
+ *
+ * El borrador es la COPIA DE TRABAJO automática del documento que se
+ * está editando (clave `furniconfig.modeler.draft`, un `SceneEnvelope`
+ * igual que los diseños). Diferencias deliberadas con un diseño
+ * guardado:
+ *
+ * - **Nunca sobrescribe un diseño guardado**: vive en su propia clave;
+ *   escribir el borrador jamás toca `<KEY>.<id>` de diseños.
+ * - **Recuperación segura al recargar**: `readSceneDraft` valida con
+ *   `parseSceneEnvelope` (trata la entrada como hostil); un borrador
+ *   dañado se reporta y NUNCA se borra automáticamente (solo la UI
+ *   puede borrarlo con confirmación explícita del usuario).
+ * - **Metadatos de sesión** en `furniconfig.modeler.session`: modo de
+ *   presentación y diseño activo asociado al borrador (para saber qué
+ *   diseño se continúa y poder calcular «Cambios sin guardar» contra su
+ *   última versión guardada).
+ * - JSON de metadatos hostil → modo cae a `simple` y `activeDesignId`
+ *   a `null` (nunca un estado a medias; el documento solo llega validado).
+ */
+
+/** Clave del borrador de sesión (un `SceneEnvelope` completo). */
+export const MODELER_DRAFT_STORAGE_KEY = 'furniconfig.modeler.draft';
+
+/** Clave de metadatos de sesión (JSON propio, sin mezclar con nada). */
+export const MODELER_SESSION_STORAGE_KEY = 'furniconfig.modeler.session';
+
+/** Metadatos de la sesión de trabajo del modelador. */
+export interface SceneSessionMeta {
+  /** Diseño guardado al que pertenece el borrador (si lo hay). */
+  readonly activeDesignId: string | null;
+  /** Modo de presentación preferido del usuario. */
+  readonly mode: 'simple' | 'advanced';
+  /** Marca de tiempo (ms) de la última escritura del borrador. */
+  readonly updatedAt: number;
+}
+
+/** Lectura discriminada del borrador. */
+export type SceneDraftReadResult =
+  | { readonly ok: true; readonly document: SceneDocument; readonly meta: SceneSessionMeta }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+const MISSING_DRAFT_CODE = 'ERR_DRAFT_MISSING';
+
+function defaultSessionMeta(): SceneSessionMeta {
+  return { activeDesignId: null, mode: 'simple', updatedAt: 0 };
+}
+
+/**
+ * Escribe el borrador (sobre validado) y sus metadatos. El sobre se
+ * serializa ANTES de tocar storage: documento inválido → nada escrito.
+ * Un fallo de escritura queda expuesto como resultado (nada silencioso).
+ */
+export function saveSceneDraft(
+  storage: SceneDesignStorage,
+  document: SceneDocument,
+  meta: {
+    readonly activeDesignId: string | null;
+    readonly mode: 'simple' | 'advanced';
+  },
+): SceneDraftSaveResult {
+  let envelope: string;
+  try {
+    envelope = serializeScene(document);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'documento no serializable';
+    return failure('ERR_DRAFT_SAVE_INVALID', `No se guardó el borrador: ${message}`);
+  }
+  const session: SceneSessionMeta = {
+    activeDesignId: meta.activeDesignId,
+    mode: meta.mode,
+    updatedAt: Date.now(),
+  };
+  try {
+    storage.setItem(MODELER_DRAFT_STORAGE_KEY, envelope);
+    storage.setItem(MODELER_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'storage fallo';
+    return failure('ERR_DRAFT_STORAGE', `No se pudo escribir el borrador: ${message}`);
+  }
+  return { ok: true };
+}
+
+/** Resultado del guardado del borrador (sin id: es único por sesión). */
+export type SceneDraftSaveResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+/**
+ * Lee el borrador. Ausente → `ERR_DRAFT_MISSING`; dañado/incompatible
+ * → error con el código del parseo (el registro NO se elimina; la UI
+ * ofrecerá «Descartar borrador» como acción explícita del usuario).
+ */
+export function readSceneDraft(storage: SceneDesignStorage): SceneDraftReadResult {
+  const text = storage.getItem(MODELER_DRAFT_STORAGE_KEY);
+  if (text === null) {
+    return failure(MISSING_DRAFT_CODE, 'No hay borrador de sesión.');
+  }
+  const parsed = parseSceneEnvelope(text);
+  if (!parsed.ok) {
+    return failure(
+      parsed.code,
+      `El borrador de sesión está dañado o es incompatible: ${parsed.message}`,
+    );
+  }
+  return {
+    ok: true,
+    document: parsed.document,
+    meta: readSessionMeta(storage),
+  };
+}
+
+/**
+ * Metadatos de sesión tolerantes a fallos: JSON ausente o corrupto →
+ * valores por defecto (el borrador sigue siendo usable; nada se borra).
+ */
+export function readSessionMeta(
+  storage: SceneDesignStorage,
+): SceneSessionMeta {
+  const text = storage.getItem(MODELER_SESSION_STORAGE_KEY);
+  if (text === null) return defaultSessionMeta();
+  try {
+    const raw: unknown = JSON.parse(text);
+    if (raw === null || typeof raw !== 'object') return defaultSessionMeta();
+    const record = raw as Record<string, unknown>;
+    const activeDesignId =
+      typeof record['activeDesignId'] === 'string' &&
+      record['activeDesignId'] !== ''
+        ? record['activeDesignId']
+        : null;
+    const mode = record['mode'] === 'advanced' ? 'advanced' : 'simple';
+    const updatedAt =
+      typeof record['updatedAt'] === 'number' &&
+      Number.isFinite(record['updatedAt'])
+        ? record['updatedAt']
+        : 0;
+    return { activeDesignId, mode, updatedAt };
+  } catch {
+    return defaultSessionMeta();
+  }
+}
+
+/**
+ * Borra borrador y metadatos (SOLO bajo confirmación explícita del
+ * usuario: «Descartar borrador»). Un borrador dañado también puede
+ * descartarse con esta misma acción.
+ */
+export function clearSceneDraft(storage: SceneDesignStorage): void {
+  storage.removeItem(MODELER_DRAFT_STORAGE_KEY);
+  storage.removeItem(MODELER_SESSION_STORAGE_KEY);
+}
+
 /** Reexporta el tipo de parseo para que la pantalla maneje códigos. */
 export type { ParseSceneEnvelopeResult };

@@ -324,9 +324,58 @@ try {
     }
   });
 
-  // --- 1. Apertura directa del modelador -------------------
+  // --- 0. WAVE-02: pantalla de inicio (primera visita) -----
+  // Antes (auditoría P-01) la primera visita abría la escena técnica
+  // vacía; ahora la bienvenida manda y el editor se alcanza con una
+  // acción explícita. Las comprobaciones WAVE-01 siguientes corren en
+  // modo AVANZADO («Diseño libre») y validan la PARIDAD del editor.
   await page.goto(`${baseUrl}/#/modeler`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  check(
+    '0a. la primera visita muestra la bienvenida (no escena técnica vacía)',
+    true,
+  );
+  const welcomeTitle = await page
+    .locator('.modeler-welcome-title')
+    .innerText();
+  check(
+    '0b. título claro «¿Qué quieres crear?»',
+    welcomeTitle.includes('¿Qué quieres crear?'),
+    welcomeTitle.trim(),
+  );
+  check(
+    '0c. acción principal «Crear clóset»',
+    (await page.locator('[data-welcome-create]').count()) === 1,
+  );
+  check(
+    '0d. sin borrador NO hay tarjeta de continuación',
+    (await page.locator('[data-welcome-draft]').count()) === 0,
+  );
+  check(
+    '0e. «Diseño libre — avanzado» como escape del modelador técnico',
+    (await page.locator('[data-welcome-free]').count()) === 1,
+  );
+  await shootStable(page, '00-w02-bienvenida');
+  await page.click('[data-welcome-free]');
   await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  const screenAfterFree = await page.evaluate(() =>
+    window.__modeler?.getScreen?.(),
+  );
+  check(
+    '0f. «Diseño libre» entra al editor con escena vacía',
+    screenAfterFree === 'editor',
+    String(screenAfterFree),
+  );
+  const modeAfterFree = await page.evaluate(() =>
+    window.__modeler?.getMode?.(),
+  );
+  check(
+    '0g. el diseño libre arranca en modo AVANZADO (paridad WAVE-01)',
+    modeAfterFree === 'advanced',
+    String(modeAfterFree),
+  );
+
+  // --- 1. Apertura directa del modelador -------------------
   const brand = await page.locator('.modeler-brand-name').innerText();
   check('1a. carga directa de #/modeler monta el modelador', true, brand);
   check(
@@ -441,12 +490,17 @@ try {
   );
   await shootStable(page, '05-configurador');
 
+  // WAVE-02: cada entrada en #/modeler aterriza en la bienvenida; para
+  // continuar la verificación técnica se entra con «Diseño libre»
+  // (modo avanzado, escena vacía: paridad exacta del editor previo).
   await page.goBack();
-  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
   check(
-    '4c. "atrás" del navegador regresa al modelador',
+    '4c. "atrás" del navegador regresa al modelador (bienvenida)',
     new URL(page.url()).hash === '#/modeler',
   );
+  await page.click('[data-welcome-free]');
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
 
   await page.goForward();
   await page.waitForSelector('section.viewer canvas', { timeout: 15_000 });
@@ -456,6 +510,8 @@ try {
   );
 
   await page.goBack();
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  await page.click('[data-welcome-free]');
   await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
   await page.waitForTimeout(600); // asentamiento: cualquier error React asíncrono debe haberse emitido ya
 
@@ -1879,20 +1935,61 @@ try {
   );
   await shootStable(page, '25-wave01-guardado', canvasClip);
 
-  // 11d — Recarga: el diseño persiste; la escena vuelve a la semilla
-  // (sin restauración implícita del documento).
+  // 11d — WAVE-02 (cambio INTENCIONAL de expectativa, BLOQUE 3):
+  // ANTES, tras recargar, la escena volvía a la semilla y el selector
+  // no se abría por sí solo. AHORA la recuperación del borrador es
+  // segura y EXPLÍCITA: la bienvenida nombra qué se continúa (y ofrece
+  // descartarlo); el editor NO se abre implícitamente y los diseños
+  // guardados siguen intactos. La aserción afectada se sustituye y se
+  // añade la del nuevo comportamiento (11d2).
   await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
   const reload11 = await page.evaluate(() => ({
-    designs: window.__modeler.getDesigns(),
-    objectCount: window.__modeler.getDocument().objects.length,
+    welcomeVisible:
+      document.querySelector('[data-modeler-welcome]') !== null,
+    editorMounted: document.querySelector('[data-modeler]') !== null,
+    draftCard:
+      document
+        .querySelector('[data-welcome-draft]')
+        ?.getAttribute('data-welcome-draft') ?? null,
+    draftExists:
+      localStorage.getItem('furniconfig.modeler.draft') !== null,
+    designKeys: Object.keys(localStorage).filter((key) =>
+      key.startsWith('furniconfig.modeler.designs'),
+    ).length,
   }));
   check(
-    '11d. tras recargar el listado persiste y la escena es la semilla (sin apertura implícita)',
-    reload11.designs.summaries.some((entry) => entry.id === 'design-1') &&
-      reload11.designs.activeDesign === null &&
-      reload11.objectCount === 0,
-    `listado=${reload11.designs.summaries.length} activo=${reload11.designs.activeDesign === null ? 'null' : 'sí'} objetos=${reload11.objectCount}`,
+    '11d. tras recargar: bienvenida con tarjeta de borrador, editor NO abierto y diseños intactos',
+    reload11.welcomeVisible &&
+      !reload11.editorMounted &&
+      reload11.draftCard === 'ok' &&
+      reload11.draftExists &&
+      reload11.designKeys >= 1,
+    `bienvenida=${reload11.welcomeVisible} editor=${reload11.editorMounted} tarjeta=${reload11.draftCard} diseños=${reload11.designKeys}`,
+  );
+  await shootStable(page, '24b-wave02-bienvenida-recarga');
+
+  // 11d2 — «Continuar» restaura el borrador con su diseño activo.
+  await page.click('[data-welcome-continue]');
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  await page
+    .waitForFunction(
+      () => window.__modeler.getDocument().objects.length === 2,
+      undefined,
+      { timeout: 10_000 },
+    )
+    .catch(() => undefined);
+  const continued11 = await page.evaluate(() => ({
+    designs: window.__modeler.getDesigns(),
+    objectCount: window.__modeler.getDocument().objects.length,
+    mode: window.__modeler.getMode(),
+  }));
+  check(
+    '11d2. «Continuar» restaura el borrador: 2 objetos, design-1 activo y sin cambios pendientes',
+    continued11.designs.activeDesign?.id === 'design-1' &&
+      continued11.objectCount === 2 &&
+      continued11.designs.dirty === false,
+    `activo=${continued11.designs.activeDesign?.id ?? 'null'} objetos=${continued11.objectCount} sucio=${continued11.designs.dirty}`,
   );
 
   // 11e — Abrir design-1: documento IGUAL al sobre, historial vacío,
@@ -2138,10 +2235,31 @@ try {
     );
   });
   await page.reload({ waitUntil: 'networkidle' });
+  // WAVE-02 (cambio intencional): la recarga aterriza en la bienvenida,
+  // que lista el corrupto como dañado (sin borrarlo) y ofrece continuar
+  // el borrador. La entrada al editor es EXPLÍCITA.
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  const welcomeCorrupt11 = await page.evaluate(() => ({
+    brokenListed:
+      document.querySelectorAll('.modeler-welcome-design-broken').length,
+    corruptKept: localStorage.getItem(
+      'furniconfig.modeler.designs.design-9',
+    ),
+  }));
+  check(
+    '11m0. la bienvenida lista el corrupto como dañado sin eliminarlo (B3)',
+    welcomeCorrupt11.brokenListed >= 1 &&
+      welcomeCorrupt11.corruptKept !== null,
+    `dañados=${welcomeCorrupt11.brokenListed} registro=${welcomeCorrupt11.corruptKept === null ? 'PERDIDO' : 'intacto'}`,
+  );
+  await page.click('[data-welcome-continue]');
   await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
   const corruptListed11 = await page
     .locator('[data-modeler-design-select] option')
     .allTextContents();
+  const activeBeforeCorrupt11 = await page.evaluate(
+    () => window.__modeler.getDesigns().activeDesign?.id ?? null,
+  );
   await page.locator('[data-modeler-design-select]').selectOption('design-9');
   await page.waitForTimeout(250);
   const corruptOpen11 = await page.evaluate(() => ({
@@ -2156,9 +2274,10 @@ try {
     corruptListed11.some((label) => label.includes('design-9 (dañado')) &&
       corruptErrorVisible11 === 1 &&
       corruptOpen11.designs.error !== null &&
-      corruptOpen11.designs.activeDesign === null &&
+      (corruptOpen11.designs.activeDesign?.id ?? null) ===
+        activeBeforeCorrupt11 &&
       corruptOpen11.stored !== null,
-    `error=${corruptOpen11.designs.error ?? 'ninguno'}`,
+    `errEl=${corruptErrorVisible11} error=${corruptOpen11.designs.error !== null ? 'sí' : 'no'} activo=${corruptOpen11.designs.activeDesign?.id ?? 'null'} (antes ${activeBeforeCorrupt11 ?? 'null'}) registro=${corruptOpen11.stored !== null ? 'intacto' : 'PERDIDO'} opciones=[${corruptListed11.join(' / ')}]`,
   );
   await page.locator('[data-modeler-design-delete]').click();
   await page.waitForTimeout(250);
@@ -2180,9 +2299,21 @@ try {
 
   // 11o — El configurador original sigue funcionando (navegación en
   // la misma pestaña) y el diseño del modelador persiste al volver.
+  // Con WAVE-02 el retorno aterriza en la bienvenida: la entrada al
+  // editor vuelve a ser explícita («Continuar»).
   await page.goto(`${baseUrl}/#/`, { waitUntil: 'networkidle' });
   await page.waitForSelector('canvas', { timeout: 15_000 });
   await page.goto(`${baseUrl}/#/modeler`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  const draftCardBack11 = await page
+    .locator('[data-welcome-draft]')
+    .getAttribute('data-welcome-draft');
+  check(
+    '11o0. al volver del configurador: bienvenida con borrador recuperable (sin auto-apertura)',
+    draftCardBack11 === 'ok',
+    `tarjeta=${draftCardBack11}`,
+  );
+  await page.click('[data-welcome-continue]');
   await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
   const back11 = await page.evaluate(() => ({
     designs: window.__modeler.getDesigns(),
@@ -2197,6 +2328,144 @@ try {
     `listado=${back11.designs.summaries.length} configurador=${back11.configValue === configBefore11 ? 'intacto' : 'CAMBIÓ'}`,
   );
   await shootStable(page, '29-wave01-final', canvasClip);
+
+  // --- 13. WAVE-02 (UX-A): inicio, crear clóset y modo sencillo ---
+  // 13a — «Inicio» regresa a la bienvenida con el borrador recuperable
+  // (la escena de trabajo NO se pierde: está en el borrador).
+  await page.click('[data-modeler-home]');
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  const home13 = await page.evaluate(() => ({
+    draftCard:
+      document
+        .querySelector('[data-welcome-draft]')
+        ?.getAttribute('data-welcome-draft') ?? null,
+    designsListed: document.querySelectorAll('[data-welcome-open]').length,
+  }));
+  check(
+    '13a. «Inicio» regresa a la bienvenida con la tarjeta del borrador',
+    home13.draftCard === 'ok' && home13.designsListed >= 1,
+    `tarjeta=${home13.draftCard} diseños=${home13.designsListed}`,
+  );
+  await shootStable(page, '30-wave02-inicio');
+
+  // 13b — «Crear clóset»: modo sencillo, UN clóset válido en escena,
+  // seleccionado, geometría lista y encuadre sobre el mueble real.
+  await page.click('[data-welcome-create]');
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  await page
+    .waitForFunction(
+      () =>
+        window.__modeler.getComponentStates()['component-1']?.status ===
+        'ready',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
+  const created13 = await page.evaluate(() => ({
+    mode: window.__modeler.getMode(),
+    sel: window.__modeler.getSelection()?.anchor ?? null,
+    objectCount: window.__modeler.getDocument().objects.length,
+    hint: window.__modeler.getStartHint(),
+    saveState: window.__modeler.getSaveState(),
+    engineSpan: document.querySelectorAll('[data-modeler-engine]').length,
+    docState:
+      document.querySelector('[data-modeler-doc-state]')?.textContent ?? '',
+    sceneHint:
+      document.querySelector('[data-modeler-scene-hint]')?.textContent ?? '',
+    bounds: window.__modeler.getFramedBounds(),
+    compState:
+      window.__modeler.getComponentStates()['component-1']?.status ?? null,
+    selectionPanel:
+      document.querySelectorAll('[data-modeler-selection-status]').length,
+  }));
+  check(
+    '13b. «Crear clóset»: modo sencillo, 1 clóset válido, seleccionado y «listo»',
+    created13.mode === 'simple' &&
+      created13.objectCount === 1 &&
+      created13.sel === 'component-1' &&
+      created13.compState === 'ready' &&
+      created13.selectionPanel >= 1,
+    `modo=${created13.mode} objetos=${created13.objectCount} sel=${created13.sel} motor=${created13.compState}`,
+  );
+  check(
+    '13c. el encuadre apunta al mueble real (caja ajustada al clóset con margen)',
+    created13.bounds.min[0] < 0 &&
+      created13.bounds.max[0] > 2 && created13.bounds.max[0] < 3.5 &&
+      created13.bounds.min[1] === 0 &&
+      created13.bounds.max[1] > 2.2 && created13.bounds.max[1] < 3,
+    `bounds=${JSON.stringify(created13.bounds)}`,
+  );
+  check(
+    '13d. modo sencillo: sin jerga del motor, doc-state breve y pista de edición visible',
+    created13.engineSpan === 0 &&
+      !created13.docState.includes('rejilla') &&
+      (created13.hint ?? '').includes('clóset') &&
+      created13.sceneHint.includes('Arrastra el ratón'),
+    `motor=${created13.engineSpan} doc-state=${created13.docState.trim()} pista=${created13.hint ?? 'ninguna'}`,
+  );
+  check(
+    '13e. chip de guardado: «Cambios sin guardar» desde la creación sin diseño',
+    created13.saveState === 'dirty-unsaved',
+    created13.saveState,
+  );
+  await shootStable(page, '31-wave02-crear-closet', canvasClip);
+
+  // 13f — Propiedades del clóset visibles en el panel derecho.
+  const fields13 = await page.locator('[data-modeler-field]').count();
+  check(
+    '13f. propiedades del clóset visibles (ancho/alto/fondo/módulos/puertas…)',
+    fields13 >= 5,
+    `campos=${fields13}`,
+  );
+
+  // 13g — Cambiar de modo NO pierde documento, selección ni historial.
+  const before13 = await page.evaluate(() => ({
+    objects: window.__modeler.getDocument().objects.length,
+    anchor: window.__modeler.getSelection()?.anchor ?? null,
+    canUndo: window.__modeler.getHistory().canUndo,
+  }));
+  await page.locator('[data-modeler-mode]').click();
+  await page.waitForTimeout(200);
+  const afterToggle13 = await page.evaluate(() => ({
+    mode: window.__modeler.getMode(),
+    objects: window.__modeler.getDocument().objects.length,
+    anchor: window.__modeler.getSelection()?.anchor ?? null,
+    canUndo: window.__modeler.getHistory().canUndo,
+    engineSpan: document.querySelectorAll('[data-modeler-engine]').length,
+    docState:
+      document.querySelector('[data-modeler-doc-state]')?.textContent ?? '',
+  }));
+  check(
+    '13g. activar «Modo avanzado»: vuelve el material técnico y nada se pierde',
+    afterToggle13.mode === 'advanced' &&
+      afterToggle13.engineSpan === 1 &&
+      afterToggle13.docState.includes('rejilla') &&
+      afterToggle13.objects === before13.objects &&
+      afterToggle13.anchor === before13.anchor &&
+      afterToggle13.canUndo === before13.canUndo,
+    `modo=${afterToggle13.mode} objetos=${afterToggle13.objects}/${before13.objects} sel=${afterToggle13.anchor} (antes ${before13.anchor})`,
+  );
+  await shootStable(page, '32-wave02-modo-avanzado', canvasClip);
+
+  // 13h — Volver a sencillo y RECARGAR: el modo preferido se recuerda
+  // en la sesión y la escena continúa desde el borrador (1 clóset).
+  await page.locator('[data-modeler-mode]').click();
+  await page.waitForTimeout(500); // deja escribir el borrador (debounce 300 ms)
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  await page.click('[data-welcome-continue]');
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
+  const modeRemembered13 = await page.evaluate(() => ({
+    mode: window.__modeler.getMode(),
+    objects: window.__modeler.getDocument().objects.length,
+    saveState: window.__modeler.getSaveState(),
+  }));
+  check(
+    '13h. tras recargar, «Continuar» restaura la escena y el modo sencillo preferido',
+    modeRemembered13.mode === 'simple' && modeRemembered13.objects === 1,
+    `modo=${modeRemembered13.mode} objetos=${modeRemembered13.objects} chip=${modeRemembered13.saveState}`,
+  );
+  await shootStable(page, '33-wave02-continuar', canvasClip);
 
   // Diálogos observados (evidencia de las guardias de pérdida).
   console.log(`   diálogos: ${dialogLog.join(' | ')}`);
@@ -2248,7 +2517,7 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 (traslación + persistencia)',
+        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 + WAVE-02 UX-A (inicio, encuadre y modo sencillo)',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,

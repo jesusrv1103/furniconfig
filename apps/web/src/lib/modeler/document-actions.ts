@@ -273,6 +273,32 @@ export function buildWardrobeAddCommand(
 }
 
 /**
+ * WAVE-02 BLOQUE 0 — documento INICIAL al pulsar «Crear clóset» en la
+ * pantalla de inicio: la semilla con un clóset válido ya dentro,
+ * instalado como documento base del historial (sin entrada: es el
+ * punto de partida del proyecto, no una edición posterior).
+ *
+ * Reutiliza `buildWardrobeObject` + `createAddObjectCommand` (cero
+ * lógica nueva de creación; ningún motor ni contrato se toca).
+ * `null` si la validación rechaza el resultado (nunca instala un
+ * documento inválido).
+ */
+export function buildWardrobeSeedDocument(
+  base: SceneDocument,
+): SceneDocument | null {
+  try {
+    const next = createAddObjectCommand(
+      base,
+      buildWardrobeObject(base, DEFAULT_CONFIG),
+    ).apply(base);
+    const result = validateSceneDocument(next);
+    return result.ok ? result.document : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Aplica una acción sobre el documento y devuelve el NUEVO
  * documento validado (congelado), o `null` si la acción es
  * inválida (precondiciones del comando o validación final).

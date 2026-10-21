@@ -53,6 +53,7 @@ import {
 import {
   ModelerShell,
   type DesignsPanelProps,
+  type ModelerSaveState,
   type ObjectRowProps,
   type PendingSketchPanelProps,
   type PositionPanelProps,
@@ -60,6 +61,7 @@ import {
   type WardrobePanelProps,
 } from './ModelerShell.js';
 import { ModelerScene } from './ModelerScene.js';
+import { WelcomeScreen, formatDraftAge, type WelcomeDraftCard } from './WelcomeScreen.js';
 import { useModelerGeometry } from '../../hooks/use-modeler-geometry.js';
 import { useSceneGeometry } from '../../hooks/use-scene-geometry.js';
 import {
@@ -92,6 +94,7 @@ import {
   applySceneAction,
   buildSolidAddCommand,
   buildWardrobeAddCommand,
+  buildWardrobeSeedDocument,
   nextComponentId,
   nextSolidId,
 } from '../../lib/modeler/document-actions.js';
@@ -103,15 +106,19 @@ import {
   type MoveDraft,
 } from '../../lib/modeler/transform.js';
 import {
+  clearSceneDraft,
   createSceneDesign,
   deleteSceneDesign,
   duplicateSceneDesign,
   getDefaultSceneDesignStorage,
   listSceneDesigns,
   readSceneDesign,
+  readSceneDraft,
   renameSceneDesign,
   saveSceneDesign,
+  saveSceneDraft,
   type SceneDesignSummary,
+  type SceneDraftReadResult,
 } from '../../lib/modeler/design-store.js';
 import {
   WARDROBE_COMPONENT_TYPE,
@@ -120,8 +127,10 @@ import {
 import { wardrobeSceneRegistry } from '../../lib/modeler/open-design.js';
 import { partsGeometryLifecycle } from '../../lib/modeler/components/parts-to-mesh.js';
 import { historyShortcut } from '../../lib/modeler/history-shortcuts.js';
-import type { CameraView } from '../../lib/camera-views.js';
+import type { Aabb, CameraView } from '../../lib/camera-views.js';
 import type { ModelerTool } from '../../lib/modeler/drawing.js';
+import type { ModelerMode } from '../../lib/modeler/modes.js';
+import { computeSceneBounds, DEFAULT_SCENE_BOUNDS } from '../../lib/modeler/scene-bounds.js';
 import { geometryLifecycle } from './use-solid-geometry.js';
 
 import './modeler.css';
@@ -226,6 +235,11 @@ export function ModelerApp(): ReactNode {
    * listado, diseño activo, foco del panel, mensajes y la instantánea
    * JSON del último guardar/abrir para detectar cambios sin guardar.
    * Nunca almacena mallas ni historial (solo `SceneDocument`).
+   *
+   * WAVE-02 BLOQUE 3: la instantánea pasa a ser BASELINE GLOBAL
+   * (se fija al abrir/guardar/crear, incluso sin diseño activo), de
+   * modo que «Cambios sin guardar» aparece desde la primera
+   * modificación aunque el proyecto todavía no tenga nombre.
    */
   const [designStorage] = useState(() => getDefaultSceneDesignStorage());
   const [designSummaries, setDesignSummaries] = useState<
@@ -238,7 +252,29 @@ export function ModelerApp(): ReactNode {
   const [designFocusId, setDesignFocusId] = useState<string | null>(null);
   const [designMessage, setDesignMessage] = useState<string | null>(null);
   const [designError, setDesignError] = useState<string | null>(null);
-  const [designSavedJson, setDesignSavedJson] = useState<string | null>(null);
+  const [designSavedJson, setDesignSavedJson] = useState<string | null>(() =>
+    JSON.stringify(seedDocument),
+  );
+
+  /**
+   * WAVE-02 BLOQUE 0 — pantalla de inicio vs editor: la primera
+   * visita NUNCA cae en la escena técnica vacía (auditoría P-01).
+   */
+  const [screen, setScreen] = useState<'welcome' | 'editor'>('welcome');
+  /** WAVE-02 BLOQUE 4 — modo de presentación (persistido en sesión). */
+  const [mode, setMode] = useState<ModelerMode>('simple');
+  /** Borrador de sesión leído al montar (BLOQUE 3: recuperación segura). */
+  const [draftInfo, setDraftInfo] = useState<SceneDraftReadResult | null>(null);
+  /** Error de una acción de la pantalla de inicio (apertura fallida…). */
+  const [welcomeError, setWelcomeError] = useState<string | null>(null);
+  /** Pista breve «cómo editarlo» tras crear el primer clóset (B0). */
+  const [startHint, setStartHint] = useState<string | null>(null);
+  /**
+   * WAVE-02 BLOQUE 1 — caja de encuadre vigente. SOLO se recalcula en
+   * momentos explícitos (crear el primer mueble / «Encuadrar» /
+   * abrir un diseño): las ediciones NO reencuadran.
+   */
+  const [framedBounds, setFramedBounds] = useState<Aabb>(DEFAULT_SCENE_BOUNDS);
 
   const geometry = useModelerGeometry();
   const sceneGeometry = useSceneGeometry(
@@ -381,6 +417,9 @@ export function ModelerApp(): ReactNode {
       if (change !== null) {
         selectionStashRef.current = null; // comando nuevo: fin del "restaurar"
         setHistoryMessage(null);
+        // WAVE-02: la pista de bienvenida se retira con la primera
+        // edición (ya cumplió su función de «cómo editarlo»).
+        setStartHint(null);
       }
       return change;
     },
@@ -391,12 +430,14 @@ export function ModelerApp(): ReactNode {
     const change = historyRef.current.undo();
     if (change === null) return;
     setHistoryMessage(`Deshecho: ${change.label}`);
+    setStartHint(null);
   }, []);
 
   const handleRedo = useCallback(() => {
     const change = historyRef.current.redo();
     if (change === null) return;
     setHistoryMessage(`Rehecho: ${change.label}`);
+    setStartHint(null);
   }, []);
 
   // Ctrl/Cmd+Z y Ctrl/Cmd+Shift+Z (C3): fuera de campos de texto,
@@ -443,6 +484,7 @@ export function ModelerApp(): ReactNode {
   const handlePickObject = useCallback(
     (objectId: string | null) => {
       selectionStashRef.current = null; // selección explícita: fin de "restaurar"
+      setStartHint(null);
       setSelection(
         objectId === null
           ? null
@@ -499,9 +541,17 @@ export function ModelerApp(): ReactNode {
    * D1 — Insertar clóset: id precalculado (mismo cálculo que la
    * fábrica del comando → misma selección), inserción reversible
    * vía `CommandHistory` y selección del componente recién creado.
+   *
+   * WAVE-02 BLOQUE 1: el encuadre automático ocurre SOLO al crear el
+   * PRIMER mueble de la escena; insertar junto a otros no reencuadra
+   * (evita reencuadres inesperados durante el trabajo).
    */
   const handleInsertWardrobe = useCallback(() => {
     const objectId = nextComponentId(document);
+    const hadWardrobe = document.objects.some(
+      (object) =>
+        object.kind === 'component' && object.type === WARDROBE_COMPONENT_TYPE,
+    );
     let change: ReturnType<ModelerHistory['dispatch']>;
     try {
       change = runDispatch(buildWardrobeAddCommand(document));
@@ -512,6 +562,10 @@ export function ModelerApp(): ReactNode {
     }
     if (change === null) return;
     setSelection(resolveObjectSelection(change.document, { objectId }));
+    if (!hadWardrobe) {
+      setFramedBounds(computeSceneBounds(change.document));
+      setCamera((prev) => requestFit(prev));
+    }
   }, [document, runDispatch]);
 
   // Edición de cotas: CONFIRMACIÓN (Enter/blur/change del campo) =
@@ -688,11 +742,57 @@ export function ModelerApp(): ReactNode {
     [document],
   );
 
-  /** Ediciones posteriores al último guardar/abrir del diseño activo. */
-  const designDirty =
-    activeDesign !== null &&
-    designSavedJson !== null &&
-    designDocumentJson !== designSavedJson;
+  /** Ediciones posteriores al último guardar/abrir/crear (BASELINE
+   * GLOBAL, WAVE-02 B3): funciona aunque no haya diseño activo.
+   * `null` = sin referencia guardada (p. ej. recién creado con
+   * «Crear clóset») → la escena cuenta como «sin guardar»: nada la
+   * respalda todavía en ningún diseño. */
+  const designDirty = designDocumentJson !== designSavedJson;
+
+  /** Chip global de guardado (WAVE-02 B3). */
+  const saveState: ModelerSaveState = designDirty
+    ? activeDesign !== null
+      ? 'dirty'
+      : 'dirty-unsaved'
+    : activeDesign !== null
+      ? 'saved'
+      : 'clean';
+
+  // -------------------------------------------------------------------------
+  // WAVE-02 BLOQUE 3 — borrador de sesión: escritura debounced mientras se
+  // edita (SOLO en el editor: la pantalla de inicio nunca pisa un borrador
+  // existente), flush al volver al inicio y al ocultar la pestaña.
+  // -------------------------------------------------------------------------
+
+  const writeDraft = useCallback(() => {
+    if (screen !== 'editor' || designStorage === null) return;
+    saveSceneDraft(designStorage, document, {
+      activeDesignId: activeDesign?.id ?? null,
+      mode,
+    });
+  }, [screen, designStorage, document, activeDesign, mode]);
+
+  useEffect(() => {
+    if (screen !== 'editor') return;
+    const timer = window.setTimeout(writeDraft, 300);
+    return () => window.clearTimeout(timer);
+  }, [screen, writeDraft]);
+
+  useEffect(() => {
+    if (screen !== 'editor') return;
+    const flush = (): void => {
+      writeDraft();
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [screen, writeDraft]);
+
+  // Lectura del borrador al montar (recuperación segura tras recargar:
+  // validado por `parseSceneEnvelope`; nunca se restaura nada inválido).
+  useEffect(() => {
+    if (designStorage === null) return;
+    setDraftInfo(readSceneDraft(designStorage));
+  }, [designStorage]);
 
   /**
    * Instala un documento de diseño en la pantalla: historial NUEVO
@@ -716,6 +816,164 @@ export function ModelerApp(): ReactNode {
     },
     [history],
   );
+
+  /**
+   * WAVE-02 BLOQUE 0 — entrada al editor desde la pantalla de inicio:
+   * instala el documento, fija el modo y ENCUADRA el contenido (la
+   * cámara se centra en el mueble recién creado o en el diseño
+   * abierto; después nada reencuadra solo).
+   */
+  const enterEditor = useCallback(
+    (
+      next: SceneDocument,
+      design: { id: string; name: string } | null,
+      nextMode: ModelerMode,
+    ) => {
+      applyDesignDocument(next, design);
+      setMode(nextMode);
+      setScreen('editor');
+      setWelcomeError(null);
+      setStartHint(null);
+      if (next.objects.length > 0) {
+        setFramedBounds(computeSceneBounds(next));
+        setCamera((prev) => requestFit(prev));
+      } else {
+        setFramedBounds(DEFAULT_SCENE_BOUNDS);
+      }
+    },
+    [applyDesignDocument],
+  );
+
+  // -------------------------------------------------------------------------
+  // WAVE-02 BLOQUE 0 — acciones de la pantalla de inicio.
+  // -------------------------------------------------------------------------
+
+  /** «Crear clóset»: documento inicial con UN clóset válido + encuadre. */
+  const handleWelcomeCreateCloset = useCallback(() => {
+    const next = buildWardrobeSeedDocument(seedDocument);
+    if (next === null) {
+      setWelcomeError(
+        'No se pudo crear el clóset (configuración inicial rechazada). Prueba con «Diseño libre».',
+      );
+      return;
+    }
+    enterEditor(next, null, 'simple');
+    // Sin diseño que la respalde: la escena recién creada cuenta como
+    // «Cambios sin guardar» (chip «Cambios sin guardar») desde el
+    // primer momento (regla B3: ni una sola edición sin señalar).
+    setDesignSavedJson(null);
+    const created = next.objects[next.objects.length - 1];
+    setSelection(
+      created === undefined
+        ? null
+        : resolveObjectSelection(next, { objectId: created.id }),
+    );
+    setDesignMessage(null);
+    setStartHint(
+      'Este es tu clóset: cambia sus medidas en «Propiedades» y arrástralo sobre el suelo para colocarlo.',
+    );
+    setHistoryMessage('Clóset creado');
+  }, [enterEditor, seedDocument]);
+
+  /** «Continuar»: recupera el borrador de sesión validado (B3). */
+  const handleWelcomeContinueDraft = useCallback(() => {
+    if (draftInfo === null || !draftInfo.ok) return;
+    const { document: draftDocument, meta } = draftInfo;
+    let design: { id: string; name: string } | null = null;
+    let baseline = JSON.stringify(draftDocument);
+    if (designStorage !== null && meta.activeDesignId !== null) {
+      const saved = readSceneDesign(designStorage, meta.activeDesignId);
+      if (saved.ok) {
+        design = { id: saved.id, name: saved.document.name };
+        // El borrador del diseño activo se compara CON su última
+        // versión guardada: «cambios sin guardar» = lo que difiere.
+        // El nombre del documento NO es contenido editable en sesión
+        // (la etiqueta del diseño vive en la entrada del listado y el
+        // sobre guardado usa el nombre del diseño): se normaliza para
+        // que la comparación refleje solo el CONTENIDO de la escena.
+        baseline = JSON.stringify({
+          ...saved.document,
+          name: draftDocument.name,
+        });
+      }
+    }
+    applyDesignDocument(draftDocument, design);
+    setDesignSavedJson(baseline);
+    setMode(meta.mode);
+    setScreen('editor');
+    setWelcomeError(null);
+    setStartHint(null);
+    setDesignMessage('Sesión recuperada: seguimos donde lo dejaste.');
+    setDesignError(null);
+    setHistoryMessage('Sesión recuperada');
+    if (draftDocument.objects.length > 0) {
+      setFramedBounds(computeSceneBounds(draftDocument));
+      setCamera((prev) => requestFit(prev));
+    } else {
+      setFramedBounds(DEFAULT_SCENE_BOUNDS);
+    }
+    refreshDesigns();
+  }, [draftInfo, designStorage, applyDesignDocument, refreshDesigns]);
+
+  /** «Abrir» un diseño guardado desde la bienvenida. */
+  const handleWelcomeOpenDesign = useCallback(
+    (id: string) => {
+      if (designStorage === null) {
+        setWelcomeError(
+          'Almacenamiento local no disponible: no se puede abrir.',
+        );
+        return;
+      }
+      const result = readSceneDesign(designStorage, id);
+      if (!result.ok) {
+        // Corrupto/incompatible: expuesto; el registro NO se borra.
+        setWelcomeError(result.message);
+        return;
+      }
+      enterEditor(result.document, { id, name: result.document.name }, 'simple');
+      setDesignFocusId(id);
+      setDesignMessage(`Abierto: ${result.document.name}`);
+      setHistoryMessage(`Abierto: ${result.document.name}`);
+      refreshDesigns();
+    },
+    [designStorage, enterEditor, refreshDesigns],
+  );
+
+  /** «Diseño libre»: escena vacía en MODO AVANZADO (escape técnico). */
+  const handleWelcomeFreeDesign = useCallback(() => {
+    enterEditor(createSeedDocument(), null, 'advanced');
+    setDesignMessage(null);
+  }, [enterEditor]);
+
+  /** «Descartar borrador»: acción EXPLÍCITA del usuario (nunca auto). */
+  const handleWelcomeDiscardDraft = useCallback(() => {
+    if (designStorage === null) return;
+    if (
+      !window.confirm(
+        '¿Descartar el borrador de sesión? Se perderá el trabajo que no esté guardado.',
+      )
+    ) {
+      return;
+    }
+    clearSceneDraft(designStorage);
+    setDraftInfo(readSceneDraft(designStorage));
+    setDesignMessage('Borrador descartado.');
+    setWelcomeError(null);
+  }, [designStorage]);
+
+  /** «Inicio»: vuelve a la bienvenida (el borrador ya está escrito). */
+  const handleHome = useCallback(() => {
+    writeDraft();
+    setScreen('welcome');
+    setWelcomeError(null);
+    if (designStorage !== null) setDraftInfo(readSceneDraft(designStorage));
+    refreshDesigns();
+  }, [writeDraft, designStorage, refreshDesigns]);
+
+  /** Cambio de modo: SOLO presentación (documento/selección intactos). */
+  const handleModeChange = useCallback((next: ModelerMode) => {
+    setMode(next);
+  }, []);
 
   /** Guardar como: NUEVO id determinista con nombre pedido por prompt. */
   const handleDesignSaveAs = useCallback(() => {
@@ -945,8 +1203,9 @@ export function ModelerApp(): ReactNode {
     }
     if (activeDesign?.id === id) {
       // La escena SIGUE abierta en pantalla; solo retira su registro.
+      // El baseline se conserva: el chip sigue reflejando con honestidad
+      // si el contenido tiene o no cambios sin guardar.
       setActiveDesign(null);
-      setDesignSavedJson(null);
     }
     setDesignFocusId(null);
     refreshDesigns();
@@ -1099,7 +1358,15 @@ export function ModelerApp(): ReactNode {
   const handleViewChange = useCallback((view: CameraView) => {
     setCamera((prev) => requestView(prev, view));
   }, []);
-  const handleFit = useCallback(() => setCamera((prev) => requestFit(prev)), []);
+  /**
+   * WAVE-02 BLOQUE 1 — «Encuadrar»: recalcula la caja REAL de los
+   * objetos y re-aplica la vista activa sobre ella (acción explícita
+   * del usuario; nada más reencuadra).
+   */
+  const handleFit = useCallback(() => {
+    setFramedBounds(computeSceneBounds(historyRef.current.document));
+    setCamera((prev) => requestFit(prev));
+  }, []);
 
   // -------------------------------------------------------------------------
   // Derivados para la carcasa
@@ -1398,6 +1665,23 @@ export function ModelerApp(): ReactNode {
         error: designError,
         storageAvailable: designStorage !== null,
       }),
+      /** WAVE-02: pantalla, modo, chip de guardado y encuadre. */
+      getScreen: () => screen,
+      getMode: () => mode,
+      getSaveState: () => saveState,
+      getStartHint: () => startHint,
+      getFramedBounds: () => framedBounds,
+      getDraft: () =>
+        draftInfo === null
+          ? null
+          : draftInfo.ok
+            ? {
+                ok: true,
+                name: draftInfo.document.name,
+                objectCount: draftInfo.document.objects.length,
+                meta: draftInfo.meta,
+              }
+            : { ok: false, code: draftInfo.code, message: draftInfo.message },
     };
     return () => {
       delete target.__modeler;
@@ -1421,7 +1705,53 @@ export function ModelerApp(): ReactNode {
     designMessage,
     designError,
     designStorage,
+    screen,
+    mode,
+    saveState,
+    startHint,
+    framedBounds,
+    draftInfo,
   ]);
+
+  // Tarjeta de «Continuar» de la bienvenida (B3): nombre, antigüedad y
+  // tamaño del borrador; un borrador dañado se muestra como dañado.
+  const draftCard: WelcomeDraftCard | null = useMemo(() => {
+    if (draftInfo === null) return null;
+    if (!draftInfo.ok) {
+      return draftInfo.code === 'ERR_DRAFT_MISSING'
+        ? null
+        : { corrupted: true, message: draftInfo.message };
+    }
+    const summary =
+      draftInfo.meta.activeDesignId === null
+        ? undefined
+        : designSummaries.find(
+            (entry) => entry.id === draftInfo.meta.activeDesignId,
+          );
+    return {
+      corrupted: false,
+      name: draftInfo.document.name,
+      designName: summary !== undefined && !summary.corrupted ? summary.name : null,
+      objectCount: draftInfo.document.objects.length,
+      ageText: formatDraftAge(draftInfo.meta.updatedAt, Date.now()),
+    };
+  }, [draftInfo, designSummaries]);
+
+  if (screen === 'welcome') {
+    return (
+      <WelcomeScreen
+        storageAvailable={designStorage !== null}
+        designs={designSummaries}
+        draft={draftCard}
+        error={welcomeError}
+        onCreateCloset={handleWelcomeCreateCloset}
+        onContinueDraft={handleWelcomeContinueDraft}
+        onDiscardDraft={handleWelcomeDiscardDraft}
+        onOpenDesign={handleWelcomeOpenDesign}
+        onFreeDesign={handleWelcomeFreeDesign}
+      />
+    );
+  }
 
   return (
     <ModelerShell
@@ -1452,6 +1782,11 @@ export function ModelerApp(): ReactNode {
       wardrobe={wardrobePanel}
       position={positionPanel}
       designs={designsPanel}
+      mode={mode}
+      onModeChange={handleModeChange}
+      onHome={handleHome}
+      saveState={saveState}
+      startHint={startHint}
     >
       <ModelerScene
         viewRequest={camera.request}
@@ -1468,6 +1803,8 @@ export function ModelerApp(): ReactNode {
         snapGridStepMm={snapEnabled ? document.gridStepMm : null}
         onMoveDraftChange={handleMoveDraftChange}
         onObjectMove={applyObjectPosition}
+        mode={mode}
+        bounds={framedBounds}
       />
     </ModelerShell>
   );

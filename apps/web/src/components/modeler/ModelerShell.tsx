@@ -46,7 +46,31 @@ import { MODULE_KIND_LABELS } from '../../lib/config.js';
 import type { CameraView } from '../../lib/camera-views.js';
 import type { GeometryKernelStatus } from '../../lib/modeler/geometry-runtime.js';
 import type { ModelerTool } from '../../lib/modeler/drawing.js';
+import type { ModelerMode } from '../../lib/modeler/modes.js';
 import type { SceneDesignSummary } from '../../lib/modeler/design-store.js';
+
+/**
+ * WAVE-02 — estado de guardado GLOBAL del editor (chip en la barra
+ * superior). Distingue «cambios sin guardar» (hay diseño activo),
+ * «cambios sin guardar» sin diseño (el proyecto todavía no tiene
+ * nombre: se muestra igual desde la PRIMERA modificación, regla del
+ * BLOQUE 3) y «guardado».
+ */
+export type ModelerSaveState = 'saved' | 'dirty' | 'dirty-unsaved' | 'clean';
+
+const SAVE_STATE_LABELS: Readonly<Record<ModelerSaveState, string>> = {
+  saved: 'Guardado',
+  dirty: 'Cambios sin guardar',
+  'dirty-unsaved': 'Cambios sin guardar',
+  clean: 'Sin diseño guardado',
+};
+
+const SAVE_STATE_TITLES: Readonly<Record<ModelerSaveState, string>> = {
+  saved: 'Todo guardado en el diseño activo.',
+  dirty: 'Hay cambios respecto al último guardar o abrir.',
+  'dirty-unsaved': 'Estos cambios todavía no se han guardado en ningún diseño.',
+  clean: 'La escena no está guardada en ningún diseño y no tiene cambios.',
+};
 
 /** Etiquetas honestas del estado del motor geométrico. */
 const ENGINE_STATUS_LABELS: Readonly<Record<GeometryKernelStatus, string>> = {
@@ -280,6 +304,21 @@ export interface ModelerShellProps {
   readonly position: PositionPanelProps | null;
   /** WAVE-01 BLOQUE 3: panel de diseños locales (persistencia). */
   readonly designs: DesignsPanelProps | null;
+  /**
+   * WAVE-02 BLOQUE 0/4 — modo de presentación. Cambiarlo NO toca el
+   * documento, la selección ni el historial: solo decide qué se pinta.
+   */
+  readonly mode: ModelerMode;
+  readonly onModeChange: (mode: ModelerMode) => void;
+  /** WAVE-02 BLOQUE 0 — volver a la pantalla de inicio. */
+  readonly onHome: () => void;
+  /** WAVE-02 BLOQUE 3 — chip global de estado de guardado. */
+  readonly saveState: ModelerSaveState;
+  /**
+   * WAVE-02 BLOQUE 0 — pista transitoria tras crear el primer clóset
+   * («cómo editarlo», una línea y breve). `null` = sin pista.
+   */
+  readonly startHint: string | null;
   readonly children: ReactNode;
 }
 
@@ -553,11 +592,16 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
     wardrobe,
     position,
     designs,
+    mode,
+    onModeChange,
+    onHome,
+    saveState,
+    startHint,
     children,
   } = props;
 
   return (
-    <div className="modeler-root" data-modeler="">
+    <div className="modeler-root" data-modeler="" data-mode={mode}>
       <header className="modeler-topbar">
         <div className="modeler-brand">
           <span className="modeler-brand-name">FurniConfig Modeler</span>
@@ -569,7 +613,11 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
           </span>
         </div>
         <p className="modeler-doc-state" data-modeler-doc-state="">
-          {`Escena libre · ${document.objectCount} objetos · rejilla ${document.gridStepMm} mm`}
+          {mode === 'simple'
+            ? `${document.name} · ${document.objectCount} ${
+                document.objectCount === 1 ? 'objeto' : 'objetos'
+              }`
+            : `Escena libre · ${document.objectCount} objetos · rejilla ${document.gridStepMm} mm`}
         </p>
         <div
           className="modeler-history"
@@ -622,15 +670,51 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             {history.message ?? ''}
           </p>
         </div>
+        {/* WAVE-02 BLOQUE 3 — chip global de guardado: visible desde la
+            barra en AMBOS modos y desde la primera modificación. */}
+        <span
+          className="modeler-save-chip"
+          data-modeler-save-chip=""
+          data-save-state={saveState}
+          role="status"
+          title={SAVE_STATE_TITLES[saveState]}
+        >
+          {SAVE_STATE_LABELS[saveState]}
+        </span>
         <div className="modeler-topbar-right">
-          <span
-            className="modeler-engine"
-            data-modeler-engine=""
-            data-status={engineStatus}
-            role="status"
+          {/* WAVE-02 BLOQUE 4 — interruptor de modo (cambio SOLO de
+              presentación: documento, selección e historial intactos). */}
+          <label className="modeler-mode" data-modeler-mode-switch="">
+            <input
+              type="checkbox"
+              checked={mode === 'advanced'}
+              onChange={(event) =>
+                onModeChange(event.target.checked ? 'advanced' : 'simple')
+              }
+              data-modeler-mode=""
+            />
+            <span>Modo avanzado</span>
+          </label>
+          <button
+            type="button"
+            className="modeler-home"
+            onClick={onHome}
+            data-modeler-home=""
+            title="Volver a la pantalla de inicio"
           >
-            Motor geométrico: {ENGINE_STATUS_LABELS[engineStatus]}
-          </span>
+            Inicio
+          </button>
+          {/* La jerga del motor SOLO en modo avanzado (BLOQUE 4). */}
+          {mode === 'advanced' && (
+            <span
+              className="modeler-engine"
+              data-modeler-engine=""
+              data-status={engineStatus}
+              role="status"
+            >
+              Motor geométrico: {ENGINE_STATUS_LABELS[engineStatus]}
+            </span>
+          )}
           <a
             className="modeler-back"
             href="#/"
@@ -667,8 +751,9 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
                 className="modeler-fit-button"
                 onClick={onFit}
                 aria-label="Ajustar la vista a la escena"
+                data-modeler-fit=""
               >
-                Ajustar
+                {mode === 'simple' ? 'Encuadrar' : 'Ajustar'}
               </button>
             </div>
           </section>
@@ -1185,6 +1270,17 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
         </aside>
 
         <main className="modeler-viewport" data-modeler-viewport="">
+          {/* WAVE-02 BLOQUE 0 — pista breve «cómo editarlo» tras crear
+              el primer clóset (una línea, se retira sola al editar). */}
+          {startHint !== null && (
+            <p
+              className="modeler-start-hint"
+              role="status"
+              data-modeler-start-hint=""
+            >
+              {startHint}
+            </p>
+          )}
           {children}
         </main>
       </div>

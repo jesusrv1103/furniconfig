@@ -56,11 +56,13 @@ import type {
 
 import type { ViewRequest } from '../../lib/camera-views.js';
 import type { Aabb } from '../../lib/camera-views.js';
+import type { ModelerMode } from '../../lib/modeler/modes.js';
 import type {
   ComponentGeometryState,
   SolidGeometryState,
 } from '../../lib/modeler/scene-geometry-coordinator.js';
 import { parseWardrobeParams } from '../../lib/modeler/components/wardrobe.js';
+import { DEFAULT_SCENE_BOUNDS } from '../../lib/modeler/scene-bounds.js';
 import { ModelerCameraRig } from './ModelerCameraRig.js';
 import { mmToM, mToMm } from '../../lib/units.js';
 import {
@@ -89,11 +91,10 @@ const INTERACTION_PLANE_M = 400;
 /** Plano Y=0 del documento (m) para la intersección del arrastre. */
 const GROUND_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-/** Caja de referencia del espacio de trabajo (m), para encuadre. */
-const WORKSPACE_BOX: Aabb = {
-  min: [-2, 0, -2],
-  max: [2, 2.4, 2],
-};
+/** Caja de referencia del espacio de trabajo (m), para encuadre:
+ * WAVE-02 centraliza la caja vacía en `scene-bounds.ts` (misma
+ * geometría que la constante original: paridad visual exacta). */
+const WORKSPACE_BOX: Aabb = DEFAULT_SCENE_BOUNDS;
 
 /** Lado de la rejilla de referencia (m). */
 const GRID_SIZE_M = 4;
@@ -124,6 +125,20 @@ export interface ModelerSceneProps {
   readonly onMoveDraftChange: (draft: MoveDraft | null) => void;
   /** Commit del gesto: UNA entrada de historial para la posición final. */
   readonly onObjectMove: (objectId: string, positionMm: MmPoint3) => void;
+  /**
+   * WAVE-02 BLOQUE 1 — modo de presentación: en `simple` la escena
+   * oculta rejilla/ejes/leyenda técnica y pinta fondo neutro + piso
+   * discreto. En `advanced` se conserva TODO el material técnico
+   * actual (paridad). El plano Y=0 de raycast NO cambia nunca: los
+   * objetos conservan coordenadas, medidas y comportamiento real.
+   */
+  readonly mode: ModelerMode;
+  /**
+   * WAVE-02 BLOQUE 1 — caja de encuadre (metros). SOLO cambia en
+   * momentos explícitos (crear el primer mueble / «Encuadrar»), para
+   * evitar reencuadres inesperados durante las ediciones.
+   */
+  readonly bounds: Aabb;
 }
 
 interface PointerPx {
@@ -194,8 +209,17 @@ export function ModelerScene(props: ModelerSceneProps): ReactNode {
           </div>
         )}
       <p className="modeler-scene-legend" aria-hidden="true">
-        Rejilla: 100 mm (línea gruesa: 1 m) · snap {props.gridStepMm} mm · Y
-        arriba · X rojo, Y verde, Z azul
+        {props.mode === 'advanced' ? (
+          <>
+            Rejilla: 100 mm (línea gruesa: 1 m) · snap {props.gridStepMm} mm · Y
+            arriba · X rojo, Y verde, Z azul
+          </>
+        ) : (
+          <span data-modeler-scene-hint="">
+            Arrastra el ratón para mirar el mueble · rueda para acercarte · clic
+            para seleccionar
+          </span>
+        )}
       </p>
     </div>
   );
@@ -223,6 +247,8 @@ function SceneContent(props: SceneContentProps): ReactNode {
     snapGridStepMm,
     onMoveDraftChange,
     onObjectMove,
+    mode,
+    bounds,
     gestureMirror,
     downPxRef,
     onGestureChange,
@@ -490,25 +516,41 @@ function SceneContent(props: SceneContentProps): ReactNode {
       />
       <hemisphereLight args={['#ffffff', '#404040', 0.5]} />
 
-      <Grid
-        args={[0.1, 1]}
-        cellSize={0.1}
-        cellThickness={0.6}
-        cellColor="#c8d0da"
-        sectionSize={1}
-        sectionThickness={1.1}
-        sectionColor="#8b97a6"
-        fadeDistance={14}
-        fadeStrength={1.6}
-        position={[0, 0, 0]}
-        infiniteGrid
-      />
-      <AxisLabel position={[GRID_SIZE_M / 2 + 0.25, 0, 0]} color="#d93025">X</AxisLabel>
-      <AxisLabel position={[0, WORKSPACE_BOX.max[1] + 0.15, 0]} color="#1a7f37">Y</AxisLabel>
-      <AxisLabel position={[0, 0, GRID_SIZE_M / 2 + 0.25]} color="#1967d2">Z</AxisLabel>
+      {/* WAVE-02 BLOQUE 1 — «estudio» en modo sencillo: fondo neutro,
+          piso visual discreto; la rejilla, los ejes y la leyenda son
+          del modo AVANZADO (el plano Y=0 de raycast sigue existiendo
+          siempre por debajo: sin cambios en el comportamiento). */}
+      {mode === 'simple' ? (
+        <>
+          <color attach="background" args={['#eef1f5']} />
+          <mesh rotation-x={-Math.PI / 2} position-y={-0.0015} receiveShadow>
+            <circleGeometry args={[7, 72]} />
+            <meshStandardMaterial color="#e6eaf1" roughness={1} />
+          </mesh>
+        </>
+      ) : (
+        <>
+          <Grid
+            args={[0.1, 1]}
+            cellSize={0.1}
+            cellThickness={0.6}
+            cellColor="#c8d0da"
+            sectionSize={1}
+            sectionThickness={1.1}
+            sectionColor="#8b97a6"
+            fadeDistance={14}
+            fadeStrength={1.6}
+            position={[0, 0, 0]}
+            infiniteGrid
+          />
+          <AxisLabel position={[GRID_SIZE_M / 2 + 0.25, 0, 0]} color="#d93025">X</AxisLabel>
+          <AxisLabel position={[0, WORKSPACE_BOX.max[1] + 0.15, 0]} color="#1a7f37">Y</AxisLabel>
+          <AxisLabel position={[0, 0, GRID_SIZE_M / 2 + 0.25]} color="#1967d2">Z</AxisLabel>
 
-      {/* Ejes de referencia del espacio de trabajo (4C-A). */}
-      <axesHelper args={[GRID_SIZE_M / 2 + 0.15]} position={[0, 0.003, 0]} />
+          {/* Ejes de referencia del espacio de trabajo (4C-A). */}
+          <axesHelper args={[GRID_SIZE_M / 2 + 0.15]} position={[0, 0.003, 0]} />
+        </>
+      )}
 
       {/* Suelo receptor de sombras (invisible, solo sombras). */}
       <mesh rotation-x={-Math.PI / 2} position-y={-0.002} receiveShadow>
@@ -673,7 +715,7 @@ function SceneContent(props: SceneContentProps): ReactNode {
         // (vista previa estable; se rehabilita al soltar/Escape).
         enabled={!draggingActive}
       />
-      <ModelerCameraRig bounds={WORKSPACE_BOX} viewRequest={viewRequest} />
+      <ModelerCameraRig bounds={bounds} viewRequest={viewRequest} />
     </>
   );
 }
