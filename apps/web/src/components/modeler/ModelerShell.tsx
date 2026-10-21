@@ -62,7 +62,7 @@ const SAVE_STATE_LABELS: Readonly<Record<ModelerSaveState, string>> = {
   saved: 'Guardado',
   dirty: 'Cambios sin guardar',
   'dirty-unsaved': 'Cambios sin guardar',
-  clean: 'Sin diseño guardado',
+  clean: 'Sin proyecto guardado',
 };
 
 const SAVE_STATE_TITLES: Readonly<Record<ModelerSaveState, string>> = {
@@ -813,9 +813,9 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
               aria-labelledby="modeler-designs-heading"
               data-modeler-designs=""
             >
-              <h2 id="modeler-designs-heading">Diseños</h2>
+              <h2 id="modeler-designs-heading">Proyectos</h2>
               <label className="modeler-field">
-                <span>Diseño guardado</span>
+                <span>Proyecto guardado</span>
                 <select
                   data-modeler-design-select=""
                   value={designs.focusId ?? designs.activeId ?? ''}
@@ -827,8 +827,8 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
                 >
                   <option value="">
                     {designs.activeId === null
-                      ? '— escena sin diseño —'
-                      : '— elegir diseño —'}
+                      ? '— escena sin proyecto —'
+                      : '— elegir proyecto —'}
                   </option>
                   {designs.designs.map((entry) => (
                     <option key={entry.id} value={entry.id}>
@@ -904,13 +904,13 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
               )}
               {!designs.storageAvailable && (
                 <p className="modeler-hint" data-modeler-design-nostorage="">
-                  Almacenamiento local no disponible: el guardado de diseños
+                  Almacenamiento local no disponible: el guardado de proyectos
                   está inactivo en este navegador.
                 </p>
               )}
               <p className="modeler-hint">
                 Guardado local en tu navegador (namespace propio del
-                modelador, separado del configurador). Al abrir un diseño se
+                modelador, separado del configurador). Al abrir un proyecto se
                 regenera su geometría y se limpia el historial.
               </p>
             </section>

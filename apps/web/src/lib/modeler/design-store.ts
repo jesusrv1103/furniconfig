@@ -160,17 +160,17 @@ export function readSceneDesign(
   id: string,
 ): SceneDesignOpenResult {
   if (id === '' || /[/\\.\s]/.test(id)) {
-    return failure('ERR_DESIGN_INVALID_ID', `Id de diseño inválido: «${id}».`);
+    return failure('ERR_DESIGN_INVALID_ID', `Id de proyecto inválido: «${id}».`);
   }
   const text = storage.getItem(designKey(id));
   if (text === null) {
-    return failure('ERR_DESIGN_NOT_FOUND', `No existe el diseño «${id}».`);
+    return failure('ERR_DESIGN_NOT_FOUND', `No existe el proyecto «${id}».`);
   }
   const parsed = parseSceneEnvelope(text);
   if (!parsed.ok) {
     return failure(
       parsed.code,
-      `El diseño «${id}» está dañado o es incompatible: ${parsed.message}`,
+      `El proyecto «${id}» está dañado o es incompatible: ${parsed.message}`,
     );
   }
   return { ok: true, id, document: parsed.document };
@@ -187,7 +187,7 @@ export function saveSceneDesign(
   document: SceneDocument,
 ): SceneDesignSaveResult {
   if (id === '' || /[/\\.\s]/.test(id)) {
-    return failure('ERR_DESIGN_INVALID_ID', `Id de diseño inválido: «${id}».`);
+    return failure('ERR_DESIGN_INVALID_ID', `Id de proyecto inválido: «${id}».`);
   }
   let envelope: string;
   try {
@@ -261,7 +261,7 @@ export function deleteSceneDesign(
   id: string,
 ): SceneDesignSaveResult {
   if (storage.getItem(designKey(id)) === null) {
-    return failure('ERR_DESIGN_NOT_FOUND', `No existe el diseño «${id}».`);
+    return failure('ERR_DESIGN_NOT_FOUND', `No existe el proyecto «${id}».`);
   }
   storage.removeItem(designKey(id));
   return { ok: true, id };
