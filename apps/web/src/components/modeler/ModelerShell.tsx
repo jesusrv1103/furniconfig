@@ -279,6 +279,29 @@ export interface HistoryControlsProps {
   readonly message: string | null;
 }
 
+/**
+ * WAVE-02 BLOQUE 2 — direcciones de «mover con palabras» de la
+ * tarjeta contextual (sin jerga de ejes en modo sencillo).
+ *
+ * Convención de suelo (misma que las flechas del panel avanzado):
+ * X crece a la derecha, Z «hacia atrás»; «Adelante» = −Z.
+ */
+export type MoveWord = 'left' | 'right' | 'forward' | 'back';
+
+/**
+ * WAVE-02 BLOQUE 2 — acciones de la tarjeta contextual flotante
+ * (modo sencillo). Los CAMPOS reutilizan los mismos props de los
+ * paneles del modo avanzado: la carcasa solo cambia la presentación.
+ */
+export interface CardActionsProps {
+  readonly onMoveWords: (direction: MoveWord) => void;
+  /** El objeto seleccionado es reutilizable (copia con sentido). */
+  readonly canDuplicate: boolean;
+  readonly onDuplicate: () => void;
+  /** Rechazo de la última duplicación (visible, nunca silencioso). */
+  readonly duplicateError: string | null;
+}
+
 export interface ModelerShellProps {
   readonly document: {
     readonly name: string;
@@ -319,6 +342,11 @@ export interface ModelerShellProps {
    * («cómo editarlo», una línea y breve). `null` = sin pista.
    */
   readonly startHint: string | null;
+  /**
+   * WAVE-02 BLOQUE 2 — acciones de la tarjeta contextual (solo en
+   * modo sencillo y con objeto seleccionado; `null` = sin tarjeta).
+   */
+  readonly cardActions: CardActionsProps | null;
   readonly children: ReactNode;
 }
 
@@ -597,6 +625,7 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
     onHome,
     saveState,
     startHint,
+    cardActions,
     children,
   } = props;
 
@@ -981,274 +1010,28 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             )}
           </section>
 
-          <section aria-labelledby="modeler-props-heading" data-modeler-props="">
-            <h2 id="modeler-props-heading">Propiedades</h2>
-            {/* WAVE-01: posición en el suelo del objeto seleccionado
-                (común a sólidos y clósets; UN comando por gesto). */}
-            {position !== null && <PositionEditor position={position} />}
-            {selection === null && wardrobe === null ? (
-              <p className="modeler-hint">
-                Selecciona un sólido o un clóset (herramienta Seleccionar) para
-                ver y editar sus propiedades.
-              </p>
-            ) : selection !== null ? (
-              <>
-                <p className="modeler-selection-name">{selection.name}</p>
-                <CommitField
-                  label="Nombre"
-                  value={selection.nameText}
-                  onCommit={selection.onNameChange}
-                  testAttr="selection-name"
-                  numeric={false}
-                />
-                <CommitField
-                  label="Ancho (mm)"
-                  value={selection.widthText}
-                  onCommit={selection.onWidthChange}
-                  testAttr="selection-width"
-                />
-                <CommitField
-                  label="Profundidad (mm)"
-                  value={selection.depthText}
-                  onCommit={selection.onDepthChange}
-                  testAttr="selection-depth"
-                />
-                <CommitField
-                  label="Altura (mm)"
-                  value={selection.heightText}
-                  onCommit={selection.onHeightChange}
-                  testAttr="selection-height"
-                />
-                <p
-                  className="modeler-hint"
-                  data-modeler-selection-status=""
-                  data-status={selection.status}
-                >
-                  Generación: {STATUS_LABELS[selection.status]}
+          {/* WAVE-02 BLOQUE 2: en modo sencillo esta sección la
+              sustituye la TARJETA contextual sobre el visor (los
+              campos y handlers son los MISMOS: solo cambia la
+              presentación; nada de lógica duplicada). */}
+          {mode === 'advanced' && (
+            <section aria-labelledby="modeler-props-heading" data-modeler-props="">
+              <h2 id="modeler-props-heading">Propiedades</h2>
+              {/* WAVE-01: posición en el suelo del objeto seleccionado
+                  (común a sólidos y clósets; UN comando por gesto). */}
+              {position !== null && <PositionEditor position={position} />}
+              {selection === null && wardrobe === null ? (
+                <p className="modeler-hint">
+                  Selecciona un sólido o un clóset (herramienta Seleccionar) para
+                  ver y editar sus propiedades.
                 </p>
-                {selection.errorMessage !== null && (
-                  <p className="modeler-error" data-modeler-selection-error="">
-                    {selection.errorMessage}
-                  </p>
-                )}
-                <div className="modeler-view-buttons">
-                  {selection.status === 'error' && (
-                    <button
-                      type="button"
-                      onClick={selection.onRetry}
-                      data-modeler-retry=""
-                    >
-                      Reintentar
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={selection.onDelete}
-                    data-modeler-delete=""
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </>
-            ) : wardrobe !== null ? (
-              <>
-                <p className="modeler-selection-name">{wardrobe.name}</p>
-                <CommitField
-                  label="Nombre"
-                  value={wardrobe.nameText}
-                  onCommit={wardrobe.onNameChange}
-                  testAttr="wardrobe-name"
-                  numeric={false}
-                />
-                {wardrobe.params !== null && (
-                  <>
-                    <CommitField
-                      label="Ancho (mm)"
-                      value={wardrobe.params.widthText}
-                      onCommit={wardrobe.params.onWidthChange}
-                      testAttr="wardrobe-width"
-                    />
-                    <CommitField
-                      label="Alto (mm)"
-                      value={wardrobe.params.heightText}
-                      onCommit={wardrobe.params.onHeightChange}
-                      testAttr="wardrobe-height"
-                    />
-                    <CommitField
-                      label="Profundidad (mm)"
-                      value={wardrobe.params.depthText}
-                      onCommit={wardrobe.params.onDepthChange}
-                      testAttr="wardrobe-depth"
-                    />
-
-                    <h3 className="modeler-subheading">Módulos</h3>
-                    <label className="modeler-field">
-                      <span>Número de módulos</span>
-                      <select
-                        value={wardrobe.params.moduleCount}
-                        onChange={(event) =>
-                          wardrobe.params?.onModuleCountChange(
-                            Number(event.target.value),
-                          )
-                        }
-                        data-modeler-module-count=""
-                      >
-                        {[1, 2, 3, 4].map((count) => (
-                          <option key={count} value={count}>
-                            {count}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <ul className="modeler-module-list">
-                      {wardrobe.params.modules.map((moduleRow) => (
-                        <li key={moduleRow.index}>
-                          <label className="modeler-field">
-                            <span>{`Módulo ${moduleRow.index + 1}`}</span>
-                            <select
-                              value={moduleRow.kind}
-                              onChange={(event) =>
-                                moduleRow.onKindChange(
-                                  event.target.value as WardrobeModuleKind,
-                                )
-                              }
-                              data-modeler-module-kind={moduleRow.index}
-                            >
-                              {WARDROBE_MODULE_KINDS.map((kind) => (
-                                <option key={kind} value={kind}>
-                                  {MODULE_KIND_LABELS[kind]}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          {moduleRow.kind === 'shelves' &&
-                            moduleRow.shelvesText !== null && (
-                              <CommitField
-                                label="Entrepaños"
-                                value={moduleRow.shelvesText}
-                                onCommit={moduleRow.onShelvesChange}
-                                testAttr={`module-shelves-${moduleRow.index}`}
-                              />
-                            )}
-                          {moduleRow.kind === 'drawers' &&
-                            moduleRow.drawersText !== null && (
-                              <CommitField
-                                label="Cajones"
-                                value={moduleRow.drawersText}
-                                onCommit={moduleRow.onDrawersChange}
-                                testAttr={`module-drawers-${moduleRow.index}`}
-                              />
-                            )}
-                        </li>
-                      ))}
-                    </ul>
-
-                    <h3 className="modeler-subheading">Puertas</h3>
-                    <label className="modeler-check">
-                      <input
-                        type="checkbox"
-                        checked={wardrobe.params.doorsEnabled}
-                        onChange={(event) =>
-                          wardrobe.params?.onDoorsEnabledChange(
-                            event.target.checked,
-                          )
-                        }
-                        data-modeler-doors-enabled=""
-                      />
-                      <span>Con puertas</span>
-                    </label>
-                    {wardrobe.params.doorsEnabled && (
-                      <>
-                        <label className="modeler-field">
-                          <span>Hojas por módulo</span>
-                          <select
-                            value={wardrobe.params.doorLeaves}
-                            onChange={(event) =>
-                              wardrobe.params?.onDoorLeavesChange(
-                                Number(event.target.value) as 1 | 2,
-                              )
-                            }
-                            data-modeler-door-leaves=""
-                          >
-                            <option value={1}>1</option>
-                            <option value={2}>2</option>
-                          </select>
-                        </label>
-                        <label className="modeler-field">
-                          <span>Bisagra (hoja única)</span>
-                          <select
-                            value={wardrobe.params.doorHinge}
-                            onChange={(event) =>
-                              wardrobe.params?.onDoorHingeChange(
-                                event.target.value as 'left' | 'right',
-                              )
-                            }
-                            data-modeler-door-hinge=""
-                          >
-                            <option value="left">Izquierda</option>
-                            <option value="right">Derecha</option>
-                          </select>
-                        </label>
-                      </>
-                    )}
-
-                    <h3 className="modeler-subheading">Estructura</h3>
-                    <label className="modeler-check">
-                      <input
-                        type="checkbox"
-                        checked={wardrobe.params.backPanelEnabled}
-                        onChange={(event) =>
-                          wardrobe.params?.onBackPanelEnabledChange(
-                            event.target.checked,
-                          )
-                        }
-                        data-modeler-back-panel=""
-                      />
-                      <span>Panel trasero</span>
-                    </label>
-                  </>
-                )}
-                <p
-                  className="modeler-hint"
-                  data-modeler-selection-status=""
-                  data-status={wardrobe.status}
-                >
-                  Generación: {STATUS_LABELS[wardrobe.status]}
-                </p>
-                {wardrobe.errorMessage !== null && (
-                  <p className="modeler-error" data-modeler-selection-error="">
-                    {wardrobe.errorMessage}
-                  </p>
-                )}
-                {wardrobe.editError !== null && (
-                  <p
-                    className="modeler-error"
-                    data-modeler-wardrobe-edit-error=""
-                  >
-                    {wardrobe.editError}
-                  </p>
-                )}
-                <div className="modeler-view-buttons">
-                  {wardrobe.status === 'error' && (
-                    <button
-                      type="button"
-                      onClick={wardrobe.onRetry}
-                      data-modeler-retry=""
-                    >
-                      Reintentar
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={wardrobe.onDelete}
-                    data-modeler-delete=""
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </>
-            ) : null}
-          </section>
+              ) : selection !== null ? (
+                <SolidPropsBody selection={selection} />
+              ) : wardrobe !== null ? (
+                <WardrobePropsBody wardrobe={wardrobe} />
+              ) : null}
+            </section>
+          )}
 
           <section aria-labelledby="modeler-doc-heading">
             <h2 id="modeler-doc-heading">Documento</h2>
@@ -1282,8 +1065,372 @@ export function ModelerShell(props: ModelerShellProps): ReactNode {
             </p>
           )}
           {children}
+          {/* WAVE-02 BLOQUE 2 — tarjeta contextual flotante (modo
+              sencillo): los campos reutilizan los MISMOS props de los
+              paneles del modo avanzado (SolidPropsBody /
+              WardrobePropsBody); aquí se añade solo mover con
+              palabras y duplicar. Cada gesto = UNA entrada de
+              historial. Sin rotación Y (contrato v1 intacto). */}
+          {mode === 'simple' && cardActions !== null && (
+            <aside
+              className="modeler-card"
+              data-modeler-card=""
+              aria-label="Editar el objeto seleccionado"
+            >
+              <span
+                className="modeler-card-title"
+                data-modeler-card-title=""
+              >
+                {wardrobe !== null ? 'Tu clóset' : 'Tu objeto'}
+              </span>
+              {selection !== null && <SolidPropsBody selection={selection} />}
+              {wardrobe !== null && <WardrobePropsBody wardrobe={wardrobe} />}
+              {position !== null && (
+                <div
+                  className="modeler-card-move"
+                  role="group"
+                  aria-label="Mover el objeto"
+                >
+                  <p
+                    className="modeler-card-position"
+                    data-modeler-card-position=""
+                  >
+                    Posición: X {position.xText} mm · Z {position.zText} mm
+                  </p>
+                  <div className="modeler-card-move-grid">
+                    <button
+                      type="button"
+                      onClick={() => cardActions.onMoveWords('left')}
+                      data-modeler-move="left"
+                    >
+                      ← Izquierda
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cardActions.onMoveWords('right')}
+                      data-modeler-move="right"
+                    >
+                      → Derecha
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cardActions.onMoveWords('forward')}
+                      data-modeler-move="forward"
+                    >
+                      ↑ Adelante
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cardActions.onMoveWords('back')}
+                      data-modeler-move="back"
+                    >
+                      ↓ Atrás
+                    </button>
+                  </div>
+                  {position.errorMessage !== null && (
+                    <p
+                      className="modeler-error"
+                      data-modeler-position-error=""
+                    >
+                      {position.errorMessage}
+                    </p>
+                  )}
+                </div>
+              )}
+              {cardActions.duplicateError !== null && (
+                <p
+                  className="modeler-error"
+                  role="alert"
+                  data-modeler-duplicate-error=""
+                >
+                  {cardActions.duplicateError}
+                </p>
+              )}
+              {cardActions.canDuplicate && (
+                <div className="modeler-card-actions">
+                  <button
+                    type="button"
+                    className="modeler-card-duplicate"
+                    onClick={cardActions.onDuplicate}
+                    data-modeler-duplicate=""
+                  >
+                    Duplicar
+                  </button>
+                </div>
+              )}
+            </aside>
+          )}
         </main>
       </div>
     </div>
+  );
+}
+
+/**
+ * WAVE-02 BLOQUE 2 — cuerpo de propiedades del SÓLIDO seleccionado.
+ * Extraído del panel del modo avanzado para reutilizarse SIN
+ * duplicar marcado en la tarjeta contextual del modo sencillo (los
+ * `data-*` son idénticos: una sola presencia en cada modo).
+ */
+function SolidPropsBody(props: {
+  readonly selection: SelectionPanelProps;
+}): ReactNode {
+  const { selection } = props;
+  return (
+    <>
+      <p className="modeler-selection-name">{selection.name}</p>
+      <CommitField
+        label="Nombre"
+        value={selection.nameText}
+        onCommit={selection.onNameChange}
+        testAttr="selection-name"
+        numeric={false}
+      />
+      <CommitField
+        label="Ancho (mm)"
+        value={selection.widthText}
+        onCommit={selection.onWidthChange}
+        testAttr="selection-width"
+      />
+      <CommitField
+        label="Profundidad (mm)"
+        value={selection.depthText}
+        onCommit={selection.onDepthChange}
+        testAttr="selection-depth"
+      />
+      <CommitField
+        label="Altura (mm)"
+        value={selection.heightText}
+        onCommit={selection.onHeightChange}
+        testAttr="selection-height"
+      />
+      <p
+        className="modeler-hint"
+        data-modeler-selection-status=""
+        data-status={selection.status}
+      >
+        Generación: {STATUS_LABELS[selection.status]}
+      </p>
+      {selection.errorMessage !== null && (
+        <p className="modeler-error" data-modeler-selection-error="">
+          {selection.errorMessage}
+        </p>
+      )}
+      <div className="modeler-view-buttons">
+        {selection.status === 'error' && (
+          <button
+            type="button"
+            onClick={selection.onRetry}
+            data-modeler-retry=""
+          >
+            Reintentar
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={selection.onDelete}
+          data-modeler-delete=""
+        >
+          Eliminar
+        </button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * WAVE-02 BLOQUE 2 — cuerpo de propiedades del CLÓSET seleccionado
+ * (nombre, dimensiones, módulos, puertas, estructura, estado y
+ * errores). Igual que el sólido: compartido entre el panel
+ * avanzado y la tarjeta sencilla.
+ */
+function WardrobePropsBody(props: {
+  readonly wardrobe: WardrobePanelProps;
+}): ReactNode {
+  const { wardrobe } = props;
+  return (
+    <>
+      <p className="modeler-selection-name">{wardrobe.name}</p>
+      <CommitField
+        label="Nombre"
+        value={wardrobe.nameText}
+        onCommit={wardrobe.onNameChange}
+        testAttr="wardrobe-name"
+        numeric={false}
+      />
+      {wardrobe.params !== null && (
+        <>
+          <CommitField
+            label="Ancho (mm)"
+            value={wardrobe.params.widthText}
+            onCommit={wardrobe.params.onWidthChange}
+            testAttr="wardrobe-width"
+          />
+          <CommitField
+            label="Alto (mm)"
+            value={wardrobe.params.heightText}
+            onCommit={wardrobe.params.onHeightChange}
+            testAttr="wardrobe-height"
+          />
+          <CommitField
+            label="Profundidad (mm)"
+            value={wardrobe.params.depthText}
+            onCommit={wardrobe.params.onDepthChange}
+            testAttr="wardrobe-depth"
+          />
+
+          <h3 className="modeler-subheading">Módulos</h3>
+          <label className="modeler-field">
+            <span>Número de módulos</span>
+            <select
+              value={wardrobe.params.moduleCount}
+              onChange={(event) =>
+                wardrobe.params?.onModuleCountChange(Number(event.target.value))
+              }
+              data-modeler-module-count=""
+            >
+              {[1, 2, 3, 4].map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ul className="modeler-module-list">
+            {wardrobe.params.modules.map((moduleRow) => (
+              <li key={moduleRow.index}>
+                <label className="modeler-field">
+                  <span>{`Módulo ${moduleRow.index + 1}`}</span>
+                  <select
+                    value={moduleRow.kind}
+                    onChange={(event) =>
+                      moduleRow.onKindChange(
+                        event.target.value as WardrobeModuleKind,
+                      )
+                    }
+                    data-modeler-module-kind={moduleRow.index}
+                  >
+                    {WARDROBE_MODULE_KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {MODULE_KIND_LABELS[kind]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {moduleRow.kind === 'shelves' &&
+                  moduleRow.shelvesText !== null && (
+                    <CommitField
+                      label="Entrepaños"
+                      value={moduleRow.shelvesText}
+                      onCommit={moduleRow.onShelvesChange}
+                      testAttr={`module-shelves-${moduleRow.index}`}
+                    />
+                  )}
+                {moduleRow.kind === 'drawers' &&
+                  moduleRow.drawersText !== null && (
+                    <CommitField
+                      label="Cajones"
+                      value={moduleRow.drawersText}
+                      onCommit={moduleRow.onDrawersChange}
+                      testAttr={`module-drawers-${moduleRow.index}`}
+                    />
+                  )}
+              </li>
+            ))}
+          </ul>
+
+          <h3 className="modeler-subheading">Puertas</h3>
+          <label className="modeler-check">
+            <input
+              type="checkbox"
+              checked={wardrobe.params.doorsEnabled}
+              onChange={(event) =>
+                wardrobe.params?.onDoorsEnabledChange(event.target.checked)
+              }
+              data-modeler-doors-enabled=""
+            />
+            <span>Con puertas</span>
+          </label>
+          {wardrobe.params.doorsEnabled && (
+            <>
+              <label className="modeler-field">
+                <span>Hojas por módulo</span>
+                <select
+                  value={wardrobe.params.doorLeaves}
+                  onChange={(event) =>
+                    wardrobe.params?.onDoorLeavesChange(
+                      Number(event.target.value) as 1 | 2,
+                    )
+                  }
+                  data-modeler-door-leaves=""
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                </select>
+              </label>
+              <label className="modeler-field">
+                <span>Bisagra (hoja única)</span>
+                <select
+                  value={wardrobe.params.doorHinge}
+                  onChange={(event) =>
+                    wardrobe.params?.onDoorHingeChange(
+                      event.target.value as 'left' | 'right',
+                    )
+                  }
+                  data-modeler-door-hinge=""
+                >
+                  <option value="left">Izquierda</option>
+                  <option value="right">Derecha</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          <h3 className="modeler-subheading">Estructura</h3>
+          <label className="modeler-check">
+            <input
+              type="checkbox"
+              checked={wardrobe.params.backPanelEnabled}
+              onChange={(event) =>
+                wardrobe.params?.onBackPanelEnabledChange(event.target.checked)
+              }
+              data-modeler-back-panel=""
+            />
+            <span>Panel trasero</span>
+          </label>
+        </>
+      )}
+      <p
+        className="modeler-hint"
+        data-modeler-selection-status=""
+        data-status={wardrobe.status}
+      >
+        Generación: {STATUS_LABELS[wardrobe.status]}
+      </p>
+      {wardrobe.errorMessage !== null && (
+        <p className="modeler-error" data-modeler-selection-error="">
+          {wardrobe.errorMessage}
+        </p>
+      )}
+      {wardrobe.editError !== null && (
+        <p className="modeler-error" data-modeler-wardrobe-edit-error="">
+          {wardrobe.editError}
+        </p>
+      )}
+      <div className="modeler-view-buttons">
+        {wardrobe.status === 'error' && (
+          <button
+            type="button"
+            onClick={wardrobe.onRetry}
+            data-modeler-retry=""
+          >
+            Reintentar
+          </button>
+        )}
+        <button type="button" onClick={wardrobe.onDelete} data-modeler-delete="">
+          Eliminar
+        </button>
+      </div>
+    </>
   );
 }

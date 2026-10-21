@@ -47,13 +47,16 @@ import {
 } from '@furniconfig/modeler-core';
 import {
   validateWardrobeConfig,
+  distributeModules,
   type WardrobeConfig,
 } from '@furniconfig/geometry-core';
 
 import {
   ModelerShell,
+  type CardActionsProps,
   type DesignsPanelProps,
   type ModelerSaveState,
+  type MoveWord,
   type ObjectRowProps,
   type PendingSketchPanelProps,
   type PositionPanelProps,
@@ -88,10 +91,12 @@ import {
   setModuleDrawers,
   setModuleKind,
   setModuleShelves,
+  distributionInput,
 } from '../../lib/config.js';
 import {
   DEFAULT_SCENE_MATERIAL,
   applySceneAction,
+  buildDuplicateObjectCommand,
   buildSolidAddCommand,
   buildWardrobeAddCommand,
   buildWardrobeSeedDocument,
@@ -210,6 +215,12 @@ export function ModelerApp(): ReactNode {
   const [wardrobeEditError, setWardrobeEditError] = useState<string | null>(
     null,
   );
+  /**
+   * WAVE-02 B2 — rechazo de la ÚLTIMA duplicación (tarjeta
+   * contextual): error visible, documento e historial intactos. Se
+   * limpia al cambiar de selección y en cada duplicación aceptada.
+   */
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   /**
    * Selección previa a una eliminación (C4): si el usuario deshace
    * el borrado, el objeto restaurado recupera su selección. Se
@@ -386,6 +397,7 @@ export function ModelerApp(): ReactNode {
   useEffect(() => {
     setWardrobeEditError(null);
     setPositionError(null);
+    setDuplicateError(null);
     setMoveDraft(null);
   }, [selection]);
 
@@ -699,6 +711,108 @@ export function ModelerApp(): ReactNode {
     },
     [selectedPositionMm, selectedObjectId, applyObjectPosition],
   );
+
+  /**
+   * WAVE-02 B2 — «mover con palabras» de la tarjeta contextual:
+   * UN clic = UN desplazamiento = UNA entrada de historial (misma
+   * canalización `handleNudge` → `applyObjectPosition` que las
+   * flechas del panel avanzado). Convención de suelo: X crece a la
+   * derecha, Z «hacia atrás» → «Adelante» = −Z. El paso es el paso
+   * de rejilla vigente del documento (100 mm por defecto).
+   */
+  const handleMoveWords = useCallback(
+    (direction: MoveWord) => {
+      const step = document.gridStepMm;
+      switch (direction) {
+        case 'left':
+          handleNudge(-step, 0);
+          break;
+        case 'right':
+          handleNudge(step, 0);
+          break;
+        case 'forward':
+          handleNudge(0, -step);
+          break;
+        case 'back':
+          handleNudge(0, step);
+          break;
+      }
+    },
+    [document.gridStepMm, handleNudge],
+  );
+
+  /**
+   * WAVE-02 B2 — «Duplicar» de la tarjeta: UNA entrada de historial
+   * (`buildDuplicateObjectCommand` termina en UN `add-object`) y la
+   * copia queda seleccionada. Rechazo visible (nunca silencioso):
+   * fuera de límites o no reutilizable → mensaje y documento +
+   * historial intactos.
+   */
+  const handleDuplicateObject = useCallback(() => {
+    if (selectedObjectId === null) return;
+    const source = document.objects.find(
+      (entry) => entry.id === selectedObjectId,
+    );
+    if (source === undefined) return;
+    const newId =
+      source.kind === 'solid'
+        ? nextSolidId(document)
+        : nextComponentId(document);
+    let change: ReturnType<ModelerHistory['dispatch']>;
+    try {
+      const command = buildDuplicateObjectCommand(document, selectedObjectId);
+      if (command === null) {
+        setDuplicateError(
+          'Este objeto no se puede duplicar aquí (sin una copia utilizable).',
+        );
+        return;
+      }
+      change = runDispatch(command);
+    } catch {
+      setDuplicateError(
+        'No se pudo duplicar: la copia saldría de los límites de la escena. Documento intacto.',
+      );
+      return;
+    }
+    if (change === null) {
+      setDuplicateError('No se pudo duplicar: documento intacto.');
+      return;
+    }
+    setDuplicateError(null);
+    const resolved = resolveObjectSelection(change.document, {
+      objectId: newId,
+    });
+    setSelection(resolved);
+    setHistoryMessage(`Duplicado: ${source.name}`);
+  }, [document, runDispatch, selectedObjectId]);
+
+  /**
+   * WAVE-02 B2 — acciones de la tarjeta contextual (modo sencillo):
+   * `null` sin selección → no hay tarjeta. Un clóset solo es
+   * «reutilizable» si sus params siguen legibles (copia utilizable).
+   */
+  const cardActions: CardActionsProps | null = useMemo(() => {
+    if (selection === null || selection.anchor === null) return null;
+    const object = document.objects.find(
+      (entry) => entry.id === selection.anchor,
+    );
+    if (object === undefined) return null;
+    return {
+      onMoveWords: handleMoveWords,
+      canDuplicate:
+        object.kind === 'solid' ||
+        (selectedWardrobe !== null && selectedWardrobe.config !== null),
+      onDuplicate: handleDuplicateObject,
+      duplicateError,
+    };
+  }, [
+    selection,
+    document,
+    selectedWardrobe,
+    handleMoveWords,
+    handleDuplicateObject,
+    duplicateError,
+  ]);
 
   /** Borrador de arrastre (desde la escena): sin mutar documento. */
   const handleMoveDraftChange = useCallback(
@@ -1245,6 +1359,24 @@ export function ModelerApp(): ReactNode {
         );
         return false;
       }
+      // WAVE-02 B2 (auditoría P-05): validar rangos NO basta — el
+      // reparto entre módulos debe ser REALIZABLE (`distributeModules`,
+      // misma función que ejecuta la derivación). Si falla, se RECHAZA
+      // el cambio con el mensaje del propio motor y el documento queda
+      // intacto: antes el cambio se aplicaba, la derivación fallaba
+      // después y el mueble se quedaba sin malla con un «Generando…»
+      // falso. Aquí: error claro, medidas originales conservadas y
+      // NINGUNA sustitución silenciosa.
+      try {
+        distributeModules(distributionInput(candidate));
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'el reparto entre módulos no es posible con estas medidas.';
+        setWardrobeEditError(`No se aplicó el cambio: ${message}`);
+        return false;
+      }
       const change = runDispatch(
         createSetParamsCommand(
           document,
@@ -1787,6 +1919,7 @@ export function ModelerApp(): ReactNode {
       onHome={handleHome}
       saveState={saveState}
       startHint={startHint}
+      cardActions={cardActions}
     >
       <ModelerScene
         viewRequest={camera.request}

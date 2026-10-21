@@ -2467,6 +2467,235 @@ try {
   );
   await shootStable(page, '33-wave02-continuar', canvasClip);
 
+  // --- 14. WAVE-02 BLOQUE 2 (UX-B): tarjeta contextual,
+  //     mover con palabras, duplicar y errores claros ----------
+  // 14a — Seleccionar el clóset abre la TARJETA contextual en modo
+  // sencillo; la sección técnica «Propiedades» NO se duplica en el
+  // sidebar (mismo contenido, un solo lugar por modo).
+  await page.locator('[data-modeler-object="component-1"]').click();
+  await page.waitForSelector('[data-modeler-card]', { timeout: 10_000 });
+  const card14a = await page.evaluate(() => ({
+    propsSections: document.querySelectorAll('[data-modeler-props]').length,
+    cardTitle:
+      document.querySelector('[data-modeler-card-title]')?.textContent ?? '',
+    hasWidth:
+      document.querySelector('[data-modeler-field="wardrobe-width"]') !== null,
+    hasDoors:
+      document.querySelector('[data-modeler-doors-enabled]') !== null,
+    moveButtons: document.querySelectorAll('[data-modeler-move]').length,
+    duplicate:
+      document.querySelector('[data-modeler-duplicate]') !== null,
+  }));
+  check(
+    '14a. tarjeta contextual con campos completos, mover y duplicar; sin sección técnica en el sidebar',
+    card14a.propsSections === 0 &&
+      card14a.cardTitle.includes('Tu clóset') &&
+      card14a.hasWidth &&
+      card14a.hasDoors &&
+      card14a.moveButtons === 4 &&
+      card14a.duplicate,
+    `props=${card14a.propsSections} título="${card14a.cardTitle.trim()}" campos=${card14a.hasWidth} puertas=${card14a.hasDoors} mover=${card14a.moveButtons} duplicar=${card14a.duplicate}`,
+  );
+  await shootStable(page, '34-wave02-tarjeta', canvasClip);
+
+  // 14b — Editar el ancho DESDE LA TARJETA: Enter + blur = UNA
+  // entrada y el documento refleja 2000 mm (redistribución válida).
+  const hist14b = await historyOf();
+  await page.locator('[data-modeler-field="wardrobe-width"]').click();
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('2000');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(400);
+  const after14b = await page.evaluate(() => {
+    const object = window.__modeler
+      .getDocument()
+      .objects.find((entry) => entry.id === 'component-1');
+    return {
+      widthMm:
+        object?.kind === 'component'
+          ? (object.params?.dimensions.widthMm ?? null)
+          : null,
+      hist: window.__modeler.getHistory(),
+    };
+  });
+  check(
+    '14b. la tarjeta edita el clóset: ancho 2000 mm con UNA entrada de historial',
+    after14b.widthMm === 2000 &&
+      after14b.hist.past === hist14b.past + 1 &&
+      after14b.hist.future === 0,
+    `ancho=${after14b.widthMm} past=${after14b.hist.past} (antes ${hist14b.past})`,
+  );
+
+  // 14c — «Mover con palabras»: Derecha = +X, Adelante = −Z, cada
+  // clic UNA entrada (mismo paso de rejilla: 100 mm).
+  const posOf14 = () =>
+    page.evaluate(() => {
+      const object = window.__modeler
+        .getDocument()
+        .objects.find((entry) => entry.id === 'component-1');
+      return object?.kind === 'component' ? object.transform.positionMm : null;
+    });
+  const histBefore14c = await historyOf();
+  await page.click('[data-modeler-move="right"]');
+  await page.waitForTimeout(300);
+  const posRight14 = await posOf14();
+  await page.click('[data-modeler-move="forward"]');
+  await page.waitForTimeout(300);
+  const posForward14 = await posOf14();
+  const hist14c = await historyOf();
+  check(
+    '14c. «mover con palabras»: Derecha +100 X, Adelante −100 Z, una entrada por gesto',
+    posRight14 !== null &&
+      posRight14[0] === 100 &&
+      posRight14[2] === 0 &&
+      posForward14 !== null &&
+      posForward14[0] === 100 &&
+      posForward14[2] === -100 &&
+      hist14c.past === histBefore14c.past + 2 &&
+      hist14c.future === 0,
+    `x=${posForward14?.[0]} z=${posForward14?.[2]} past=${hist14c.past} (antes ${histBefore14c.past})`,
+  );
+
+  // 14d — «Duplicar»: UNA entrada, la copia (mismo clóset) aparece
+  // a la derecha sin solape y queda SELECCIONADA.
+  const histBefore14d = await historyOf();
+  await page.click('[data-modeler-duplicate]');
+  await page.waitForTimeout(400);
+  const dup14 = await page.evaluate(() => {
+    const doc = window.__modeler.getDocument();
+    const source = doc.objects.find((entry) => entry.id === 'component-1');
+    const copy = doc.objects.find((entry) => entry.id === 'component-2');
+    return {
+      count: doc.objects.length,
+      sel: window.__modeler.getSelection()?.anchor ?? null,
+      hist: window.__modeler.getHistory(),
+      sourceX:
+        source?.kind === 'component' ? source.transform.positionMm[0] : null,
+      copyX:
+        copy?.kind === 'component' ? copy.transform.positionMm[0] : null,
+      copyName: copy?.name ?? null,
+      sourceWidth:
+        source?.kind === 'component'
+          ? (source.params?.dimensions.widthMm ?? null)
+          : null,
+    };
+  });
+  check(
+    '14d. «Duplicar»: UNA entrada, copia sin solape a la derecha y seleccionada',
+    dup14.count === 2 &&
+      dup14.sel === 'component-2' &&
+      dup14.hist.past === histBefore14d.past + 1 &&
+      dup14.hist.future === 0 &&
+      (dup14.copyName ?? '').endsWith('(copia)') &&
+      dup14.copyX !== null &&
+      dup14.sourceX !== null &&
+      dup14.copyX >= dup14.sourceX + (dup14.sourceWidth ?? 0),
+    `objetos=${dup14.count} copia="${dup14.copyName}" x=${dup14.copyX} (origen ${dup14.sourceX}+${dup14.sourceWidth}) sel=${dup14.sel} past=${dup14.hist.past}`,
+  );
+
+  // 14e — Medida imposible de repartir (auditoría P-05, cerrada en
+  // B2): el cambio se RECHAZA con mensaje claro del motor, el
+  // documento NO cambia, el historial NO crece y el estado de
+  // generación sigue «Listo» (nunca «Generando…» falso ni malla
+  // fantasma; medidas inválidas NUNCA se sustituyen en silencio).
+  const before14e = await page.evaluate(() => {
+    const object = window.__modeler
+      .getDocument()
+      .objects.find((entry) => entry.id === 'component-1');
+    return {
+      widthMm:
+        object?.kind === 'component'
+          ? (object.params?.dimensions.widthMm ?? null)
+          : null,
+      hist: window.__modeler.getHistory(),
+    };
+  });
+  await page.locator('[data-modeler-field="wardrobe-width"]').click();
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('900');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(400);
+  const after14e = await page.evaluate(() => {
+    const object = window.__modeler
+      .getDocument()
+      .objects.find((entry) => entry.id === 'component-1');
+    return {
+      widthMm:
+        object?.kind === 'component'
+          ? (object.params?.dimensions.widthMm ?? null)
+          : null,
+      hist: window.__modeler.getHistory(),
+      error:
+        document
+          .querySelector('[data-modeler-wardrobe-edit-error]')
+          ?.textContent?.trim() ?? '',
+      status:
+        document
+          .querySelector('[data-modeler-selection-status]')
+          ?.getAttribute('data-status') ?? null,
+      fieldText:
+        document.querySelector('[data-modeler-field="wardrobe-width"]')
+          ?.value ?? null,
+    };
+  });
+  check(
+    '14e. ancho imposible (900 mm/3 módulos): error claro del motor, medidas conservadas, historial intacto y sin «Generando…» falso',
+    after14e.error.includes('no alcanza') &&
+      after14e.widthMm === before14e.widthMm &&
+      after14e.hist.past === before14e.hist.past &&
+      after14e.status === 'ready' &&
+      after14e.fieldText === '2000',
+    `error="${after14e.error.slice(0, 64)}" ancho=${after14e.widthMm} (antes ${before14e.widthMm}) past=${after14e.hist.past} estado=${after14e.status} campo=${after14e.fieldText}`,
+  );
+  await shootStable(page, '35-wave02-error-claro', canvasClip);
+
+  // 14f — «Eliminar» desde la tarjeta retira la copia (UNA entrada)
+  // y el original queda intacto.
+  const histBefore14f = await historyOf();
+  await page.locator('[data-modeler-delete]').click();
+  await page.waitForTimeout(400);
+  const after14f = await page.evaluate(() => ({
+    count: window.__modeler.getDocument().objects.length,
+    hist: window.__modeler.getHistory(),
+  }));
+  check(
+    '14f. «Eliminar» desde la tarjeta: 1 objeto restante, UNA entrada',
+    after14f.count === 1 &&
+      after14f.hist.past === histBefore14f.past + 1 &&
+      after14f.hist.future === 0,
+    `objetos=${after14f.count} past=${after14f.hist.past} (antes ${histBefore14f.past})`,
+  );
+
+  // 14g — Paridad al volver a avanzado: se re-selecciona el clóset
+  // (la eliminación de la copia dejó la escena sin selección) y el
+  // panel técnico muestra los MISMOS campos que la tarjeta.
+  await page.locator('[data-modeler-object="component-1"]').click();
+  await page.waitForSelector('[data-modeler-card]', { timeout: 10_000 });
+  await page.locator('[data-modeler-mode]').click();
+  await page.waitForTimeout(250);
+  const adv14 = await page.evaluate(() => ({
+    props: document.querySelectorAll('[data-modeler-props]').length,
+    card: document.querySelectorAll('[data-modeler-card]').length,
+    widthInSidebar:
+      document.querySelector(
+        '[data-modeler-props] [data-modeler-field="wardrobe-width"]',
+      ) !== null,
+    objects: window.__modeler.getDocument().objects.length,
+  }));
+  check(
+    '14g. activar avanzado: panel técnico completo (ancho incluido), sin tarjeta y con el documento intacto',
+    adv14.props === 1 &&
+      adv14.card === 0 &&
+      adv14.widthInSidebar &&
+      adv14.objects === 1,
+    `props=${adv14.props} tarjeta=${adv14.card} campos=${adv14.widthInSidebar} objetos=${adv14.objects}`,
+  );
+  await shootStable(page, '36-wave02-paridad-avanzado', canvasClip);
+  await page.locator('[data-modeler-mode]').click();
+  await page.waitForTimeout(200);
+
   // Diálogos observados (evidencia de las guardias de pérdida).
   console.log(`   diálogos: ${dialogLog.join(' | ')}`);
 
@@ -2517,7 +2746,7 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 + WAVE-02 UX-A (inicio, encuadre y modo sencillo)',
+        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 + WAVE-02 UX-A/UX-B (inicio, encuadre, modo sencillo, tarjeta contextual y errores claros)',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,

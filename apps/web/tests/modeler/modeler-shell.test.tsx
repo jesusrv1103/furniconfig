@@ -55,6 +55,7 @@ function renderShell(
     onHome: () => undefined,
     saveState: 'clean',
     startHint: null,
+    cardActions: null,
     children: <div data-testid="escena" />,
     ...overrides,
   };
@@ -802,5 +803,155 @@ describe('ModelerShell (WAVE-02: modos, chip de guardado e Inicio)', () => {
   it('sin pista no queda marcado el contenedor de pista', () => {
     const html = renderShell({ startHint: null });
     expect(html).not.toContain('data-modeler-start-hint');
+  });
+});
+
+/**
+ * WAVE-02 BLOQUE 2 — tarjeta contextual flotante (modo sencillo):
+ * sustituye al panel «Propiedades» con los MISMOS campos y añade
+ * mover con palabras + duplicar (cada gesto = UNA entrada de
+ * historial; eso se verifica en la App y en el script visual).
+ */
+describe('ModelerShell (WAVE-02 B2: tarjeta contextual)', () => {
+  const cardActionsFixture = {
+    onMoveWords: () => undefined,
+    canDuplicate: true,
+    onDuplicate: () => undefined,
+    duplicateError: null,
+  };
+  const positionFixture: PositionPanelProps = {
+    xText: '0',
+    zText: '0',
+    onXChange: () => undefined,
+    onZChange: () => undefined,
+    errorMessage: null,
+    snapEnabled: false,
+    onSnapChange: () => undefined,
+    snapStepMm: 100,
+    onNudge: () => undefined,
+    nudgeStepMm: 100,
+    draggable: true,
+  };
+
+  it('modo sencillo con clóset: tarjeta con TODOS los campos y la sección técnica OCULTA', () => {
+    const html = renderShell({
+      mode: 'simple',
+      wardrobe: wardrobeFixture(),
+      position: positionFixture,
+      cardActions: cardActionsFixture,
+    });
+    const card = slice(html, 'data-modeler-card', '</main>');
+    expect(card).toContain('data-modeler-card');
+    expect(card).toContain('Tu clóset');
+    // Mismos campos que el panel avanzado (sin lógica duplicada).
+    for (const attr of [
+      'wardrobe-name',
+      'wardrobe-width',
+      'wardrobe-height',
+      'wardrobe-depth',
+      'data-modeler-module-count',
+      'data-modeler-module-kind',
+      'data-modeler-doors-enabled',
+      'data-modeler-back-panel',
+      'data-modeler-delete',
+    ]) {
+      expect(card).toContain(attr);
+    }
+    // Mover con palabras + duplicar + posición legible.
+    expect(card).toContain('data-modeler-move="left"');
+    expect(card).toContain('data-modeler-move="right"');
+    expect(card).toContain('data-modeler-move="forward"');
+    expect(card).toContain('data-modeler-move="back"');
+    expect(card).toContain('← Izquierda');
+    expect(card).toContain('↑ Adelante');
+    expect(card).toContain('data-modeler-card-position');
+    expect(card).toContain('data-modeler-duplicate');
+    // La sección «Propiedades» del sidebar NO se renderiza (evita
+    // duplicar el marcado en el mismo modo).
+    expect(html).not.toContain('data-modeler-props');
+  });
+
+  it('modo avanzado con clóset: SIN tarjeta y paridad TOTAL del panel', () => {
+    const html = renderShell({
+      mode: 'advanced',
+      wardrobe: wardrobeFixture(),
+      position: positionFixture,
+      cardActions: cardActionsFixture,
+    });
+    expect(html).not.toContain('data-modeler-card');
+    expect(html).not.toContain('data-modeler-move="left"');
+    const props = slice(html, 'data-modeler-props', 'modeler-doc-heading');
+    expect(props).toContain('data-modeler-field="wardrobe-width"');
+    expect(props).toContain('data-modeler-module-count');
+  });
+
+  it('sólido seleccionado: tarjeta «Tu objeto» con cotas y extrusión', () => {
+    const html = renderShell({
+      mode: 'simple',
+      selection: {
+        name: 'Sólido 1',
+        nameText: 'Sólido 1',
+        onNameChange: () => undefined,
+        widthText: '400',
+        onWidthChange: () => undefined,
+        depthText: '400',
+        onDepthChange: () => undefined,
+        heightText: '700',
+        onHeightChange: () => undefined,
+        status: 'ready',
+        errorMessage: null,
+        onRetry: () => undefined,
+        onDelete: () => undefined,
+      },
+      position: positionFixture,
+      cardActions: cardActionsFixture,
+    });
+    const card = slice(html, 'data-modeler-card', '</main>');
+    expect(card).toContain('Tu objeto');
+    expect(card).toContain('data-modeler-field="selection-width"');
+    expect(card).toContain('data-modeler-field="selection-height"');
+    expect(card).not.toContain('wardrobe-width');
+  });
+
+  it('errores visibles en la tarjeta (edición, posición y duplicación) — nunca silenciosos', () => {
+    const html = renderShell({
+      mode: 'simple',
+      wardrobe: wardrobeFixture({
+        editError:
+          'No se aplicó el cambio: El ancho disponible (864 mm) no alcanza para 3 módulos de al menos 300 mm.',
+      }),
+      position: {
+        ...positionFixture,
+        errorMessage: 'La posición pedida está fuera de los límites de la escena.',
+      },
+      cardActions: {
+        ...cardActionsFixture,
+        duplicateError:
+          'No se pudo duplicar: la copia saldría de los límites de la escena. Documento intacto.',
+      },
+    });
+    const card = slice(html, 'data-modeler-card', '</main>');
+    expect(card).toContain('data-modeler-wardrobe-edit-error');
+    expect(card).toContain('No se aplicó el cambio');
+    expect(card).toContain('data-modeler-position-error');
+    expect(card).toContain('fuera de los límites');
+    expect(card).toContain('data-modeler-duplicate-error');
+    expect(card).toContain('role="alert"');
+  });
+
+  it('sin «Duplicar» utilizable: el botón NO se renderiza (canDuplicate=false)', () => {
+    const html = renderShell({
+      mode: 'simple',
+      wardrobe: wardrobeFixture(),
+      position: positionFixture,
+      cardActions: { ...cardActionsFixture, canDuplicate: false },
+    });
+    const card = slice(html, 'data-modeler-card', '</main>');
+    expect(card).not.toContain('data-modeler-duplicate');
+  });
+
+  it('sin selección (cardActions=null): sin tarjeta en modo sencillo', () => {
+    const html = renderShell({ mode: 'simple', cardActions: null });
+    expect(html).not.toContain('data-modeler-card');
   });
 });

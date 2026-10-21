@@ -614,6 +614,95 @@
   pointer-events: none;
 }
 
+/* --- WAVE-02 BLOQUE 2: tarjeta contextual flotante ----------- */
+/* Sustituye al panel «Propiedades» del modo sencillo: flota sobre
+   el visor, MISMO contenido y handlers (SolidPropsBody /
+   WardrobePropsBody) + mover con palabras y duplicar. */
+
+.modeler-card {
+  position: absolute;
+  right: var(--space-3, 12px);
+  bottom: var(--space-3, 12px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100% - 24px));
+  max-height: min(70%, 640px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgba(31, 36, 48, 0.16);
+  border-radius: var(--radius, 10px);
+  background: #ffffff;
+  box-shadow:
+    0 8px 24px rgba(20, 24, 33, 0.18),
+    0 2px 6px rgba(20, 24, 33, 0.12);
+  font-size: 13px;
+}
+
+.modeler-card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.modeler-card-move-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.modeler-card-move-grid button {
+  padding: 8px 6px;
+  border: 1px solid rgba(31, 36, 48, 0.24);
+  border-radius: var(--radius, 10px);
+  background: #f4f5f7;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modeler-card-move-grid button:hover {
+  background: #e7eaef;
+}
+
+.modeler-card-position {
+  margin: 4px 0 0;
+  color: inherit;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.modeler-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.modeler-card-duplicate {
+  flex: 1 1 auto;
+  padding: 9px 12px;
+  border: 1px solid rgba(31, 36, 48, 0.24);
+  border-radius: var(--radius, 10px);
+  background: #f4f5f7;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modeler-card-duplicate:hover {
+  background: #e7eaef;
+}
+
+/* En pantalla estrecha la tarjeta cubre casi todo el visor. */
+@media (max-width: 860px) {
+  .modeler-card {
+    left: var(--space-3, 12px);
+    width: auto;
+    max-height: 60%;
+  }
+}
+
 /* --- WAVE-02 BLOQUE 0: pantalla de inicio ------------------- */
 
 .modeler-welcome {
