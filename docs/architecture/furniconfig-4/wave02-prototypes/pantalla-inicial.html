@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prototipo WAVE-02 · Pantalla inicial del modelador</title>
+<!--
+  Prototipo estático (sin dependencias) — WAVE-02 BLOQUE C/D.
+  Experiencia de entrada: acción primaria «Crear clóset», diseño libre como
+  opción avanzada, recientes del navegador y SIN escena técnica vacía.
+  Ver docs/architecture/furniconfig-4/WAVE02_UX_DESIGN.md §2.
+-->
+<style>
+  :root {
+    --bg: #f1f4f8;
+    --surface: #ffffff;
+    --ink: #0f172a;
+    --ink-soft: #55627a;
+    --line: #dfe5ee;
+    --brand: #2563eb;
+    --brand-ink: #1d4ed8;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  /* --- Barra superior (sin jerga técnica) --- */
+  header {
+    background: #111c30;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+  }
+  header .brand { font-weight: 700; letter-spacing: 0.2px; }
+  header .badge {
+    background: var(--brand);
+    border-radius: 999px;
+    font-size: 12px;
+    padding: 2px 10px;
+  }
+  header .spacer { flex: 1; }
+  header a { color: #cdd8ee; text-decoration: none; font-size: 14px; }
+  header a:hover { color: #fff; }
+  /* --- Contenido --- */
+  main {
+    flex: 1;
+    width: min(980px, 92vw);
+    margin: 0 auto;
+    padding: 48px 0 32px;
+  }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  .sub { color: var(--ink-soft); margin: 0 0 28px; font-size: 15px; }
+  .cards { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .card:hover { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10); transform: translateY(-1px); }
+  .card.primary { border: 2px solid var(--brand); }
+  .card h2 { margin: 12px 0 6px; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+  .card p { margin: 0; color: var(--ink-soft); font-size: 14px; line-height: 1.5; }
+  .card .tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--brand-ink);
+    background: #e8efff;
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .icon { width: 40px; height: 40px; color: var(--brand); }
+  /* --- Recientes --- */
+  .recentes { margin-top: 36px; }
+  .recentes h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--ink-soft);
+    margin: 0 0 10px;
+  }
+  .recientes ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .recientes li {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .recientes .meta { flex: 1; }
+  .recientes .meta strong { display: block; font-size: 15px; }
+  .recientes .meta span { color: var(--ink-soft); font-size: 13px; }
+  .recientes button {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .recientes button:hover { border-color: var(--brand); color: var(--brand-ink); }
+  .nota {
+    margin-top: 14px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .prototipo {
+    position: fixed; right: 12px; bottom: 10px;
+    font-size: 11px; color: #94a3b8;
+  }
+  @media (max-width: 760px) { .cards { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">FurniConfig</span>
+  <span class="badge">Modelador</span>
+  <span class="spacer"></span>
+  <a href="#">Volver al configurador</a>
+</header>
+
+<main>
+  <h1>¿Qué quieres crear?</h1>
+  <p class="sub">Empieza en segundos. Todo se guarda en este navegador cuando tú lo decidas.</p>
+
+  <div class="cards">
+    <button class="card primary" autofocus>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <rect x="4" y="2.5" width="16" height="19" rx="1.5" />
+        <line x1="12" y1="2.5" x2="12" y2="21.5" />
+        <line x1="10.6" y1="8" x2="10.6" y2="10" />
+        <line x1="13.4" y1="8" x2="13.4" y2="10" />
+        <line x1="5.5" y1="12.5" x2="18.5" y2="12.5" stroke-dasharray="1 2" opacity="0.5" />
+      </svg>
+      <h2>Crear clóset</h2>
+      <p>Un clóset paramétrico listo para editar, centrado en pantalla. Cambia medidas y
+         muéstelo arrastrando; sin dibujar nada.</p>
+    </button>
+
+    <button class="card">
+      <span class="tag">Avanzado</span>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <path d="M3 8l9-4 9 4-9 4-9-4z" />
+        <path d="M3 12l9 4 9-4" />
+        <path d="M3 16l9 4 9-4" opacity="0.6" />
+      </svg>
+      <h2>Diseño libre</h2>
+      <p>Escena con rejilla, ejes y herramientas CAD: dibuja sólidos, ajusta posiciones exactas
+         mm y trabaja como en un modelador 3D completo.</p>
+    </button>
+  </div>
+
+  <section class="recientes" aria-label="Diseños recientes">
+    <h3>Recientes en este navegador</h3>
+    <ul>
+      <li>
+        <div class="meta">
+          <strong>Cocina Norte</strong>
+          <span>3 objetos · guardado hace 2 h</span>
+        </div>
+        <button type="button">Abrir</button>
+      </li>
+      <li>
+        <div class="meta">
+          <strong>Vestidor del pasillo</strong>
+          <span>5 objetos · guardado ayer</span>
+        </div>
+        <button type="button">Abrir</button>
+      </li>
+    </ul>
+    <p class="nota">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4.5 8-11V5l-8-3-8 3v6c0 6.5 8 11 8 11z"/></svg>
+      Tus diseños se guardan solo en este navegador; no se envían a ningún servidor.
+    </p>
+  </section>
+</main>
+
+<span class="prototipo">Prototipo estático · WAVE-02 · no es la interfaz real</span>
+</body>
+</html>
