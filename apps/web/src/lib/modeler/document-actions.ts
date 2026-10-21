@@ -30,6 +30,7 @@ import {
   createRemoveObjectCommand,
   createSetExtrusionCommand,
   createSetSketchCommand,
+  sketchDimensionMm,
   validateSceneDocument,
   type Command,
   type ComponentInstance,
@@ -47,6 +48,7 @@ import {
   WARDROBE_COMPONENT_VERSION,
   parseWardrobeParams,
 } from './components/wardrobe.js';
+import { translateSketch } from './transform.js';
 
 /**
  * Material por defecto de los sólidos dibujados.
@@ -296,6 +298,65 @@ export function buildWardrobeSeedDocument(
   } catch {
     return null;
   }
+}
+
+/**
+ * WAVE-02 BLOQUE 2 — comando de DUPLICACIÓN de un objeto existente
+ * («Duplicar» de la tarjeta contextual): UNA entrada de historial.
+ *
+ * - **Sólido de croquis en suelo**: la copia es un `add-object` con
+ *   el croquis TRASLADADO a la derecha (ancho + 200 mm, redondeado
+ *   hacia arriba a la rejilla de 10 mm): misma forma, misma extrusión
+ *   y mismo material, sin solape con el original.
+ * - **Clóset** (`component` del registro `wardrobe`): copia con el
+ *   mismo `WardrobeConfig` en la siguiente posición libre
+ *   (`nextWardrobePosition`, determinista y sin solape). Params
+ *   ilegibles → `null`: un clóset ilegible no es reutilizable.
+ * - Sólidos en otros planos, otros tipos de componente o id
+ *   inexistente → `null` (nada de duplicados que la UI no pueda
+ *   representar).
+ *
+ * Ambos caminos terminan en UN `createAddObjectCommand` (cero
+ * composiciones ni contratos nuevos; el historial crece en una
+ * entrada). El nombre de la copia es «<nombre> (copia)».
+ */
+export function buildDuplicateObjectCommand(
+  document: SceneDocument,
+  objectId: string,
+): Command | null {
+  const object = document.objects.find((entry) => entry.id === objectId);
+  if (object === undefined) return null;
+  const copyName = `${object.name} (copia)`;
+
+  if (object.kind === 'solid') {
+    if (object.geometry.source !== 'sketch') return null;
+    if (object.geometry.sketch.plane !== 'ground') return null;
+    const widthMm = sketchDimensionMm(object.geometry.sketch, 'widthMm');
+    const DUPLICATE_GAP_MM = 200;
+    const GRID_MM = 10;
+    const dxMm =
+      Math.ceil((widthMm + DUPLICATE_GAP_MM) / GRID_MM) * GRID_MM;
+    const clone: SceneObject = {
+      ...buildSolidObject(
+        document,
+        translateSketch(object.geometry.sketch, dxMm, 0),
+        object.geometry.extrusionMm,
+      ),
+      name: copyName,
+      materialId: object.materialId,
+    };
+    return createAddObjectCommand(document, clone);
+  }
+
+  if (object.type !== WARDROBE_COMPONENT_TYPE) return null;
+  if (parseWardrobeParams(object.params) === null) return null;
+  const clone: SceneObject = {
+    ...object,
+    id: nextComponentId(document),
+    name: copyName,
+    transform: { positionMm: nextWardrobePosition(document) },
+  };
+  return createAddObjectCommand(document, clone);
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   createEmptySceneDocument,
   validateSceneDocument,
   type SceneDocument,
+  type SceneObject,
   type Sketch2D,
   type SolidObject,
 } from '@furniconfig/modeler-core';
@@ -19,6 +20,7 @@ import {
 import {
   DEFAULT_SCENE_MATERIAL,
   applySceneAction,
+  buildDuplicateObjectCommand,
   buildWardrobeSeedDocument,
   nextSolidId,
 } from '../../src/lib/modeler/document-actions.js';
@@ -319,5 +321,118 @@ describe('buildWardrobeSeedDocument (WAVE-02 BLOQUE 0)', () => {
     const before = JSON.stringify(withMaterial);
     buildWardrobeSeedDocument(withMaterial);
     expect(JSON.stringify(withMaterial)).toBe(before);
+  });
+});
+
+/** Documento semilla con UN clóset válido (material incluido). */
+function documentWithWardrobe(): SceneDocument {
+  const seed = applySceneAction(createEmptySceneDocument(), {
+    type: 'set-grid-step',
+    gridStepMm: 100,
+  });
+  if (seed === null) throw new Error('fixture de semilla inválida');
+  const withMaterial: SceneDocument = {
+    ...seed,
+    materials: [...seed.materials, DEFAULT_SCENE_MATERIAL],
+  };
+  const result = buildWardrobeSeedDocument(withMaterial);
+  if (result === null) throw new Error('fixture: semilla rechazada');
+  return result;
+}
+
+describe('buildDuplicateObjectCommand (WAVE-02 BLOQUE 2)', () => {
+  it('sólido de croquis: UNA entrada con la copia trasladada a la derecha', () => {
+    const document = documentWithSolid();
+    const command = buildDuplicateObjectCommand(document, 'solid-1');
+    expect(command).not.toBeNull();
+    if (command === null) throw new Error('esperaba comando');
+    const next = command.apply(document);
+    expect(next.objects).toHaveLength(2);
+    const copy = next.objects[1];
+    expect(copy?.id).toBe('solid-2');
+    expect(copy?.name).toBe('Sólido 1 (copia)');
+    if (copy?.kind !== 'solid' || copy.geometry.source !== 'sketch') {
+      throw new Error('esperaba sólido de croquis');
+    }
+    // Ancho 1200 + hueco 200 = 1400 de desplazamiento en X.
+    expect(copy.geometry.sketch.pointsMm[0]).toEqual([1400, 0]);
+    expect(copy.geometry.sketch.pointsMm[2]).toEqual([2600, 600]);
+    // Misma extrusión y material que el original.
+    expect(copy.geometry.extrusionMm).toBe(100);
+    expect(copy.materialId).toBe(solidAt(document).materialId);
+    // Documento resultante VÁLIDO y original intacto.
+    expect(validateSceneDocument(next).ok).toBe(true);
+    expect(document.objects).toHaveLength(1);
+  });
+
+  it('clóset: copia con los MISMOS params en la siguiente posición libre', () => {
+    const document = documentWithWardrobe();
+    const original = document.objects[0];
+    const command = buildDuplicateObjectCommand(document, 'component-1');
+    expect(command).not.toBeNull();
+    if (command === null) throw new Error('esperaba comando');
+    const next = command.apply(document);
+    expect(next.objects).toHaveLength(2);
+    const copy = next.objects[1];
+    expect(copy?.id).toBe('component-2');
+    expect(copy?.name).toBe('Clóset 1 (copia)');
+    if (copy?.kind !== 'component') throw new Error('esperaba componente');
+    expect(copy.type).toBe('furniconfig.wardrobe');
+    // Mismos params (config intacta) y posición a la derecha del
+    // original (2400 mm de ancho + hueco de 200 mm, determinista).
+    expect(copy.params).toEqual(original?.kind === 'component' ? original.params : null);
+    expect(copy.transform.positionMm).toEqual([2600, 0, 0]);
+    expect(validateSceneDocument(next).ok).toBe(true);
+  });
+
+  it('devuelve null para id inexistente, sólido fuera del suelo y componente ajeno', () => {
+    const document = documentWithSolid();
+    expect(buildDuplicateObjectCommand(document, 'no-existe')).toBeNull();
+
+    const solid = solidAt(document);
+    if (solid.geometry.source !== 'sketch') {
+      throw new Error('fixture: se esperaba sólido de croquis');
+    }
+    const wallSolid: SceneDocument = {
+      ...document,
+      objects: [
+        {
+          ...solid,
+          geometry: {
+            ...solid.geometry,
+            sketch: { ...solid.geometry.sketch, plane: 'front' as const },
+          },
+        },
+      ],
+    };
+    expect(buildDuplicateObjectCommand(wallSolid, 'solid-1')).toBeNull();
+
+    const foreign: SceneObject = {
+      id: 'component-9',
+      kind: 'component',
+      name: 'Componente ajeno',
+      transform: { positionMm: [0, 0, 0] },
+      type: 'test.foo',
+      version: 1,
+      params: {},
+      materialId: 'test-material',
+    };
+    const withForeign: SceneDocument = {
+      ...document,
+      objects: [...document.objects, foreign],
+    };
+    expect(
+      buildDuplicateObjectCommand(withForeign, 'component-9'),
+    ).toBeNull();
+  });
+
+  it('la duplicación es determinista y no muta la entrada', () => {
+    const document = documentWithSolid();
+    const before = JSON.stringify(document);
+    const a = buildDuplicateObjectCommand(document, 'solid-1');
+    const b = buildDuplicateObjectCommand(document, 'solid-1');
+    expect(a?.id).toBe(b?.id);
+    expect(a?.apply(document)).toEqual(b?.apply(document));
+    expect(JSON.stringify(document)).toBe(before);
   });
 });
