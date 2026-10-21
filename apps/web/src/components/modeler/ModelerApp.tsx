@@ -137,6 +137,10 @@ import type { ModelerTool } from '../../lib/modeler/drawing.js';
 import type { ModelerMode } from '../../lib/modeler/modes.js';
 import { computeSceneBounds, DEFAULT_SCENE_BOUNDS } from '../../lib/modeler/scene-bounds.js';
 import { geometryLifecycle } from './use-solid-geometry.js';
+import {
+  ModelerDialog,
+  type ModelerDialogSpec,
+} from './ModelerDialog.js';
 
 import './modeler.css';
 
@@ -221,6 +225,31 @@ export function ModelerApp(): ReactNode {
    * limpia al cambiar de selección y en cada duplicación aceptada.
    */
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  /**
+   * WAVE-02 BLOQUE 3 (UX-C) — diálogo modal PROPIO abierto (o
+   * `null`). Sustituye a `window.prompt`/`window.confirm`: mismo
+   * flujo, pero accesible, verificable y con validación en la app
+   * (el diálogo se queda abierto con el error si hace falta).
+   */
+  const [dialog, setDialog] = useState<ModelerDialogSpec | null>(null);
+  /** Elemento con foco antes de abrir el diálogo (se restaura al cerrar). */
+  const dialogTriggerRef = useRef<HTMLElement | null>(null);
+
+  /** Abre el diálogo guardando el disparador para devolverle el foco. */
+  const openDialog = useCallback((spec: ModelerDialogSpec): void => {
+    // NOTA: `document` local = SceneDocument (estado); el DOM global
+    // se alcanza vía `window.document`.
+    const active = window.document.activeElement;
+    dialogTriggerRef.current = active instanceof HTMLElement ? active : null;
+    setDialog(spec);
+  }, []);
+
+  /** Cierra el diálogo y devuelve el foco a su disparador. */
+  const closeDialog = useCallback((): void => {
+    setDialog(null);
+    dialogTriggerRef.current?.focus();
+    dialogTriggerRef.current = null;
+  }, []);
   /**
    * Selección previa a una eliminación (C4): si el usuario deshace
    * el borrado, el objeto restaurado recupera su selección. Se
@@ -1062,18 +1091,23 @@ export function ModelerApp(): ReactNode {
   /** «Descartar borrador»: acción EXPLÍCITA del usuario (nunca auto). */
   const handleWelcomeDiscardDraft = useCallback(() => {
     if (designStorage === null) return;
-    if (
-      !window.confirm(
+    openDialog({
+      kind: 'confirm',
+      title: 'Descartar borrador',
+      description:
         '¿Descartar el borrador de sesión? Se perderá el trabajo que no esté guardado.',
-      )
-    ) {
-      return;
-    }
-    clearSceneDraft(designStorage);
-    setDraftInfo(readSceneDraft(designStorage));
-    setDesignMessage('Borrador descartado.');
-    setWelcomeError(null);
-  }, [designStorage]);
+      confirmLabel: 'Descartar',
+      onConfirm: () => {
+        if (designStorage === null) return;
+        clearSceneDraft(designStorage);
+        setDraftInfo(readSceneDraft(designStorage));
+        setDesignMessage('Borrador descartado.');
+        setWelcomeError(null);
+        closeDialog();
+      },
+      onCancel: closeDialog,
+    });
+  }, [designStorage, openDialog, closeDialog]);
 
   /** «Inicio»: vuelve a la bienvenida (el borrador ya está escrito). */
   const handleHome = useCallback(() => {
@@ -1089,43 +1123,58 @@ export function ModelerApp(): ReactNode {
     setMode(next);
   }, []);
 
-  /** Guardar como: NUEVO id determinista con nombre pedido por prompt. */
+  /** Guardar como: NUEVO id determinista con nombre (diálogo propio). */
   const handleDesignSaveAs = useCallback(() => {
     if (designStorage === null) {
       setDesignError('Almacenamiento local no disponible: no se guardó nada.');
       setDesignMessage(null);
       return;
     }
-    const proposed = window.prompt(
-      'Nombre del nuevo diseño',
-      activeDesign === null ? document.name : `${activeDesign.name} (copia)`,
-    );
-    if (proposed === null) return;
-    const name = proposed.trim();
-    if (name === '') {
-      setDesignError('El nombre no puede estar vacío.');
-      setDesignMessage(null);
-      return;
-    }
-    const result = createSceneDesign(designStorage, { ...document, name });
-    if (!result.ok) {
-      setDesignError(result.message);
-      setDesignMessage(null);
-      return;
-    }
-    setActiveDesign({ id: result.id, name });
-    setDesignFocusId(result.id);
-    setDesignSavedJson(designDocumentJson);
-    setDesignMessage(`Guardado: ${name}`);
-    setDesignError(null);
-    refreshDesigns();
-    setHistoryMessage(`Guardado: ${name}`);
+    const proposed =
+      activeDesign === null ? document.name : `${activeDesign.name} (copia)`;
+    openDialog({
+      kind: 'prompt',
+      title: 'Guardar como',
+      description: 'Elige un nombre para el nuevo proyecto (se guarda en este navegador).',
+      initialValue: proposed,
+      confirmLabel: 'Guardar',
+      onConfirm: (value) => {
+        if (designStorage === null) return;
+        const name = value.trim();
+        if (name === '') {
+          setDialog((current) =>
+            current === null
+              ? null
+              : { ...current, error: 'El nombre no puede estar vacío.' },
+          );
+          return;
+        }
+        const result = createSceneDesign(designStorage, { ...document, name });
+        if (!result.ok) {
+          setDialog((current) =>
+            current === null ? null : { ...current, error: result.message },
+          );
+          return;
+        }
+        setActiveDesign({ id: result.id, name });
+        setDesignFocusId(result.id);
+        setDesignSavedJson(designDocumentJson);
+        setDesignMessage(`Guardado: ${name}`);
+        setDesignError(null);
+        refreshDesigns();
+        setHistoryMessage(`Guardado: ${name}`);
+        closeDialog();
+      },
+      onCancel: closeDialog,
+    });
   }, [
     designStorage,
     activeDesign,
     document,
     designDocumentJson,
     refreshDesigns,
+    openDialog,
+    closeDialog,
   ]);
 
   /** Guardar: SOLO sobrescribe el diseño activo (explícito, nunca automático). */
@@ -1173,13 +1222,35 @@ export function ModelerApp(): ReactNode {
         setDesignMessage(null);
         return;
       }
-      if (
-        designDirty &&
-        !window.confirm(
-          `Hay cambios sin guardar en «${activeDesign?.name ?? 'la escena'}». Al abrir «${id}» se perderán. ¿Continuar?`,
-        )
-      ) {
-        setDesignFocusId(activeDesign?.id ?? null); // cancelar: selector intacto
+      if (designDirty) {
+        openDialog({
+          kind: 'confirm',
+          title: 'Cambios sin guardar',
+          description: `Hay cambios sin guardar en «${activeDesign?.name ?? 'la escena'}». Al abrir «${id}» se perderán. ¿Continuar?`,
+          confirmLabel: 'Abrir de todos modos',
+          onConfirm: () => {
+            if (designStorage === null) return;
+            const confirmed = readSceneDesign(designStorage, id);
+            if (!confirmed.ok) {
+              setDesignError(confirmed.message);
+              setDesignMessage(null);
+              closeDialog();
+              return;
+            }
+            applyDesignDocument(confirmed.document, {
+              id,
+              name: confirmed.document.name,
+            });
+            setDesignMessage(`Abierto: ${confirmed.document.name}`);
+            refreshDesigns();
+            setHistoryMessage(`Abierto: ${confirmed.document.name}`);
+            closeDialog();
+          },
+          onCancel: () => {
+            setDesignFocusId(activeDesign?.id ?? null); // cancelar: selector intacto
+            closeDialog();
+          },
+        });
         return;
       }
       const result = readSceneDesign(designStorage, id);
@@ -1204,29 +1275,39 @@ export function ModelerApp(): ReactNode {
       activeDesign,
       applyDesignDocument,
       refreshDesigns,
+      openDialog,
+      closeDialog,
     ],
   );
 
   /** Nuevo diseño: escena semilla con guardia de cambios sin guardar. */
   const handleDesignNew = useCallback(() => {
-    if (
-      designDirty &&
-      !window.confirm(
-        `Hay cambios sin guardar en «${activeDesign?.name ?? 'la escena'}». Al crear un diseño nuevo se perderán. ¿Continuar?`,
-      )
-    ) {
+    if (designDirty) {
+      openDialog({
+        kind: 'confirm',
+        title: 'Cambios sin guardar',
+        description: `Hay cambios sin guardar en «${activeDesign?.name ?? 'la escena'}». Al crear un proyecto nuevo se perderán. ¿Continuar?`,
+        confirmLabel: 'Crear de todos modos',
+        onConfirm: () => {
+          applyDesignDocument(createSeedDocument(), null);
+          setDesignMessage('Nueva escena');
+          setHistoryMessage('Nueva escena');
+          closeDialog();
+        },
+        onCancel: closeDialog,
+      });
       return;
     }
     applyDesignDocument(createSeedDocument(), null);
     setDesignMessage('Nueva escena');
     setHistoryMessage('Nueva escena');
-  }, [designDirty, activeDesign, applyDesignDocument]);
+  }, [designDirty, activeDesign, applyDesignDocument, openDialog, closeDialog]);
 
   /** Renombrar la entrada con foco (el id y el resto no cambian). */
   const handleDesignRename = useCallback(() => {
     const id = designFocusId ?? activeDesign?.id ?? null;
     if (id === null) {
-      setDesignError('No hay ningún diseño seleccionado para renombrar.');
+      setDesignError('No hay ningún proyecto seleccionado para renombrar.');
       setDesignMessage(null);
       return;
     }
@@ -1239,33 +1320,62 @@ export function ModelerApp(): ReactNode {
       designSummaries.find((entry) => entry.id === id)?.name ??
       activeDesign?.name ??
       id;
-    const next = window.prompt(`Nuevo nombre para «${current}»`, current);
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (trimmed === '' || trimmed === current) return;
-    const result = renameSceneDesign(designStorage, id, trimmed);
-    if (!result.ok) {
-      setDesignError(result.message);
-      setDesignMessage(null);
-      return;
-    }
-    if (activeDesign?.id === id) setActiveDesign({ id, name: trimmed });
-    refreshDesigns();
-    setDesignMessage(`Renombrado: ${trimmed}`);
-    setDesignError(null);
+    openDialog({
+      kind: 'prompt',
+      title: 'Renombrar proyecto',
+      description: `Nuevo nombre para «${current}» (el id y el contenido no cambian).`,
+      initialValue: current,
+      confirmLabel: 'Renombrar',
+      onConfirm: (value) => {
+        if (designStorage === null) return;
+        const trimmed = value.trim();
+        if (trimmed === '') {
+          // UX-C: nombre vacío → diálogo SIGUE ABIERTO con error
+          // visible (role=alert); nada se ejecuta.
+          setDialog((currentSpec) =>
+            currentSpec === null
+              ? null
+              : {
+                  ...currentSpec,
+                  error: 'El nombre no puede estar vacío.',
+                },
+          );
+          return;
+        }
+        if (trimmed === current) {
+          closeDialog(); // sin cambios: se cierra sin tocar nada
+          return;
+        }
+        const result = renameSceneDesign(designStorage, id, trimmed);
+        if (!result.ok) {
+          setDialog((currentSpec) =>
+            currentSpec === null ? null : { ...currentSpec, error: result.message },
+          );
+          return;
+        }
+        if (activeDesign?.id === id) setActiveDesign({ id, name: trimmed });
+        refreshDesigns();
+        setDesignMessage(`Renombrado: ${trimmed}`);
+        setDesignError(null);
+        closeDialog();
+      },
+      onCancel: closeDialog,
+    });
   }, [
     designFocusId,
     activeDesign,
     designStorage,
     designSummaries,
     refreshDesigns,
+    openDialog,
+    closeDialog,
   ]);
 
   /** Duplicar la entrada con foco a un id determinista nuevo. */
   const handleDesignDuplicate = useCallback(() => {
     const id = designFocusId ?? activeDesign?.id ?? null;
     if (id === null) {
-      setDesignError('No hay ningún diseño seleccionado para duplicar.');
+      setDesignError('No hay ningún proyecto seleccionado para duplicar.');
       setDesignMessage(null);
       return;
     }
@@ -1275,7 +1385,7 @@ export function ModelerApp(): ReactNode {
       return;
     }
     const currentName =
-      designSummaries.find((entry) => entry.id === id)?.name ?? 'diseño';
+      designSummaries.find((entry) => entry.id === id)?.name ?? 'proyecto';
     const result = duplicateSceneDesign(designStorage, id);
     if (!result.ok) {
       setDesignError(result.message);
@@ -1292,7 +1402,7 @@ export function ModelerApp(): ReactNode {
   const handleDesignDelete = useCallback(() => {
     const id = designFocusId ?? activeDesign?.id ?? null;
     if (id === null) {
-      setDesignError('No hay ningún diseño seleccionado para eliminar.');
+      setDesignError('No hay ningún proyecto seleccionado para eliminar.');
       setDesignMessage(null);
       return;
     }
@@ -1302,31 +1412,44 @@ export function ModelerApp(): ReactNode {
       return;
     }
     const name = designSummaries.find((entry) => entry.id === id)?.name ?? id;
-    if (
-      !window.confirm(
-        `¿Eliminar el diseño «${name}»? Esta acción no se puede deshacer.`,
-      )
-    ) {
-      return;
-    }
-    const result = deleteSceneDesign(designStorage, id);
-    if (!result.ok) {
-      setDesignError(result.message);
-      setDesignMessage(null);
-      return;
-    }
-    if (activeDesign?.id === id) {
-      // La escena SIGUE abierta en pantalla; solo retira su registro.
-      // El baseline se conserva: el chip sigue reflejando con honestidad
-      // si el contenido tiene o no cambios sin guardar.
-      setActiveDesign(null);
-    }
-    setDesignFocusId(null);
-    refreshDesigns();
-    setDesignMessage(`Eliminado: ${name}`);
-    setDesignError(null);
-    setHistoryMessage(`Eliminado: ${name}`);
-  }, [designFocusId, activeDesign, designStorage, designSummaries, refreshDesigns]);
+    openDialog({
+      kind: 'confirm',
+      title: 'Eliminar proyecto',
+      description: `¿Eliminar el proyecto «${name}»? Esta acción no se puede deshacer.`,
+      confirmLabel: 'Eliminar',
+      onConfirm: () => {
+        if (designStorage === null) return;
+        const result = deleteSceneDesign(designStorage, id);
+        if (!result.ok) {
+          setDesignError(result.message);
+          setDesignMessage(null);
+          closeDialog();
+          return;
+        }
+        if (activeDesign?.id === id) {
+          // La escena SIGUE abierta en pantalla; solo retira su registro.
+          // El baseline se conserva: el chip sigue reflejando con honestidad
+          // si el contenido tiene o no cambios sin guardar.
+          setActiveDesign(null);
+        }
+        setDesignFocusId(null);
+        refreshDesigns();
+        setDesignMessage(`Eliminado: ${name}`);
+        setDesignError(null);
+        setHistoryMessage(`Eliminado: ${name}`);
+        closeDialog();
+      },
+      onCancel: closeDialog,
+    });
+  }, [
+    designFocusId,
+    activeDesign,
+    designStorage,
+    designSummaries,
+    refreshDesigns,
+    openDialog,
+    closeDialog,
+  ]);
 
   // -------------------------------------------------------------------------
   // Edición paramétrica de clósets (D4): valida → construye params →
@@ -1871,22 +1994,26 @@ export function ModelerApp(): ReactNode {
 
   if (screen === 'welcome') {
     return (
-      <WelcomeScreen
-        storageAvailable={designStorage !== null}
-        designs={designSummaries}
-        draft={draftCard}
-        error={welcomeError}
-        onCreateCloset={handleWelcomeCreateCloset}
-        onContinueDraft={handleWelcomeContinueDraft}
-        onDiscardDraft={handleWelcomeDiscardDraft}
-        onOpenDesign={handleWelcomeOpenDesign}
-        onFreeDesign={handleWelcomeFreeDesign}
-      />
+      <>
+        <WelcomeScreen
+          storageAvailable={designStorage !== null}
+          designs={designSummaries}
+          draft={draftCard}
+          error={welcomeError}
+          onCreateCloset={handleWelcomeCreateCloset}
+          onContinueDraft={handleWelcomeContinueDraft}
+          onDiscardDraft={handleWelcomeDiscardDraft}
+          onOpenDesign={handleWelcomeOpenDesign}
+          onFreeDesign={handleWelcomeFreeDesign}
+        />
+        {dialog !== null && <ModelerDialog dialog={dialog} />}
+      </>
     );
   }
 
   return (
-    <ModelerShell
+    <>
+      <ModelerShell
       document={{
         name: document.name,
         objectCount: document.objects.length,
@@ -1939,6 +2066,8 @@ export function ModelerApp(): ReactNode {
         mode={mode}
         bounds={framedBounds}
       />
-    </ModelerShell>
+      </ModelerShell>
+      {dialog !== null && <ModelerDialog dialog={dialog} />}
+    </>
   );
 }

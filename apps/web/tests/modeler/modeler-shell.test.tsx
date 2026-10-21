@@ -783,7 +783,7 @@ describe('ModelerShell (WAVE-02: modos, chip de guardado e Inicio)', () => {
     }
     const clean = renderShell({ saveState: 'clean' });
     expect(clean).toContain('data-save-state="clean"');
-    expect(clean).toContain('Sin diseño guardado');
+    expect(clean).toContain('Sin proyecto guardado');
   });
 
   it('botón «Inicio» presente en la barra superior', () => {

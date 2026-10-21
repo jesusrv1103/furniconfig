@@ -49,7 +49,7 @@ describe('WelcomeScreen (marcado puro)', () => {
     expect(html).toContain('Diseño libre — avanzado');
     expect(html).toContain('¿Qué quieres crear?');
     expect(html).toContain('data-welcome-designs');
-    expect(html).toContain('Todavía no tienes diseños guardados');
+    expect(html).toContain('Todavía no tienes proyectos guardados');
     // Identidad y vuelta al configurador.
     expect(html).toContain('FurniConfig');
     expect(html).toContain('href="#/"');
@@ -114,7 +114,7 @@ describe('WelcomeScreen (marcado puro)', () => {
     const html = renderWelcome({ designs });
     expect(html).toContain('data-welcome-open="design-1"');
     expect(html).toContain('Cocina norte');
-    expect(text(html)).toContain('Diseño dañado (design-2)');
+    expect(text(html)).toContain('Proyecto dañado (design-2)');
     expect(html).toContain('no se elimina automáticamente');
   });
 

@@ -11,10 +11,10 @@
  * - **Crear clóset** (principal): componente paramétrico válido,
  *   centrado y encuadrado (BLOQUE 0/1), seleccionado con sus
  *   propiedades visibles.
- * - **Continuar un diseño** (si hay borrador de sesión válido): nombra
+ * - **Continuar un proyecto** (si hay borrador de sesión válido): nombra
  *   qué se continúa (nombre, objetos, antigüedad) y ofrece
  *   «Descartar borrador» como acción explícita (BLOQUE 3).
- * - **Abrir mis diseños**: listado local con apertura directa; una
+ * - **Abrir mis proyectos**: listado local con apertura directa; una
  *   entrada corrupta se muestra como corrupta (nunca se borra).
  * - **Diseño libre**: escena vacía en MODO AVANZADO (escape honesto
  *   para quien quiere el modelador técnico actual).
@@ -138,7 +138,7 @@ export function WelcomeScreen(props: WelcomeScreenProps): ReactElement {
             aria-labelledby="modeler-welcome-draft-heading"
             data-welcome-draft={draft.corrupted ? 'corrupted' : 'ok'}
           >
-            <h2 id="modeler-welcome-draft-heading">Continuar un diseño</h2>
+            <h2 id="modeler-welcome-draft-heading">Continuar un proyecto</h2>
             {draft.corrupted ? (
               <>
                 <p className="modeler-welcome-draft-warning">
@@ -194,10 +194,10 @@ export function WelcomeScreen(props: WelcomeScreenProps): ReactElement {
           aria-labelledby="modeler-welcome-designs-heading"
           data-welcome-designs=""
         >
-          <h2 id="modeler-welcome-designs-heading">Abrir mis diseños</h2>
+          <h2 id="modeler-welcome-designs-heading">Abrir mis proyectos</h2>
           {designs.length === 0 ? (
             <p className="modeler-welcome-empty">
-              Todavía no tienes diseños guardados.
+              Todavía no tienes proyectos guardados.
             </p>
           ) : (
             <ul className="modeler-welcome-design-list">
@@ -206,7 +206,7 @@ export function WelcomeScreen(props: WelcomeScreenProps): ReactElement {
                   {design.corrupted ? (
                     <>
                       <span className="modeler-welcome-design-broken">
-                        Diseño dañado ({design.id})
+                        Proyecto dañado ({design.id})
                       </span>
                       <span className="modeler-welcome-design-note">
                         No se pudo leer; no se elimina automáticamente.

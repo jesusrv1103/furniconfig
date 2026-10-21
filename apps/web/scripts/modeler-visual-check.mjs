@@ -303,25 +303,14 @@ try {
     }
   });
 
-  // Planificador de diálogos nativos (prompt/confirm) para la
-  // sección 11 (WAVE-01 BLOQUE 3): patrón de visual-check.mjs.
+  // WAVE-02 UX-C: la app ya NO usa `window.prompt`/`window.confirm`
+  // (sustituidos por el diálogo propio accesible `ModelerDialog`).
+  // Este registro queda solo como EVIDENCIA: debe terminar vacío y
+  // cualquier diálogo nativo se descarta para no bloquear la ejecución.
   const dialogLog = [];
-  const dialogPlan = { promptValue: undefined, promptCancel: false, confirm: true };
   page.on('dialog', async (dialog) => {
     dialogLog.push(`${dialog.type()}: ${dialog.message()}`);
-    if (dialog.type() === 'prompt') {
-      if (dialogPlan.promptCancel) {
-        dialogPlan.promptCancel = false;
-        await dialog.dismiss();
-      } else {
-        await dialog.accept(dialogPlan.promptValue ?? '');
-      }
-    } else if (dialogPlan.confirm) {
-      await dialog.accept();
-    } else {
-      dialogPlan.confirm = true; // rearme: la cancelación es puntual
-      await dialog.dismiss();
-    }
+    await dialog.dismiss();
   });
 
   // --- 0. WAVE-02: pantalla de inicio (primera visita) -----
@@ -1874,8 +1863,17 @@ try {
       key.startsWith('furniconfig.modeler.designs'),
     ).length,
   }));
-  dialogPlan.promptCancel = true;
   await page.locator('[data-modeler-design-save-as]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  // WAVE-02 UX-C: diálogo PROPIO accesible (sin prompt del navegador);
+  // el nombre propuesto se precarga en el campo.
+  const descCancel11 = await page
+    .locator('[data-modeler-dialog-description]')
+    .textContent();
+  const inputCancel11 = await page
+    .locator('[data-modeler-dialog-input]')
+    .inputValue();
+  await page.locator('[data-modeler-dialog-cancel]').click();
   await page.waitForTimeout(200);
   const afterCancel11 = await page.evaluate(() => ({
     summaries: window.__modeler.getDesigns().summaries.length,
@@ -1883,11 +1881,15 @@ try {
     storageKeys: Object.keys(localStorage).filter((key) =>
       key.startsWith('furniconfig.modeler.designs'),
     ).length,
+    dialogOpen: document.querySelector('[data-modeler-dialog]') !== null,
   }));
   check(
-    '11b. cancelar el prompt de «Guardar como» no crea ni altera nada',
-    JSON.stringify(afterCancel11) === JSON.stringify(beforeCancel11),
-    `antes=${beforeCancel11.summaries} tras=${afterCancel11.summaries}`,
+    '11b. cancelar el diálogo propio de «Guardar como» no crea ni altera nada',
+    JSON.stringify(afterCancel11) ===
+      JSON.stringify({ ...beforeCancel11, dialogOpen: false }) &&
+      inputCancel11 === 'Escena sin título' &&
+      String(descCancel11).includes('nuevo proyecto'),
+    `antes=${beforeCancel11.summaries} tras=${afterCancel11.summaries} campo="${inputCancel11}"`,
   );
 
   // 11c — Guardar como con nombre: sobre v1 en el namespace del
@@ -1895,8 +1897,10 @@ try {
   const configBefore11 = await page.evaluate(() =>
     localStorage.getItem('furniconfig.designs'),
   );
-  dialogPlan.promptValue = 'Wave01 Escena';
   await page.locator('[data-modeler-design-save-as]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  await page.locator('[data-modeler-dialog-input]').fill('Wave01 Escena');
+  await page.locator('[data-modeler-dialog-confirm]').click();
   await page.waitForFunction(
     () => window.__modeler.getDesigns().activeDesign?.id === 'design-1',
     undefined,
@@ -2082,9 +2086,12 @@ try {
     `x=${edited11.x} historial=${edited11.history.past} undo→${undone11} esperado=${posBeforeEdit11}`,
   );
 
-  // 11g — Renombrar (prompt) del diseño con foco: storage y panel.
-  dialogPlan.promptValue = 'Wave01 Renombrado';
+  // 11g — Renombrar (diálogo propio) del proyecto con foco: storage
+  // y panel.
   await page.locator('[data-modeler-design-rename]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  await page.locator('[data-modeler-dialog-input]').fill('Wave01 Renombrado');
+  await page.locator('[data-modeler-dialog-confirm]').click();
   await page.waitForTimeout(250);
   const renamed11 = await page.evaluate(() => ({
     designs: window.__modeler.getDesigns(),
@@ -2093,12 +2100,46 @@ try {
     ).document.name,
   }));
   check(
-    '11g. renombrar actualiza listado, diseño activo y el nombre dentro del sobre (id intacto)',
+    '11g. renombrar actualiza listado, proyecto activo y el nombre dentro del sobre (id intacto)',
     renamed11.designs.activeDesign?.name === 'Wave01 Renombrado' &&
       renamed11.designs.summaries.find((entry) => entry.id === 'design-1')
         ?.name === 'Wave01 Renombrado' &&
       renamed11.storedName === 'Wave01 Renombrado',
     `activo=${renamed11.designs.activeDesign?.name} sobre=${renamed11.storedName}`,
+  );
+
+  // 11g2 — UX-C: con nombre VACÍO el diálogo PROPIO se queda abierto
+  // con error visible (role=alert) y no cambia nada; Escape cancela
+  // sin ejecutar (accesible: sin diálogos del navegador).
+  await page.locator('[data-modeler-design-rename]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  await page.locator('[data-modeler-dialog-input]').fill('');
+  await page.locator('[data-modeler-dialog-confirm]').click();
+  await page.waitForTimeout(200);
+  const empty11 = await page.evaluate(() => ({
+    dialogOpen: document.querySelector('[data-modeler-dialog]') !== null,
+    error:
+      document.querySelector('[data-modeler-dialog-error]')?.textContent ??
+      '',
+    name: window.__modeler.getDesigns().activeDesign?.name ?? null,
+  }));
+  check(
+    '11g2. nombre vacío: el diálogo sigue abierto con error visible y nada cambia',
+    empty11.dialogOpen &&
+      empty11.error !== '' &&
+      empty11.name === 'Wave01 Renombrado',
+    `abierto=${empty11.dialogOpen} error="${empty11.error}" activo=${empty11.name}`,
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const escape11 = await page.evaluate(() => ({
+    dialogOpen: document.querySelector('[data-modeler-dialog]') !== null,
+    name: window.__modeler.getDesigns().activeDesign?.name ?? null,
+  }));
+  check(
+    '11g3. Escape cierra el diálogo sin ejecutar la acción (accesible)',
+    escape11.dialogOpen === false && escape11.name === 'Wave01 Renombrado',
+    `abierto=${escape11.dialogOpen} activo=${escape11.name}`,
   );
 
   // 11h — Duplicar: design-2 con «(copia)» y contenido equivalente.
@@ -2130,14 +2171,21 @@ try {
   const dirtyBeforeNew11 = await page.evaluate(
     () => window.__modeler.getDesigns().dirty,
   );
-  dialogPlan.confirm = false;
   await page.locator('[data-modeler-design-new]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  const guardDesc11 = await page
+    .locator('[data-modeler-dialog-description]')
+    .textContent();
+  await page.locator('[data-modeler-dialog-cancel]').click();
   await page.waitForTimeout(200);
   const cancelNew11 = await page.evaluate(() => ({
     active: window.__modeler.getDesigns().activeDesign?.id ?? null,
     objectCount: window.__modeler.getDocument().objects.length,
+    dialogOpen: document.querySelector('[data-modeler-dialog]') !== null,
   }));
   await page.locator('[data-modeler-design-new]').click(); // confirm aceptado
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  await page.locator('[data-modeler-dialog-confirm]').click();
   await page.waitForTimeout(250);
   const newAfter11 = await page.evaluate(() => ({
     active: window.__modeler.getDesigns().activeDesign,
@@ -2146,15 +2194,17 @@ try {
     history: window.__modeler.getHistory(),
   }));
   check(
-    '11i. «Nuevo» con guardia real (escena sucia): cancelar conserva el diseño abierto; aceptar instala la semilla con historial vacío',
+    '11i. «Nuevo» con guardia real (escena sucia): cancelar conserva el proyecto abierto; aceptar instala la semilla con historial vacío',
     dirtyBeforeNew11 === true &&
       cancelNew11.active === 'design-1' &&
       cancelNew11.objectCount === 2 &&
+      cancelNew11.dialogOpen === false &&
+      String(guardDesc11).includes('cambios sin guardar') &&
       newAfter11.active === null &&
       newAfter11.objectCount === 0 &&
       newAfter11.history.past === 0 &&
       String(newAfter11.message ?? '').includes('Nueva escena'),
-    `sucia=${dirtyBeforeNew11} cancelado=${cancelNew11.active} aceptado=${newAfter11.active === null ? 'semilla' : 'no'}`,
+    `sucia=${dirtyBeforeNew11} cancelado=${cancelNew11.active} guardia="${String(guardDesc11).slice(0, 40)}" aceptado=${newAfter11.active === null ? 'semilla' : 'no'}`,
   );
 
   // 11j — Abrir la copia → sus 2 objetos regeneran «Listo».
@@ -2186,9 +2236,16 @@ try {
   );
   await shootStable(page, '27-wave01-crud', canvasClip);
 
-  // 11k — Eliminar design-2 con confirmación: fuera del listado y del
-  // storage; la escena abierta NO se pierde.
+  // 11k — Eliminar design-2 con confirmación (diálogo propio con la
+  // acción destructiva explícita): fuera del listado y del storage;
+  // la escena abierta NO se pierde.
   await page.locator('[data-modeler-design-delete]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  const deleteDesc11 = await page
+    .locator('[data-modeler-dialog-description]')
+    .textContent();
+  await shootStable(page, '28-wave02-confirmar-eliminar', canvasClip);
+  await page.locator('[data-modeler-dialog-confirm]').click();
   await page.waitForTimeout(250);
   const deleted11 = await page.evaluate(() => ({
     designs: window.__modeler.getDesigns(),
@@ -2196,13 +2253,14 @@ try {
     objectCount: window.__modeler.getDocument().objects.length,
   }));
   check(
-    '11k. eliminar con confirmación (diálogo mostrado) retira design-2 del listado y del storage sin perder la escena abierta',
+    '11k. eliminar con diálogo propio (acción destructiva visible) retira design-2 del listado y del storage sin perder la escena abierta',
     deleted11.designs.summaries.every((entry) => entry.id !== 'design-2') &&
       deleted11.stored === null &&
       deleted11.designs.activeDesign === null &&
       deleted11.objectCount === 2 &&
-      dialogLog.some((entry) => entry.includes('¿Eliminar el diseño')),
-    `listado=${deleted11.designs.summaries.map((entry) => entry.id).join('+')} objetos=${deleted11.objectCount}`,
+      String(deleteDesc11).includes('¿Eliminar el proyecto') &&
+      String(deleteDesc11).includes('no se puede deshacer'),
+    `listado=${deleted11.designs.summaries.map((entry) => entry.id).join('+')} objetos=${deleted11.objectCount} diálogo="${String(deleteDesc11).slice(0, 56)}"`,
   );
 
   // 11l — Liberación de recursos tras recuperar y editar: vaciar la
@@ -2280,6 +2338,8 @@ try {
     `errEl=${corruptErrorVisible11} error=${corruptOpen11.designs.error !== null ? 'sí' : 'no'} activo=${corruptOpen11.designs.activeDesign?.id ?? 'null'} (antes ${activeBeforeCorrupt11 ?? 'null'}) registro=${corruptOpen11.stored !== null ? 'intacto' : 'PERDIDO'} opciones=[${corruptListed11.join(' / ')}]`,
   );
   await page.locator('[data-modeler-design-delete]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  await page.locator('[data-modeler-dialog-confirm]').click();
   await page.waitForTimeout(250);
   const corruptDeleted11 = await page.evaluate(() => ({
     stored: localStorage.getItem('furniconfig.modeler.designs.design-9'),
@@ -2696,8 +2756,61 @@ try {
   await page.locator('[data-modeler-mode]').click();
   await page.waitForTimeout(200);
 
-  // Diálogos observados (evidencia de las guardias de pérdida).
-  console.log(`   diálogos: ${dialogLog.join(' | ')}`);
+  // Diálogos nativos observados: con UX-C deben quedar CERO (todo
+  // pasa por los diálogos propios verificados en 11b-11k).
+  console.log(
+    `   diálogos nativos (debe ser vacío): ${dialogLog.join(' | ') || '(ninguno)'}`,
+  );
+  check(
+    '14h. cero diálogos nativos del navegador (prompt/confirm sustituidos por el diálogo propio)',
+    dialogLog.length === 0,
+    `nativos=${dialogLog.length}`,
+  );
+
+  // 14i — «Descartar borrador» desde la bienvenida: diálogo PROPIO
+  // con la acción destructiva explícita; cancelar conserva el
+  // borrador y confirmar lo retira (nunca automático). Después se
+  // vuelve al editor con una acción explícita para el cierre.
+  await page.click('[data-modeler-home]');
+  await page.waitForSelector('[data-modeler-welcome]', { timeout: 15_000 });
+  const cardBeforeDiscard14 = await page
+    .locator('[data-welcome-draft]')
+    .getAttribute('data-welcome-draft');
+  await page.locator('[data-welcome-discard]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  const discardDesc14 = await page
+    .locator('[data-modeler-dialog-description]')
+    .textContent();
+  await page.locator('[data-modeler-dialog-cancel]').click();
+  await page.waitForTimeout(200);
+  const cancelDiscard14 = await page.evaluate(() => ({
+    draft: localStorage.getItem('furniconfig.modeler.draft') !== null,
+    card: document.querySelector('[data-welcome-draft]') !== null,
+    dialog: document.querySelector('[data-modeler-dialog]') !== null,
+  }));
+  await page.locator('[data-welcome-discard]').click();
+  await page.waitForSelector('[data-modeler-dialog]', { timeout: 5000 });
+  await page.locator('[data-modeler-dialog-confirm]').click();
+  await page.waitForTimeout(250);
+  const doneDiscard14 = await page.evaluate(() => ({
+    draft: localStorage.getItem('furniconfig.modeler.draft') !== null,
+    card: document.querySelector('[data-welcome-draft]') !== null,
+    dialog: document.querySelector('[data-modeler-dialog]') !== null,
+  }));
+  check(
+    '14i. «Descartar borrador» con diálogo propio: cancelar conserva todo, confirmar retira el borrador (nunca auto)',
+    cardBeforeDiscard14 === 'ok' &&
+      String(discardDesc14).includes('¿Descartar el borrador') &&
+      cancelDiscard14.draft === true &&
+      cancelDiscard14.card === true &&
+      cancelDiscard14.dialog === false &&
+      doneDiscard14.draft === false &&
+      doneDiscard14.card === false &&
+      doneDiscard14.dialog === false,
+    `guardia="${String(discardDesc14).slice(0, 44)}" cancelar→borrador=${cancelDiscard14.draft} confirmar→borrador=${doneDiscard14.draft}`,
+  );
+  await page.click('[data-welcome-create]');
+  await page.waitForSelector('[data-modeler]', { timeout: 15_000 });
 
   // --- 5. Sin errores de consola/página --------------------
   check(
@@ -2746,7 +2859,7 @@ try {
     join(outDir, 'informe.json'),
     JSON.stringify(
       {
-        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 + WAVE-02 UX-A/UX-B (inicio, encuadre, modo sencillo, tarjeta contextual y errores claros)',
+        fase: '4C-A + 4C-B + 4C-C + 4C-D + WAVE-01 + WAVE-02 UX-A/UX-B/UX-C (inicio, encuadre, modo sencillo, tarjeta contextual, errores claros y diálogos propios)',
         fecha: new Date().toISOString(),
         viewport: '1440×900',
         total: results.length,
