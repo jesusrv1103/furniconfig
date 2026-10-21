@@ -48,6 +48,13 @@ function renderShell(
     wardrobe: null,
     position: null,
     designs: null,
+    // WAVE-02: el fixture por defecto usa MODO AVANZADO (paridad total
+    // con la UI anterior; el modo sencillo se prueba aparte).
+    mode: 'advanced',
+    onModeChange: () => undefined,
+    onHome: () => undefined,
+    saveState: 'clean',
+    startHint: null,
     children: <div data-testid="escena" />,
     ...overrides,
   };
@@ -617,7 +624,10 @@ describe('ModelerShell — WAVE-01 posición en el suelo', () => {
       position: { ...basePosition, snapEnabled: false },
     });
     expect(html).toContain('posiciones exactas');
-    expect(html).not.toContain('checked'); // checkbox sin marcar en SSR
+    // Checkbox de SNAP sin marcar (el alcance evita confundirlo con el
+    // interruptor de modo avanzado, WAVE-02, que sí va marcado).
+    const snapRegion = slice(html, 'data-modeler-snap', 'data-modeler-drag-hint');
+    expect(snapRegion).not.toContain('checked'); // checkbox sin marcar en SSR
   });
 
   it('objeto no arrastrable (generando) → pista explícita, sin fingir', () => {
@@ -729,5 +739,68 @@ describe('ModelerShell — WAVE-01 BLOQUE 3 panel de diseños', () => {
     const html = renderShell({ designs: baseDesigns });
     expect(html).toContain('namespace propio del');
     expect(html).toContain('se regenera su geometría');
+  });
+});
+
+describe('ModelerShell (WAVE-02: modos, chip de guardado e Inicio)', () => {
+  it('modo avanzado: interruptor marcado, motor visible y texto técnico completo', () => {
+    const html = renderShell({ mode: 'advanced', engineStatus: 'ready' });
+    expect(html).toContain('data-modeler-mode');
+    // Único input del fixture por defecto: la casilla del interruptor.
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('checked=""');
+    expect(html).toContain('data-modeler-engine');
+    expect(html).toContain('rejilla 100 mm');
+    expect(html).toContain('>Ajustar<');
+  });
+
+  it('modo sencillo: sin jerga del motor, doc-state breve y «Encuadrar»', () => {
+    const html = renderShell({
+      mode: 'simple',
+      engineStatus: 'ready',
+      document: { name: 'Escena sin título', objectCount: 1, gridStepMm: 100 },
+      view: 'front',
+    });
+    expect(html).not.toContain('data-modeler-engine');
+    expect(html).not.toContain('rejilla 100 mm');
+    expect(html).toContain('Escena sin título · 1 objeto');
+    // El interruptor sigue desmarcado (sin `checked` en el fixture).
+    expect(html).not.toContain('checked=""');
+    // El aria-label técnico se conserva (accesibilidad/paridad de uso).
+    expect(html).toContain('Ajustar la vista a la escena');
+    const section = slice(html, 'data-modeler-view', 'Herramientas');
+    expect(section).toContain('Encuadrar');
+  });
+
+  it('chip de guardado: estado y etiqueta coherentes en los cuatro casos', () => {
+    expect(renderShell({ saveState: 'saved' })).toContain('data-save-state="saved"');
+    expect(renderShell({ saveState: 'saved' })).toContain('Guardado');
+    for (const state of ['dirty', 'dirty-unsaved'] as const) {
+      const html = renderShell({ saveState: state });
+      expect(html).toContain(`data-save-state="${state}"`);
+      expect(html).toContain('Cambios sin guardar');
+    }
+    const clean = renderShell({ saveState: 'clean' });
+    expect(clean).toContain('data-save-state="clean"');
+    expect(clean).toContain('Sin diseño guardado');
+  });
+
+  it('botón «Inicio» presente en la barra superior', () => {
+    const html = renderShell();
+    expect(html).toContain('data-modeler-home');
+    expect(html).toContain('>Inicio<');
+  });
+
+  it('pista de bienvenida sobre el visor (una línea, aria-live)', () => {
+    const html = renderShell({
+      startHint: 'Este es tu clóset: cambia sus medidas en «Propiedades».',
+    });
+    expect(html).toContain('data-modeler-start-hint');
+    expect(html).toContain('Este es tu clóset');
+  });
+
+  it('sin pista no queda marcado el contenedor de pista', () => {
+    const html = renderShell({ startHint: null });
+    expect(html).not.toContain('data-modeler-start-hint');
   });
 });

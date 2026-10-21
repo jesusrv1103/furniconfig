@@ -536,6 +536,324 @@
   text-align: center;
 }
 
+/* --- WAVE-02: chip de guardado, modo e Inicio -------------- */
+
+.modeler-save-chip {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.modeler-save-chip[data-save-state='saved'] {
+  background: #e7f6ec;
+  color: #1a7f37;
+  border-color: #bfe3cc;
+}
+
+.modeler-save-chip[data-save-state='dirty'],
+.modeler-save-chip[data-save-state='dirty-unsaved'] {
+  background: #fdf3d7;
+  color: #8a6100;
+  border-color: #f2dfa8;
+}
+
+.modeler-save-chip[data-save-state='clean'] {
+  background: #eef1f5;
+  color: #5b6472;
+  border-color: #d8dce3;
+}
+
+.modeler-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.modeler-mode input {
+  accent-color: var(--accent, #2563eb);
+}
+
+.modeler-home {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid #49505c;
+  border-radius: var(--radius-sm, 6px);
+  background: #2b3240;
+  color: #f4f5f7;
+  cursor: pointer;
+}
+
+.modeler-home:hover {
+  background: #39414f;
+}
+
+/* Pista breve de bienvenida sobre el visor (una línea). */
+.modeler-start-hint {
+  position: absolute;
+  top: var(--space-3, 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: min(560px, 86%);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: var(--radius, 10px);
+  background: rgba(31, 36, 48, 0.92);
+  color: #f4f5f7;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* --- WAVE-02 BLOQUE 0: pantalla de inicio ------------------- */
+
+.modeler-welcome {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: auto;
+  background: #f4f5f7;
+  color: #1f2430;
+}
+
+.modeler-welcome-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 16px);
+  padding: 0 var(--space-4, 16px);
+  height: 52px;
+  flex: 0 0 auto;
+  background: #1f2430;
+  color: #f4f5f7;
+  border-bottom: 1px solid #11151d;
+}
+
+.modeler-welcome-main {
+  width: min(720px, 100% - 32px);
+  margin: 0 auto;
+  padding: 40px 0 48px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+.modeler-welcome-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.modeler-welcome-subtitle {
+  margin: 0 0 var(--space-2, 8px);
+  color: #5b6472;
+}
+
+.modeler-welcome-error {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius, 10px);
+  background: #fdecea;
+  border: 1px solid #f5c6c2;
+  color: #a4271c;
+}
+
+.modeler-welcome-warning {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius, 10px);
+  background: #fdf3d7;
+  border: 1px solid #f2dfa8;
+  color: #8a6100;
+}
+
+.modeler-welcome-primary {
+  padding: var(--space-4, 16px);
+  border-radius: var(--radius, 10px);
+  background: #ffffff;
+  border: 1px solid #d8dce3;
+  box-shadow: 0 1px 2px rgba(16, 22, 33, 0.05);
+}
+
+.modeler-welcome-create {
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 12px 22px;
+  border: none;
+  border-radius: var(--radius, 10px);
+  background: var(--accent, #2563eb);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.modeler-welcome-create:hover {
+  filter: brightness(1.06);
+}
+
+.modeler-welcome-primary-hint,
+.modeler-welcome-secondary-hint {
+  margin: var(--space-2, 8px) 0 0;
+  font-size: 13px;
+  color: #5b6472;
+}
+
+.modeler-welcome-draft,
+.modeler-welcome-designs,
+.modeler-welcome-secondary {
+  padding: var(--space-4, 16px);
+  border-radius: var(--radius, 10px);
+  background: #ffffff;
+  border: 1px solid #d8dce3;
+}
+
+.modeler-welcome-draft h2,
+.modeler-welcome-designs h2 {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: 16px;
+}
+
+.modeler-welcome-draft-name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.modeler-welcome-draft-meta {
+  margin: 4px 0 var(--space-3, 12px);
+  font-size: 13px;
+  color: #5b6472;
+}
+
+.modeler-welcome-draft-warning {
+  margin: 0 0 var(--space-2, 8px);
+  color: #8a6100;
+}
+
+.modeler-welcome-draft-note {
+  margin: 0 0 var(--space-3, 12px);
+  font-size: 12px;
+  color: #5b6472;
+  word-break: break-word;
+}
+
+.modeler-welcome-draft-actions {
+  display: flex;
+  gap: var(--space-2, 8px);
+  flex-wrap: wrap;
+}
+
+.modeler-welcome-continue {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--radius, 10px);
+  background: #1a7f37;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.modeler-welcome-continue:hover {
+  filter: brightness(1.08);
+}
+
+.modeler-welcome-free {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 16px;
+  border: 1px solid #d8dce3;
+  border-radius: var(--radius, 10px);
+  background: #f8f9fb;
+  color: #1f2430;
+  cursor: pointer;
+}
+
+.modeler-welcome-free:hover {
+  border-color: #9aa0ab;
+}
+
+.modeler-welcome-empty {
+  margin: 0;
+  color: #5b6472;
+  font-size: 14px;
+}
+
+.modeler-welcome-design-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.modeler-welcome-design {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  padding: 8px 10px;
+  border: 1px solid #e6e9ef;
+  border-radius: var(--radius-sm, 6px);
+}
+
+.modeler-welcome-design-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.modeler-welcome-design-broken {
+  flex: 1 1 auto;
+  color: #a4271c;
+  font-weight: 600;
+}
+
+.modeler-welcome-design-note {
+  font-size: 12px;
+  color: #5b6472;
+}
+
+.modeler-button {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid var(--border, #d8dce3);
+  border-radius: var(--radius-sm, 6px);
+  background: #ffffff;
+  color: var(--text, #1f2430);
+  cursor: pointer;
+}
+
+.modeler-button:hover {
+  border-color: #9aa0ab;
+}
+
+.modeler-button-danger {
+  color: #a4271c;
+  border-color: #f5c6c2;
+  background: #fdecea;
+}
+
+.modeler-button-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: #5b6472;
+  text-decoration: underline;
+}
+
+.modeler-button-quiet:hover {
+  color: #1f2430;
+}
+
 /* --- Adaptación a resoluciones estrechas ----------------- */
 
 @media (max-width: 860px) {
@@ -553,5 +871,16 @@
 
   .modeler-doc-state {
     display: none;
+  }
+
+  .modeler-mode span {
+    /* La casilla sigue operativa; la etiqueta larga se colapsa en
+       pantallas estrechas (el título accesible la conserva). */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }

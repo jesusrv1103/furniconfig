@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createEmptySceneDocument,
+  validateSceneDocument,
   type SceneDocument,
   type Sketch2D,
   type SolidObject,
@@ -18,6 +19,7 @@ import {
 import {
   DEFAULT_SCENE_MATERIAL,
   applySceneAction,
+  buildWardrobeSeedDocument,
   nextSolidId,
 } from '../../src/lib/modeler/document-actions.js';
 
@@ -260,5 +262,62 @@ describe('applySceneAction', () => {
     })!;
     expect(Object.isFrozen(next)).toBe(true);
     expect(Object.isFrozen(next.objects)).toBe(true);
+  });
+});
+
+describe('buildWardrobeSeedDocument (WAVE-02 BLOQUE 0)', () => {
+  it('crea la semilla con UN clóset válido (component-1) en el origen', () => {
+    const seed = applySceneAction(createEmptySceneDocument(), {
+      type: 'set-grid-step',
+      gridStepMm: 100,
+    });
+    if (seed === null) throw new Error('fixture de semilla inválida');
+    const withMaterial: SceneDocument = seed.materials.some(
+      (material) => material.id === DEFAULT_SCENE_MATERIAL.id,
+    )
+      ? seed
+      : { ...seed, materials: [...seed.materials, DEFAULT_SCENE_MATERIAL] };
+    const result = buildWardrobeSeedDocument(withMaterial);
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error('esperaba documento inicial');
+    expect(result.objects).toHaveLength(1);
+    const object = result.objects[0];
+    expect(object?.id).toBe('component-1');
+    expect(object?.kind).toBe('component');
+    if (object?.kind !== 'component') throw new Error('esperaba componente');
+    expect(object.transform.positionMm).toEqual([0, 0, 0]);
+    expect(object.type).toBe('furniconfig.wardrobe');
+    // El documento VALIDA (nunca se instala algo inválido).
+    expect(validateSceneDocument(result).ok).toBe(true);
+  });
+
+  it('es determinista: dos llamadas → mismo documento', () => {
+    const seed = applySceneAction(createEmptySceneDocument(), {
+      type: 'set-grid-step',
+      gridStepMm: 100,
+    });
+    if (seed === null) throw new Error('fixture de semilla inválida');
+    const withMaterial: SceneDocument = {
+      ...seed,
+      materials: [...seed.materials, DEFAULT_SCENE_MATERIAL],
+    };
+    const a = buildWardrobeSeedDocument(withMaterial);
+    const b = buildWardrobeSeedDocument(withMaterial);
+    expect(a).toEqual(b);
+  });
+
+  it('la entrada NO se muta', () => {
+    const seed = applySceneAction(createEmptySceneDocument(), {
+      type: 'set-grid-step',
+      gridStepMm: 100,
+    });
+    if (seed === null) throw new Error('fixture de semilla inválida');
+    const withMaterial: SceneDocument = {
+      ...seed,
+      materials: [...seed.materials, DEFAULT_SCENE_MATERIAL],
+    };
+    const before = JSON.stringify(withMaterial);
+    buildWardrobeSeedDocument(withMaterial);
+    expect(JSON.stringify(withMaterial)).toBe(before);
   });
 });
